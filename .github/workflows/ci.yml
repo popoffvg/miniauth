@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: golangci-lint
+        run: go tool -modfile=tools/go.mod golangci-lint run ./...
+      - name: go vet
+        run: go vet ./...
+
+  gosec:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: gosec
+        run: go tool -modfile=tools/go.mod gosec -no-fail -fmt sarif -out gosec.sarif ./...
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+      - name: gosec gate
+        run: go tool -modfile=tools/go.mod gosec -quiet ./...
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - name: test with coverage
+        run: |
+          mkdir -p coverage
+          go test -race -count=1 -coverprofile=coverage/cover.out -covermode=atomic ./...
+          go tool -modfile=tools/go.mod gocov convert coverage/cover.out > coverage/cover.json
+          {
+            echo '## Coverage'
+            echo '```'
+            go tool -modfile=tools/go.mod gocov report coverage/cover.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          go tool -modfile=tools/go.mod gocov-html coverage/cover.json > coverage/index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/

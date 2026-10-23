@@ -1,0 +1,83 @@
+version: "3"
+
+vars:
+  TOOL: go tool -modfile=tools/go.mod
+  COVER_DIR: coverage
+
+tasks:
+  setup:
+    desc: Install the pinned tools and the pre-push hook
+    cmds:
+      - task: tools
+      - task: hooks
+
+  tools:
+    desc: Build every tool pinned in tools/go.mod
+    dir: tools
+    cmds:
+      - go build $(go list tool)
+
+  hooks:
+    desc: Install a git pre-push hook that runs `task pre-push`
+    cmds:
+      - |
+        hook="$(git rev-parse --git-path hooks)/pre-push"
+        printf '#!/bin/sh\nexec task pre-push\n' > "$hook"
+        chmod +x "$hook"
+        echo "installed $hook"
+
+  pre-push:
+    desc: The checks the pre-push hook runs
+    cmds:
+      - task: lint
+      - task: test
+
+  lint:
+    desc: golangci-lint (includes govet and gosec)
+    cmds:
+      - "{{.TOOL}} golangci-lint run ./..."
+
+  fmt:
+    desc: Format with gofumpt and goimports
+    cmds:
+      - "{{.TOOL}} golangci-lint fmt ./..."
+
+  vet:
+    desc: go vet
+    cmds:
+      - go vet ./...
+
+  sec:
+    desc: gosec with its own report
+    cmds:
+      - "{{.TOOL}} gosec -quiet ./..."
+
+  test:
+    desc: Tests with the race detector
+    cmds:
+      - go test -race -count=1 ./...
+
+  cover:
+    desc: Coverage report with gocov; HTML in coverage/index.html
+    cmds:
+      - mkdir -p {{.COVER_DIR}}
+      - go test -race -count=1 -coverprofile={{.COVER_DIR}}/cover.out -covermode=atomic ./...
+      - "{{.TOOL}} gocov convert {{.COVER_DIR}}/cover.out > {{.COVER_DIR}}/cover.json"
+      - "{{.TOOL}} gocov report {{.COVER_DIR}}/cover.json"
+      - "{{.TOOL}} gocov-html {{.COVER_DIR}}/cover.json > {{.COVER_DIR}}/index.html"
+
+  review:
+    desc: CodeRabbit review of the uncommitted change (needs the coderabbit CLI and a login)
+    preconditions:
+      - sh: command -v coderabbit
+        msg: "install the CodeRabbit CLI: curl -fsSL https://cli.coderabbit.ai/install.sh | sh"
+    cmds:
+      - coderabbit review --plain
+
+  check:
+    desc: Everything CI runs
+    cmds:
+      - task: lint
+      - task: vet
+      - task: sec
+      - task: cover
