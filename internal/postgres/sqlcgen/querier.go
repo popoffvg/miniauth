@@ -6,10 +6,19 @@ package sqlcgen
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
+	CountLoginFlows(ctx context.Context) (int64, error)
+	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
+	DeleteExpiredLoginFlows(ctx context.Context) error
+	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
+	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
+	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
 	Ping(ctx context.Context) (int32, error)
+	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

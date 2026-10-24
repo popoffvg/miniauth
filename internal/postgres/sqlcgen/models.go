@@ -3,3 +3,19 @@
 //   sqlc v1.31.1
 
 package sqlcgen
+
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type LoginFlow struct {
+	ID            pgtype.UUID
+	SecretHash    []byte
+	State         string
+	Factors       int32
+	Version       int64
+	ReturnUrl     string
+	NeedsSecond   bool
+	PendingFactor int32
+	ExpiresAt     pgtype.Timestamptz
+}
