@@ -106,7 +106,7 @@ func TestUserCreateHelp(t *testing.T) {
 	if !errors.Is(err, errHelp) {
 		t.Fatalf("error = %v", err)
 	}
-	if !strings.Contains(out.String(), "miniauth user create --login") {
+	if !strings.Contains(out.String(), "user create --login") || !strings.Contains(out.String(), "password is read from stdin") {
 		t.Fatalf("help = %q", out.String())
 	}
 }

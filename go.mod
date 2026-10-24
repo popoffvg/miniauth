@@ -6,6 +6,7 @@ toolchain go1.26.10
 
 require (
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jessevdk/go-flags v1.6.1
 	github.com/popoffvg/sfsm v0.2.0
 	github.com/pressly/goose/v3 v3.29.0
 	golang.org/x/crypto v0.58.0
