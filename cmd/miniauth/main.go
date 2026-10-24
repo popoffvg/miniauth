@@ -11,13 +11,15 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/popoffvg/miniauth/internal/postgres"
 )
 
 const shutdownTimeout = 10 * time.Second
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if err := run(logger, listenAddr()); err != nil {
+	if err := run(logger, listenAddr(), os.Getenv("MINIAUTH_DATABASE_URL")); err != nil {
 		logger.Error("miniauth: stopped", "err", err)
 		os.Exit(1)
 	}
@@ -30,9 +32,22 @@ func listenAddr() string {
 	return "127.0.0.1:8080"
 }
 
-func run(logger *slog.Logger, addr string) error {
+func run(logger *slog.Logger, addr, databaseURL string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if databaseURL == "" {
+		return errors.New("miniauth: MINIAUTH_DATABASE_URL is not set")
+	}
+	pool, err := postgres.Open(ctx, databaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		return err
+	}
+	logger.Info("miniauth: migrations applied")
 
 	server := &http.Server{
 		Addr:              addr,

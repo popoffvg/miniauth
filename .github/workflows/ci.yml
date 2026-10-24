@@ -19,6 +19,10 @@ jobs:
           cache-dependency-path: |
             go.sum
             tools/go.sum
+      - name: sqlc output is up to date
+        run: |
+          go tool -modfile=tools/go.mod sqlc generate
+          git diff --exit-code -- internal/postgres/sqlcgen
       - name: golangci-lint
         run: go tool -modfile=tools/go.mod golangci-lint run ./...
       - name: go vet
@@ -47,6 +51,22 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: miniauth
+          POSTGRES_PASSWORD: miniauth
+          POSTGRES_DB: miniauth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U miniauth"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    env:
+      MINIAUTH_TEST_DATABASE_URL: postgres://miniauth:miniauth@localhost:5432/miniauth?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

@@ -1,5 +1,9 @@
 version: "3"
 
+# A GOROOT from the shell points at another Go and breaks the toolchain switch in go.mod.
+env:
+  GOROOT: ""
+
 vars:
   TOOL: go tool -modfile=tools/go.mod
   COVER_DIR: coverage
@@ -22,7 +26,7 @@ tasks:
     cmds:
       - |
         hook="$(git rev-parse --git-dir)/hooks/pre-push"
-        printf '#!/bin/sh\nexec mise exec -- task pre-push\n' > "$hook"
+        printf '#!/bin/sh\nPATH="$(mise where go)/bin:$(mise where task)/bin:$PATH" exec task pre-push\n' > "$hook"
         chmod +x "$hook"
         echo "installed $hook"
 
@@ -51,6 +55,24 @@ tasks:
     desc: gosec with its own report
     cmds:
       - "{{.TOOL}} gosec -quiet ./..."
+
+  generate:
+    desc: Generate Go code from queries/*.sql with sqlc
+    cmds:
+      - "{{.TOOL}} sqlc generate"
+
+  db:up:
+    desc: Start the local PostgreSQL from compose.yaml and wait until it is healthy
+    cmds:
+      - docker compose up -d --wait postgres
+
+  test:integration:
+    desc: Tests against the local PostgreSQL
+    deps: [db:up]
+    env:
+      MINIAUTH_TEST_DATABASE_URL: postgres://miniauth:miniauth@127.0.0.1:5432/miniauth?sslmode=disable
+    cmds:
+      - go test -race -count=1 ./...
 
   test:
     desc: Tests with the race detector
