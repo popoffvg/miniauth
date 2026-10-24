@@ -1,0 +1,20 @@
+# Local development only. The credentials are not secrets.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: miniauth
+      POSTGRES_PASSWORD: miniauth
+      POSTGRES_DB: miniauth
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "miniauth"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+volumes:
+  postgres:
