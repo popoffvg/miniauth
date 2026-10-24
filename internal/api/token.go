@@ -58,6 +58,19 @@ func (t BearerToken) Format(f fmt.State, _ rune) {
 	_, _ = io.WriteString(f, "redacted")
 }
 
+// requireAdmin allows the request only when the bearer token matches the bootstrap hash.
+// The token MUST NOT reach a log or an error.
+func (r *Router) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		token, ok := bearerToken(req)
+		if !ok || !r.admin.Matches(token) {
+			writeProblem(w, http.StatusUnauthorized, "The bearer token is missing or wrong.")
+			return
+		}
+		next.ServeHTTP(w, req)
+	})
+}
+
 // bearerToken reads Authorization: Bearer <token>.
 // The token MUST NOT be written to a URL, a log, or an error.
 func bearerToken(r *http.Request) (BearerToken, bool) {

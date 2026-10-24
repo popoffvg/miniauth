@@ -30,7 +30,7 @@ func NewRouter(users *user.Users, admin AdminTokenHash, logger *slog.Logger) *Ro
 		log:   logger,
 	}
 	router.mux.HandleFunc("GET /healthz", router.healthz)
-	router.mux.HandleFunc("POST /api/v1/users", router.createUser)
+	router.mux.Handle("POST /api/v1/users", router.requireAdmin(http.HandlerFunc(router.createUser)))
 	return router
 }
 

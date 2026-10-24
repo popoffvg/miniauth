@@ -72,11 +72,6 @@ type createUserRequest struct {
 }
 
 func (r *Router) createUser(w http.ResponseWriter, req *http.Request) {
-	token, ok := bearerToken(req)
-	if !ok || !r.admin.Matches(token) {
-		writeProblem(w, http.StatusUnauthorized, "The bearer token is missing or wrong.")
-		return
-	}
 	if !jsonContentType(req.Header.Get("Content-Type")) {
 		writeProblem(w, http.StatusUnsupportedMediaType, "The content type must be application/json.")
 		return
