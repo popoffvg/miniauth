@@ -8,7 +8,16 @@ import (
 	"time"
 	"unicode"
 	"uuid"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	"go.opentelemetry.io/otel/trace"
 )
+
+const httpTracerName = "github.com/popoffvg/miniauth/internal/api"
 
 type loggerKey struct{}
 
@@ -37,15 +46,50 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 		requestLogger := logger.With("request_id", id)
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		start := time.Now()
-		ctx := withLogger(r.Context(), requestLogger)
+		ctx, span := startHTTPSpan(r, id)
+		ctx = withLogger(ctx, requestLogger)
+		//nolint:contextcheck // ctx is the request context with the span.
 		next.ServeHTTP(recorder, r.WithContext(ctx))
-		requestLogger.LogAttrs(ctx, slog.LevelInfo, "http request",
+		finishHTTPSpan(span, r, recorder.status)
+		attrs := []slog.Attr{
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
 			slog.Int("status", recorder.status),
 			slog.Duration("duration", time.Since(start)),
-		)
+		}
+		if span.SpanContext().IsValid() {
+			attrs = append(attrs, slog.String("trace_id", span.SpanContext().TraceID().String()))
+		}
+		//nolint:contextcheck // ctx is the request context with the span.
+		requestLogger.LogAttrs(ctx, slog.LevelInfo, "http request", attrs...)
 	})
+}
+
+// startHTTPSpan records the method, the path, and the request id.
+// The query string and the headers are omitted: they can hold a token or a password.
+func startHTTPSpan(r *http.Request, requestID string) (context.Context, trace.Span) {
+	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	ctx, span := otel.Tracer(httpTracerName).Start(ctx, r.Method+" "+r.URL.Path,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			semconv.HTTPRequestMethodKey.String(r.Method),
+			semconv.URLPath(r.URL.Path),
+			attribute.String("http.request_id", requestID),
+		),
+	)
+	return ctx, span
+}
+
+func finishHTTPSpan(span trace.Span, r *http.Request, status int) {
+	if r.Pattern != "" {
+		span.SetName(r.Pattern)
+		span.SetAttributes(semconv.HTTPRoute(r.Pattern))
+	}
+	span.SetAttributes(semconv.HTTPResponseStatusCode(status))
+	if status >= http.StatusInternalServerError {
+		span.SetStatus(codes.Error, http.StatusText(status))
+	}
+	span.End()
 }
 
 // requestID reads X-Request-ID when it is a short token.

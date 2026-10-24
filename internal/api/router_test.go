@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,6 +76,7 @@ func TestRequestTagsUseTheDomainLimits(t *testing.T) {
 func TestRequestLogOmitsSecrets(t *testing.T) {
 	const token = "bootstrap-token-for-tests"
 	const password = "correct horse battery staple"
+	spans := recordSpans(t)
 	router, logs := loggedRouter(t, &memRepo{}, token)
 	body := `{"login":"ada","password":"` + password + `"}`
 	query := url.Values{}
@@ -92,6 +98,12 @@ func TestRequestLogOmitsSecrets(t *testing.T) {
 	assert.NotContains(t, text, "access_token")
 	assert.NotContains(t, rec.Body.String(), token)
 	assert.NotContains(t, rec.Body.String(), password)
+	recorded := spanText(spans.Ended())
+	assert.Contains(t, recorded, "POST /api/v1/users")
+	assert.Contains(t, recorded, "http.response.status_code=401")
+	assert.NotContains(t, recorded, token)
+	assert.NotContains(t, recorded, password)
+	assert.NotContains(t, recorded, "access_token")
 }
 
 func TestStoreFailureLogHasNoSecret(t *testing.T) {
@@ -112,6 +124,44 @@ func TestStoreFailureLogHasNoSecret(t *testing.T) {
 	assert.Contains(t, logs.String(), "request_id")
 	assert.NotContains(t, logs.String(), password)
 	assert.NotContains(t, logs.String(), token)
+}
+
+func recordSpans(t *testing.T) *tracetest.SpanRecorder {
+	t.Helper()
+	recorder := tracetest.NewSpanRecorder()
+	previous := otel.GetTracerProvider()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	return recorder
+}
+
+func spanText(spans []sdktrace.ReadOnlySpan) string {
+	var b strings.Builder
+	for _, span := range spans {
+		b.WriteString(span.Name())
+		b.WriteByte('\n')
+		for _, attr := range span.Attributes() {
+			b.WriteString(string(attr.Key))
+			b.WriteByte('=')
+			b.WriteString(attr.Value.String())
+			b.WriteByte('\n')
+		}
+		for _, event := range span.Events() {
+			b.WriteString(event.Name)
+			b.WriteByte('\n')
+			for _, attr := range event.Attributes {
+				b.WriteString(string(attr.Key))
+				b.WriteByte('=')
+				b.WriteString(attr.Value.String())
+				b.WriteByte('\n')
+			}
+		}
+	}
+	return b.String()
 }
 
 func TestAuthFailsClosed(t *testing.T) {

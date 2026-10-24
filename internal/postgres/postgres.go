@@ -14,7 +14,12 @@ import (
 
 // Open connects to the database at dsn and checks the connection.
 func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: open: %w", err)
+	}
+	cfg.ConnConfig.Tracer = queryTracer{}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: open: %w", err)
 	}

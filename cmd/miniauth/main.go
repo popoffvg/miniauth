@@ -14,6 +14,7 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/postgres"
+	"github.com/popoffvg/miniauth/internal/telemetry"
 	"github.com/popoffvg/miniauth/internal/user"
 )
 
@@ -54,6 +55,17 @@ func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error 
 	if databaseURL == "" {
 		return errors.New("miniauth: MINIAUTH_DATABASE_URL is not set")
 	}
+	stopTelemetry, err := telemetry.Install(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if stopErr := stopTelemetry(stopCtx); stopErr != nil {
+			logger.Error("miniauth: traces", "err", stopErr)
+		}
+	}()
 	adminHash, err := api.ParseAdminTokenHash(adminTokenSHA256)
 	if err != nil {
 		return errors.New("miniauth: MINIAUTH_ADMIN_TOKEN_SHA256 must be the hex SHA-256 of the admin token")

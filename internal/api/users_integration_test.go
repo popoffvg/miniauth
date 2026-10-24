@@ -23,6 +23,7 @@ func TestCreateUserStoresAnArgon2Identity(t *testing.T) {
 	password := fake.Password(true, true, true, true, false, 24)
 	const token = "bootstrap-token-for-tests"
 
+	spans := recordSpans(t)
 	ctx := t.Context()
 	pool, err := postgres.Open(ctx, postgrestest.NewDatabase(t))
 	require.NoError(t, err)
@@ -69,4 +70,10 @@ func TestCreateUserStoresAnArgon2Identity(t *testing.T) {
 	n, err := sqlcgen.New(pool).CountUsers(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), n)
+	recorded := spanText(spans.Ended())
+	assert.Contains(t, recorded, "db.query.text")
+	assert.Contains(t, recorded, "InsertUserIdentity")
+	assert.NotContains(t, recorded, "pgx.query.parameters")
+	assert.NotContains(t, recorded, password)
+	assert.NotContains(t, recorded, token)
 }
