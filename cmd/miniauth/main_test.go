@@ -1,25 +1,20 @@
 package main
 
 import (
-	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestHealthz(t *testing.T) {
-	rec := httptest.NewRecorder()
-	newMux().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil))
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("GET /healthz: got %d, want %d", rec.Code, http.StatusNoContent)
+func TestRejectArgsDoesNotEchoTheArguments(t *testing.T) {
+	const secret = "not-a-real-admin-token"
+	err := rejectArgs([]string{"user", "create", "--login", "ada", secret})
+	if err == nil {
+		t.Fatal("arguments were accepted")
 	}
-}
-
-func TestHealthzRejectsPost(t *testing.T) {
-	rec := httptest.NewRecorder()
-	newMux().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/healthz", nil))
-
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST /healthz: got %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "ada") || strings.Contains(err.Error(), "create") {
+		t.Fatal("error contains an argument")
+	}
+	if err := rejectArgs(nil); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -12,32 +12,32 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/postgres"
+	"github.com/popoffvg/miniauth/internal/user"
 )
 
 const shutdownTimeout = 10 * time.Second
 
 func main() {
-	if len(os.Args) > 1 {
-		os.Exit(runAdmin())
-	}
-
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if err := run(logger, listenAddr(), os.Getenv("MINIAUTH_DATABASE_URL")); err != nil {
+	if err := rejectArgs(os.Args[1:]); err != nil {
+		logger.Error("miniauth: stopped", "err", err)
+		os.Exit(2)
+	}
+	if err := run(logger, listenAddr(), os.Getenv("MINIAUTH_DATABASE_URL"), os.Getenv("MINIAUTH_ADMIN_TOKEN_SHA256")); err != nil {
 		logger.Error("miniauth: stopped", "err", err)
 		os.Exit(1)
 	}
 }
 
-func runAdmin() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	err := runCLI(ctx, os.Args[1:], os.Getenv("MINIAUTH_DATABASE_URL"), os.Stdin, os.Stdout)
-	if err != nil && !errors.Is(err, errHelp) {
-		slog.Error("miniauth: command failed", "err", err)
-		return 1
+// rejectArgs refuses a CLI command.
+// The error MUST NOT include the arguments: they can hold a password or a token.
+func rejectArgs(args []string) error {
+	if len(args) == 0 {
+		return nil
 	}
-	return 0
+	return errors.New("miniauth: the command only serves HTTP")
 }
 
 func listenAddr() string {
@@ -47,12 +47,16 @@ func listenAddr() string {
 	return "127.0.0.1:8080"
 }
 
-func run(logger *slog.Logger, addr, databaseURL string) error {
+func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if databaseURL == "" {
 		return errors.New("miniauth: MINIAUTH_DATABASE_URL is not set")
+	}
+	adminHash, err := api.ParseAdminTokenHash(adminTokenSHA256)
+	if err != nil {
+		return errors.New("miniauth: MINIAUTH_ADMIN_TOKEN_SHA256 must be the hex SHA-256 of the admin token")
 	}
 	pool, err := postgres.Open(ctx, databaseURL)
 	if err != nil {
@@ -66,7 +70,7 @@ func run(logger *slog.Logger, addr, databaseURL string) error {
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           newMux(),
+		Handler:           api.NewRouter(user.NewUsers(postgres.NewUserRepository(pool)), adminHash, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -94,12 +98,4 @@ func run(logger *slog.Logger, addr, databaseURL string) error {
 		return fmt.Errorf("miniauth: serve: %w", err)
 	}
 	return nil
-}
-
-func newMux() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-	return mux
 }
