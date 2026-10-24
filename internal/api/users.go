@@ -1,158 +1,51 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"mime"
 	"net/http"
-	"strings"
 
 	"github.com/popoffvg/miniauth/internal/user"
 )
 
 // maxCreateUserBody is large enough for the longest login and password.
-// A larger body is refused before it is decoded.
 const maxCreateUserBody = 8 << 10
+
+// createUserRequest is the JSON body and the OpenAPI request schema.
+// The tags describe the shape. ParseLogin and NewPassword decide acceptance.
+type createUserRequest struct {
+	Login    user.Login    `json:"login" required:"true" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9](?:[A-Za-z0-9._@+-]{0,62}[A-Za-z0-9])?$" doc:"Stored in lower case."`
+	Password user.Password `json:"password" required:"true" minLength:"1" maxLength:"1024" format:"password" doc:"Stored as an argon2id PHC string."`
+}
 
 // createdUser is the 201 body. It has no password.
 type createdUser struct {
-	ID    user.UserID `json:"id"`
+	ID    user.UserID `json:"id" format:"uuid"`
 	Login user.Login  `json:"login"`
 }
 
-// loginField is the login text in a JSON body, before the login rules run.
-type loginField string
-
-// passwordField is the password text in a JSON body.
-// Printing it yields "redacted".
-type passwordField struct {
-	raw string
-}
-
-// String returns "redacted".
-func (p passwordField) String() string {
-	return "redacted"
-}
-
-// GoString returns "redacted".
-func (p passwordField) GoString() string {
-	return "redacted"
-}
-
-// Format prints "redacted" for every verb, so a log cannot show the password.
-func (p passwordField) Format(f fmt.State, _ rune) {
-	_, _ = io.WriteString(f, "redacted")
-}
-
-// UnmarshalJSON stores a JSON string.
-func (p *passwordField) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		p.raw = ""
-		return nil
-	}
-	var raw string
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return errors.New("api: password must be a string")
-	}
-	p.raw = raw
-	return nil
-}
-
-// MarshalJSON writes "redacted". The password MUST NOT be encoded.
-func (p passwordField) MarshalJSON() ([]byte, error) {
-	return []byte(`"redacted"`), nil
-}
-
-type createUserRequest struct {
-	Login    loginField    `json:"login"`
-	Password passwordField `json:"password"`
-}
-
-func (r *Router) createUser(w http.ResponseWriter, req *http.Request) {
-	if !jsonContentType(req.Header.Get("Content-Type")) {
-		writeProblem(w, http.StatusUnsupportedMediaType, "The content type must be application/json.")
-		return
-	}
-
-	body, err := decodeCreateUser(w, req)
+func (s *service) createUser(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeJSON[createUserRequest](w, r, maxCreateUserBody)
 	if err != nil {
-		r.writeCreateUserError(w, err)
+		writeCreateError(w, r, err)
 		return
 	}
-	login, err := user.ParseLogin(string(body.Login))
+	if s.users == nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: create user", "err", errors.New("api: user service is missing"))
+		writeProblem(w, http.StatusInternalServerError, "The user was not created.")
+		return
+	}
+	created, err := s.users.Create(r.Context(), body.Login, body.Password)
 	if err != nil {
-		writeProblem(w, http.StatusBadRequest, "The login is not valid.")
-		return
-	}
-	password, err := user.NewPassword(body.Password.raw)
-	if err != nil {
-		r.writeCreateUserError(w, err)
-		return
-	}
-	if r.users == nil {
-		r.writeCreateUserError(w, errors.New("api: user service is missing"))
-		return
-	}
-
-	created, err := r.users.Create(req.Context(), login, password)
-	if err != nil {
-		r.writeCreateUserError(w, err)
+		writeCreateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, createdUser{ID: created.ID, Login: created.Login})
 }
 
-func decodeCreateUser(w http.ResponseWriter, req *http.Request) (createUserRequest, error) {
-	reader := http.MaxBytesReader(w, req.Body, maxCreateUserBody)
-	defer func() { _ = reader.Close() }()
-	// The body holds the password. Clear this buffer when the function returns.
-	var payload []byte
-	defer func() { clear(payload) }()
-	var err error
-	payload, err = io.ReadAll(reader)
-	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			return createUserRequest{}, errTooLarge
-		}
-		return createUserRequest{}, errBadJSON
-	}
-
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
-	var body createUserRequest
-	if err = decoder.Decode(&body); err != nil {
-		return createUserRequest{}, errBadJSON
-	}
-	if decoder.More() {
-		return createUserRequest{}, errBadJSON
-	}
-	return body, nil
-}
-
-func jsonContentType(header string) bool {
-	mediaType, params, err := mime.ParseMediaType(header)
-	if err != nil || mediaType != "application/json" {
-		return false
-	}
-	charset, ok := params["charset"]
-	return !ok || strings.EqualFold(charset, "utf-8")
-}
-
-var (
-	errBadJSON  = errors.New("api: request body is not valid JSON")
-	errTooLarge = errors.New("api: request body is too large")
-)
-
-func (r *Router) writeCreateUserError(w http.ResponseWriter, err error) {
+func writeCreateError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, errBadJSON):
-		writeProblem(w, http.StatusBadRequest, "The request body is not valid JSON.")
-	case errors.Is(err, errTooLarge):
-		writeProblem(w, http.StatusRequestEntityTooLarge, "The request body is too large.")
+	case errors.Is(err, errUnsupportedMedia), errors.Is(err, errTooLarge), errors.Is(err, errBadJSON):
+		writeDecodeError(w, err)
 	case errors.Is(err, user.ErrInvalidLogin):
 		writeProblem(w, http.StatusBadRequest, "The login is not valid.")
 	case errors.Is(err, user.ErrEmptyPassword):
@@ -162,8 +55,7 @@ func (r *Router) writeCreateUserError(w http.ResponseWriter, err error) {
 	case errors.Is(err, user.ErrLoginTaken):
 		writeProblem(w, http.StatusConflict, "The login already exists.")
 	default:
-		// The repository error does not include the password or the hash.
-		r.log.Error("miniauth: create user", "err", err)
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: create user", "err", err)
 		writeProblem(w, http.StatusInternalServerError, "The user was not created.")
 	}
 }

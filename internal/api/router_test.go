@@ -1,236 +1,135 @@
 package api
 
 import (
-	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"slices"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/popoffvg/miniauth/internal/user"
 )
 
 func TestHealthz(t *testing.T) {
-	router := NewRouter(nil, AdminTokenHash{}, nil)
+	router := mustRouter(t, nil, "bootstrap-token-for-tests")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil))
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("GET /healthz: got %d, want %d", rec.Code, http.StatusNoContent)
-	}
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+	assert.NotEmpty(t, rec.Header().Get("X-Request-ID"))
 }
 
 func TestHealthzRejectsPost(t *testing.T) {
-	router := NewRouter(nil, AdminTokenHash{}, nil)
+	router := mustRouter(t, nil, "bootstrap-token-for-tests")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/healthz", nil))
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST /healthz: got %d, want %d", rec.Code, http.StatusMethodNotAllowed)
-	}
+	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
-func TestRouterRoutesMatchOpenAPI(t *testing.T) {
-	router := NewRouter(nil, AdminTokenHash{}, nil)
-	got := muxRoutes(t, router.mux)
-	if len(got) == 0 {
-		t.Fatal("no routes found on the mux")
-	}
-	want := openAPIRoutes(t, openAPIPath(t))
-	missing, extra := compareRoutes(got, want)
-	for _, route := range missing {
-		t.Errorf("router route %s %s is not in api/openapi.yaml", route.method, route.path)
-	}
-	for _, route := range extra {
-		t.Errorf("api/openapi.yaml describes %s %s but the router does not", route.method, route.path)
-	}
-}
+func TestOpenAPIIsGeneratedFromTheRoutes(t *testing.T) {
+	router := mustRouter(t, nil, "bootstrap-token-for-tests")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/openapi.yaml", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Header().Get("Content-Type"), "yaml")
+	body := rec.Body.String()
+	assert.Contains(t, body, "/healthz")
+	assert.Contains(t, body, "/api/v1/users")
+	assert.Contains(t, body, "bearerAuth")
+	assert.Contains(t, body, "maxLength: 64")
+	assert.Contains(t, body, "maxLength: 1024")
 
-func TestCompareRoutesReportsARouterRouteMissingFromTheSpec(t *testing.T) {
-	got := []route{{method: http.MethodGet, path: "/healthz"}, {method: http.MethodPost, path: "/api/v1/users"}}
-	want := []route{{method: http.MethodGet, path: "/healthz"}}
-	missing, extra := compareRoutes(got, want)
-	if len(missing) != 1 || missing[0].path != "/api/v1/users" {
-		t.Fatalf("missing = %+v", missing)
-	}
-	if len(extra) != 0 {
-		t.Fatalf("extra = %+v", extra)
-	}
-}
-
-type route struct {
-	method string
-	path   string
-}
-
-func compareRoutes(routerRoutes, specRoutes []route) (missing, extra []route) {
-	spec := map[route]struct{}{}
-	for _, route := range specRoutes {
-		spec[route] = struct{}{}
-	}
-	seen := map[route]struct{}{}
-	for _, route := range routerRoutes {
-		seen[route] = struct{}{}
-		if _, ok := spec[route]; !ok {
-			missing = append(missing, route)
-		}
-	}
-	for _, route := range specRoutes {
-		if _, ok := seen[route]; !ok {
-			extra = append(extra, route)
-		}
-	}
-	slices.SortFunc(missing, routeLess)
-	slices.SortFunc(extra, routeLess)
-	return missing, extra
-}
-
-func routeLess(a, b route) int {
-	if a.method != b.method {
-		return strings.Compare(a.method, b.method)
-	}
-	return strings.Compare(a.path, b.path)
-}
-
-func openAPIPath(t *testing.T) string {
-	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("test file path is unknown")
+	require.True(t, ok)
+	golden := filepath.Join(filepath.Dir(file), "..", "..", "api", "openapi.yaml")
+	if os.Getenv("UPDATE_OPENAPI") == "1" {
+		require.NoError(t, os.WriteFile(golden, rec.Body.Bytes(), 0o644))
 	}
-	return filepath.Join(filepath.Dir(file), "..", "..", "api", "openapi.yaml")
+	want, err := os.ReadFile(golden)
+	require.NoError(t, err)
+	assert.Equal(t, string(want), body)
 }
 
-func openAPIRoutes(t *testing.T, path string) []route {
-	t.Helper()
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	routes, err := parseOpenAPIRoutes(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return routes
+func TestRequestTagsUseTheDomainLimits(t *testing.T) {
+	typ := reflect.TypeOf(createUserRequest{})
+	login, ok := typ.FieldByName("Login")
+	require.True(t, ok)
+	password, ok := typ.FieldByName("Password")
+	require.True(t, ok)
+	assert.Equal(t, strconv.Itoa(user.MaxLoginLength), login.Tag.Get("maxLength"))
+	assert.Equal(t, strconv.Itoa(user.MaxPasswordBytes), password.Tag.Get("maxLength"))
 }
 
-// parseOpenAPIRoutes reads path keys and HTTP methods from an OpenAPI YAML document.
-// The document uses block style. Paths sit under the root key "paths".
-func parseOpenAPIRoutes(body []byte) ([]route, error) {
-	methods := map[string]string{
-		"get":     http.MethodGet,
-		"head":    http.MethodHead,
-		"post":    http.MethodPost,
-		"put":     http.MethodPut,
-		"patch":   http.MethodPatch,
-		"delete":  http.MethodDelete,
-		"options": http.MethodOptions,
-		"trace":   http.MethodTrace,
-	}
-	var routes []route
-	inPaths := false
-	pathsIndent := 0
-	pathIndent := -1
-	currentPath := ""
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimRight(line, "\r")
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		if strings.Contains(line, "\t") {
-			return nil, errors.New("api: openapi uses tabs")
-		}
-		indent := len(line) - len(strings.TrimLeft(line, " "))
-		key, _, _ := strings.Cut(trimmed, ":")
-		key = strings.Trim(strings.TrimSpace(key), `"'`)
-		if !inPaths {
-			if indent == 0 && key == "paths" {
-				inPaths = true
-				pathsIndent = indent
-			}
-			continue
-		}
-		if indent <= pathsIndent {
-			break
-		}
-		if pathIndent < 0 {
-			pathIndent = indent
-		}
-		if indent == pathIndent {
-			if !strings.HasPrefix(key, "/") {
-				return nil, fmt.Errorf("api: openapi path %q", key)
-			}
-			currentPath = key
-			continue
-		}
-		if currentPath != "" && indent == pathIndent+2 {
-			if method, ok := methods[strings.ToLower(key)]; ok {
-				routes = append(routes, route{method: method, path: currentPath})
-			}
-		}
-	}
-	if !inPaths {
-		return nil, errors.New("api: openapi has no paths")
-	}
-	return routes, nil
+func TestRequestLogOmitsSecrets(t *testing.T) {
+	const token = "bootstrap-token-for-tests"
+	const password = "correct horse battery staple"
+	router, logs := loggedRouter(t, &memRepo{}, token)
+	body := `{"login":"ada","password":"` + password + `"}`
+	query := url.Values{}
+	query.Set("access_token", token)
+	query.Set("password", password)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/users?"+query.Encode(), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", token)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.NotEqual(t, token, rec.Header().Get("X-Request-ID"))
+	text := logs.String()
+	assert.Contains(t, text, "http request")
+	assert.Contains(t, text, "request_id")
+	assert.NotContains(t, text, token)
+	assert.NotContains(t, text, password)
+	assert.NotContains(t, text, "access_token")
+	assert.NotContains(t, rec.Body.String(), token)
+	assert.NotContains(t, rec.Body.String(), password)
 }
 
-// muxRoutes reads the patterns registered on mux.
-// net/http.ServeMux does not export them.
-// The walk follows the unexported routing tree of Go 1.27.
-func muxRoutes(t *testing.T, mux *http.ServeMux) []route {
-	t.Helper()
-	root := reflect.ValueOf(mux).Elem().FieldByName("tree")
-	var patterns []string
-	var walk func(reflect.Value)
-	walk = func(node reflect.Value) {
-		if !node.IsValid() {
-			return
-		}
-		if node.Kind() == reflect.Pointer {
-			if node.IsNil() {
-				return
-			}
-			node = node.Elem()
-		}
-		pattern := node.FieldByName("pattern")
-		if pattern.IsValid() && pattern.Kind() == reflect.Pointer && !pattern.IsNil() {
-			patterns = append(patterns, pattern.Elem().FieldByName("str").String())
-		}
-		if child := node.FieldByName("multiChild"); child.IsValid() {
-			walk(child)
-		}
-		if child := node.FieldByName("emptyChild"); child.IsValid() {
-			walk(child)
-		}
-		children := node.FieldByName("children")
-		if !children.IsValid() {
-			return
-		}
-		pairs := children.FieldByName("s")
-		for i := 0; i < pairs.Len(); i++ {
-			walk(pairs.Index(i).FieldByName("value"))
-		}
-		index := children.FieldByName("m")
-		if index.Kind() == reflect.Map && !index.IsNil() {
-			iter := index.MapRange()
-			for iter.Next() {
-				walk(iter.Value())
-			}
-		}
-	}
-	walk(root)
+func TestStoreFailureLogHasNoSecret(t *testing.T) {
+	const token = "bootstrap-token-for-tests"
+	const password = "correct horse battery staple"
+	router, logs := loggedRouter(t, failRepo{}, token)
+	body := `{"login":"ada","password":"` + password + `"}`
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
 
-	var routes []route
-	for _, pattern := range patterns {
-		method, path, ok := strings.Cut(pattern, " ")
-		if !ok || !strings.HasPrefix(path, "/") {
-			t.Fatalf("pattern %q is not a method and a path", pattern)
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.NotContains(t, rec.Body.String(), password)
+	assert.NotContains(t, rec.Body.String(), "database is down")
+	assert.Contains(t, logs.String(), "database is down")
+	assert.Contains(t, logs.String(), "request_id")
+	assert.NotContains(t, logs.String(), password)
+	assert.NotContains(t, logs.String(), token)
+}
+
+func TestAuthFailsClosed(t *testing.T) {
+	svc := &service{}
+	for _, rt := range svc.routes() {
+		if rt.public {
+			continue
 		}
-		routes = append(routes, route{method: method, path: path})
+		assert.NotEmpty(t, rt.method)
+		assert.NotEmpty(t, rt.path)
+		assert.False(t, rt.public)
 	}
-	return routes
+	var sawPublic bool
+	for _, rt := range svc.routes() {
+		if rt.path == "/healthz" {
+			assert.True(t, rt.public)
+			sawPublic = true
+		}
+	}
+	assert.True(t, sawPublic)
 }

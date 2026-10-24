@@ -63,14 +63,18 @@ func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error 
 		return err
 	}
 	defer pool.Close()
-	if err := postgres.Migrate(ctx, pool); err != nil {
+	if err = postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}
 	logger.Info("miniauth: migrations applied")
 
+	handler, err := api.NewRouter(user.NewUsers(postgres.NewUserRepository(pool)), adminHash, logger)
+	if err != nil {
+		return err
+	}
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(user.NewUsers(postgres.NewUserRepository(pool)), adminHash, logger),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

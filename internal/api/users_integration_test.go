@@ -6,6 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brianvoe/gofakeit/v7"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
@@ -13,79 +17,56 @@ import (
 )
 
 func TestCreateUserStoresAnArgon2Identity(t *testing.T) {
+	t.Logf("gofakeit seed %d", fakeSeed+1)
+	fake := gofakeit.New(fakeSeed + 1)
+	login := fake.Regex(`[a-z][a-z0-9]{7}`)
+	password := fake.Password(true, true, true, true, false, 24)
+	const token = "bootstrap-token-for-tests"
+
 	ctx := t.Context()
-	databaseURL := postgrestest.NewDatabase(t)
-	pool, err := postgres.Open(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pool, err := postgres.Open(ctx, postgrestest.NewDatabase(t))
+	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	if err = postgres.Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, postgres.Migrate(ctx, pool))
 
-	h := newHarness(t, postgres.NewUserRepository(pool))
-	const password = "s3cret-password-for-miniauth-user-create-which-is-longer-than-the-stored-argon2id-string"
-	body := `{"login":"Ada","password":"` + password + `"}`
+	router := mustRouter(t, postgres.NewUserRepository(pool), token)
+	body := `{"login":"` + login + `","password":"` + password + `"}`
 
-	rec := h.post(t, "", body, "application/json")
-	assertProblem(t, rec, http.StatusUnauthorized)
-	assertNoSecret(t, rec.Body.String(), password, h.token)
+	missing := post(t, router, "", body, "application/json")
+	require.Equal(t, http.StatusUnauthorized, missing.Code)
+	assert.NotContains(t, missing.Body.String(), password)
 
-	rec = h.post(t, "wrong-token", body, "application/json")
-	assertProblem(t, rec, http.StatusUnauthorized)
-	assertNoSecret(t, rec.Body.String(), password, h.token, "wrong-token")
+	wrong := post(t, router, "wrong-token", body, "application/json")
+	require.Equal(t, http.StatusUnauthorized, wrong.Code)
+	assert.NotContains(t, wrong.Body.String(), password)
 
-	rec = h.post(t, h.token, body, "application/json")
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create: got %d; body contains secret: %v", rec.Code, strings.Contains(rec.Body.String(), password))
-	}
+	createdRec := post(t, router, token, body, "application/json")
+	require.Equal(t, http.StatusCreated, createdRec.Code)
 	var created createdUser
-	if err = json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
-		t.Fatal(err)
-	}
-	if created.Login != "ada" {
-		t.Fatalf("login = %s", created.Login)
-	}
-	if _, err = created.ID.Bytes(); err != nil {
-		t.Fatal(err)
-	}
-	assertNoSecret(t, rec.Body.String(), password)
+	require.NoError(t, json.Unmarshal(createdRec.Body.Bytes(), &created))
+	assert.Equal(t, login, created.Login.String())
+	assert.NotContains(t, createdRec.Body.String(), password)
 
-	row, err := sqlcgen.New(pool).GetIdentityByLogin(ctx, "ada")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row.Kind != string(user.KindPassword) {
-		t.Fatalf("kind = %s", row.Kind)
-	}
-	if !strings.HasPrefix(row.PasswordHash, "$argon2id$") || strings.Contains(row.PasswordHash, password) {
-		t.Fatal("stored identity is not an argon2id PHC string")
-	}
+	row, err := sqlcgen.New(pool).GetIdentityByLogin(ctx, login)
+	require.NoError(t, err)
+	assert.Equal(t, string(user.KindPassword), row.Kind)
+	assert.True(t, strings.HasPrefix(row.PasswordHash, "$argon2id$"))
+	assert.NotContains(t, row.PasswordHash, password)
 	hash, err := user.ParsePasswordHash(row.PasswordHash)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	pw, err := user.NewPassword(password)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ok, err := hash.Matches(pw)
-	if err != nil || !ok {
-		t.Fatalf("Matches() = %v, %v", ok, err)
-	}
-	if !row.UserID.Valid || user.UserIDFromBytes(row.UserID.Bytes).String() != created.ID.String() {
-		t.Fatal("stored user id does not match the response")
-	}
+	require.NoError(t, err)
+	matches, err := hash.Matches(pw)
+	require.NoError(t, err)
+	assert.True(t, matches)
+	assert.True(t, row.UserID.Valid)
+	assert.Equal(t, created.ID.String(), user.UserIDFromBytes(row.UserID.Bytes).String())
 
-	rec = h.post(t, h.token, body, "application/json")
-	assertProblem(t, rec, http.StatusConflict)
-	assertNoSecret(t, rec.Body.String(), password, row.PasswordHash, h.token)
+	again := post(t, router, token, body, "application/json")
+	require.Equal(t, http.StatusConflict, again.Code)
+	assert.NotContains(t, again.Body.String(), password)
+	assert.NotContains(t, again.Body.String(), row.PasswordHash)
 	n, err := sqlcgen.New(pool).CountUsers(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatalf("users = %d, want 1", n)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
 }

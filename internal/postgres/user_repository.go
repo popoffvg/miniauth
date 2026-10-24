@@ -37,23 +37,15 @@ func (r *UserRepository) Create(ctx context.Context, account user.User, identity
 	if identity.UserID != account.ID {
 		return errors.New("postgres: identity user does not match")
 	}
-	userID, err := account.ID.Bytes()
-	if err != nil {
-		return err
-	}
-	identityID, err := identity.ID.Bytes()
-	if err != nil {
-		return err
-	}
 	encoded := identity.Secret.Encoded()
 	if encoded == "" {
 		return errors.New("postgres: password hash is empty")
 	}
-	err = r.q.InsertUserIdentity(ctx, sqlcgen.InsertUserIdentityParams{
-		UserID:       pgUUIDBytes(userID),
+	err := r.q.InsertUserIdentity(ctx, sqlcgen.InsertUserIdentityParams{
+		UserID:       pgUUIDBytes(account.ID.Bytes()),
 		Login:        account.Login.String(),
 		CreatedAt:    pgTime(account.CreatedAt),
-		IdentityID:   pgUUIDBytes(identityID),
+		IdentityID:   pgUUIDBytes(identity.ID.Bytes()),
 		Kind:         identity.Kind.String(),
 		PasswordHash: encoded,
 	})

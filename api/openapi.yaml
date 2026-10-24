@@ -1,133 +1,111 @@
 openapi: 3.0.3
 info:
   title: miniauth
-  version: "0.0.0"
-  description: |
-    JSON over HTTP under /api/v1/.
-    An error body is application/problem+json (RFC 9457).
-    A password and a bearer token stay in a request or a response body.
+  version: 0.0.0
 paths:
-  /healthz:
-    get:
-      operationId: getHealth
-      summary: Liveness.
-      responses:
-        "204":
-          description: The process is serving.
   /api/v1/users:
     post:
       operationId: createUser
-      summary: Create a user and a password identity.
-      security:
-        - bearerAuth: []
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateUserRequest"
+              $ref: '#/components/schemas/ApiCreateUserRequest'
       responses:
         "201":
-          description: The user was created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                $ref: '#/components/schemas/ApiCreatedUser'
+          description: Created
         "400":
-          description: The request body is not valid.
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
         "401":
-          description: The bearer token is missing or wrong.
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
         "409":
-          description: The login already exists.
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
         "413":
-          description: The request body is too large.
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
         "415":
-          description: The content type is not application/json.
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/Problem"
-        "500":
-          description: The user was not created.
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+      security:
+      - bearerAuth: []
+  /healthz:
+    get:
+      operationId: getHealth
+      responses:
+        "204":
+          description: No Content
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPI
+      responses:
+        "200":
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: "#/components/schemas/Problem"
+                type: string
+          description: OK
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      description: |
-        Bootstrap admin token.
-        MINIAUTH_ADMIN_TOKEN_SHA256 holds the hex SHA-256 of the token.
-        The token itself is not in the config.
   schemas:
-    CreateUserRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - login
-        - password
+    ApiCreateUserRequest:
       properties:
         login:
-          type: string
-          minLength: 1
           maxLength: 64
-          description: |
-            One to 64 characters.
-            The first and the last are a letter or a digit.
-            The rest may also be ".", "_", "@", "+", or "-".
-            Stored in lower case.
-        password:
-          type: string
           minLength: 1
-          maxLength: 1024
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._@+-]{0,62}[A-Za-z0-9])?$
+          type: string
+        password:
           format: password
-          description: Stored as an argon2id PHC string. The password is not stored.
-    User:
-      type: object
-      additionalProperties: false
+          maxLength: 1024
+          minLength: 1
+          type: string
       required:
-        - id
-        - login
+      - login
+      - password
+      type: object
+    ApiCreatedUser:
       properties:
         id:
-          type: string
           format: uuid
+          type: string
         login:
           type: string
-    Problem:
       type: object
-      additionalProperties: false
-      description: RFC 9457 problem details. type "about:blank" uses the HTTP status as the meaning.
-      required:
-        - type
-        - title
-        - status
+    ApiProblemBody:
       properties:
-        type:
-          type: string
-          format: uri
-        title:
+        detail:
           type: string
         status:
           type: integer
-        detail:
+        title:
           type: string
+        type:
+          type: string
+      type: object
+  securitySchemes:
+    bearerAuth:
+      description: Bootstrap admin token. MINIAUTH_ADMIN_TOKEN_SHA256 holds the hex
+        SHA-256 of the token. The token is not in the config.
+      scheme: bearer
+      type: http

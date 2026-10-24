@@ -4,71 +4,25 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseAdminTokenHash(t *testing.T) {
 	sum := sha256.Sum256([]byte("bootstrap-token"))
 	encoded := hex.EncodeToString(sum[:])
 	hash, err := ParseAdminTokenHash(strings.ToUpper(encoded))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hash.Matches(BearerToken{raw: "bootstrap-token"}) {
-		t.Fatal("hash does not match the token")
-	}
-	if hash.Matches(BearerToken{raw: "other-token"}) {
-		t.Fatal("hash matches a different token")
-	}
+	require.NoError(t, err)
+	assert.True(t, hash.Matches(BearerToken{raw: "bootstrap-token"}))
+	assert.False(t, hash.Matches(BearerToken{raw: "other-token"}))
 	for _, bad := range []string{"", "abcd", encoded + "aa", "zz" + encoded[2:]} {
-		if _, err := ParseAdminTokenHash(bad); err == nil {
-			t.Fatalf("ParseAdminTokenHash(%q) succeeded", bad)
-		}
+		_, err := ParseAdminTokenHash(bad)
+		assert.Error(t, err)
 	}
-}
-
-func TestRequireAdmin(t *testing.T) {
-	h := newHarness(t, &memRepo{})
-	called := false
-	handler := h.router.requireAdmin(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/users", nil)
-	handler.ServeHTTP(rec, req)
-	if called {
-		t.Fatal("next handler ran without a token")
-	}
-	assertProblem(t, rec, http.StatusUnauthorized)
-	if rec.Header().Get("WWW-Authenticate") != "Bearer" {
-		t.Fatalf("WWW-Authenticate = %q", rec.Header().Get("WWW-Authenticate"))
-	}
-
-	called = false
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/users", nil)
-	req.Header.Set("Authorization", "Bearer wrong-token")
-	handler.ServeHTTP(rec, req)
-	if called {
-		t.Fatal("next handler ran with a wrong token")
-	}
-	assertProblem(t, rec, http.StatusUnauthorized)
-	assertNoSecret(t, rec.Body.String(), h.token, "wrong-token")
-
-	called = false
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/users", nil)
-	req.Header.Set("Authorization", "Bearer "+h.token)
-	handler.ServeHTTP(rec, req)
-	if !called || rec.Code != http.StatusNoContent {
-		t.Fatalf("called = %v, status = %d", called, rec.Code)
-	}
-	assertNoSecret(t, rec.Body.String(), h.token)
 }
 
 func TestBearerTokenPrintsRedacted(t *testing.T) {
@@ -83,8 +37,11 @@ func TestBearerTokenPrintsRedacted(t *testing.T) {
 		token.GoString(),
 	}
 	for _, text := range printed {
-		if text != "redacted" || strings.Contains(text, "bootstrap") {
-			t.Fatalf("print = %q, want redacted", text)
-		}
+		assert.Equal(t, "redacted", text)
+		assert.NotContains(t, text, "bootstrap")
 	}
+	var logs strings.Builder
+	slog.New(slog.NewJSONHandler(&logs, nil)).Info("token", "value", token)
+	assert.NotContains(t, logs.String(), "bootstrap")
+	assert.Contains(t, logs.String(), "redacted")
 }

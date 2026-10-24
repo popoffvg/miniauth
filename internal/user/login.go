@@ -11,7 +11,10 @@ const MaxLoginLength = 64
 
 // Login is the name a person types to sign in.
 // It is stored in lower case. It is not a secret.
-type Login string
+// The value is set only by ParseLogin.
+type Login struct {
+	value string
+}
 
 // ParseLogin trims raw, folds it to lower case, and checks the login rules.
 // A login has 1 to 64 characters. The first and last are a letter or a digit.
@@ -19,13 +22,28 @@ type Login string
 func ParseLogin(raw string) (Login, error) {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	if !validLogin(s) {
-		return "", fmt.Errorf("user: login: %w", ErrInvalidLogin)
+		return Login{}, fmt.Errorf("user: login: %w", ErrInvalidLogin)
 	}
-	return Login(s), nil
+	return Login{value: s}, nil
 }
 
 func (l Login) String() string {
-	return string(l)
+	return l.value
+}
+
+// MarshalText encodes the stored login.
+func (l Login) MarshalText() ([]byte, error) {
+	return []byte(l.value), nil
+}
+
+// UnmarshalText parses text with ParseLogin.
+func (l *Login) UnmarshalText(text []byte) error {
+	parsed, err := ParseLogin(string(text))
+	if err != nil {
+		return err
+	}
+	*l = parsed
+	return nil
 }
 
 func validLogin(s string) bool {

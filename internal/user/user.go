@@ -51,7 +51,7 @@ func NewUsers(repo Repository) *Users {
 // Create stores a user and a password identity.
 // The password is hashed before the write. Only the hash is stored.
 func (s *Users) Create(ctx context.Context, login Login, password Password) (User, error) {
-	if login == "" {
+	if login.value == "" {
 		return User{}, ErrInvalidLogin
 	}
 	if password.raw == "" {

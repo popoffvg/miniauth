@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 
@@ -34,8 +33,9 @@ const (
 	argonMaxSaltLen    = 64
 )
 
-// Password is the clear-text password. Printing it yields "redacted".
+// Password is the clear-text password.
 type Password struct {
+	Redacted
 	raw string
 }
 
@@ -50,24 +50,25 @@ func NewPassword(raw string) (Password, error) {
 	return Password{raw: raw}, nil
 }
 
-// String returns "redacted".
-func (p Password) String() string {
-	return "redacted"
+// MarshalText does not write the password.
+func (Password) MarshalText() ([]byte, error) {
+	return []byte("redacted"), nil
 }
 
-// GoString returns "redacted".
-func (p Password) GoString() string {
-	return "redacted"
+// UnmarshalText parses text with NewPassword.
+func (p *Password) UnmarshalText(text []byte) error {
+	parsed, err := NewPassword(string(text))
+	if err != nil {
+		return err
+	}
+	*p = parsed
+	return nil
 }
 
-// Format prints "redacted" for every verb, so a log cannot show the password.
-func (p Password) Format(f fmt.State, _ rune) {
-	_, _ = io.WriteString(f, "redacted")
-}
-
-// PasswordHash is a PHC argon2id string. Printing it yields "redacted".
+// PasswordHash is a PHC argon2id string.
 // The database stores Encoded. It never stores the password.
 type PasswordHash struct {
+	Redacted
 	encoded string
 }
 
@@ -112,19 +113,9 @@ func (h PasswordHash) Matches(password Password) (bool, error) {
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }
 
-// String returns "redacted".
-func (h PasswordHash) String() string {
-	return "redacted"
-}
-
-// GoString returns "redacted".
-func (h PasswordHash) GoString() string {
-	return "redacted"
-}
-
-// Format prints "redacted" for every verb, so a log cannot show the hash.
-func (h PasswordHash) Format(f fmt.State, _ rune) {
-	_, _ = io.WriteString(f, "redacted")
+// MarshalText does not write the PHC string.
+func (PasswordHash) MarshalText() ([]byte, error) {
+	return []byte("redacted"), nil
 }
 
 func encodePHC(memory, iterations uint32, lanes uint8, salt, key []byte) string {

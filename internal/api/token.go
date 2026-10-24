@@ -5,10 +5,10 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
+
+	"github.com/popoffvg/miniauth/internal/user"
 )
 
 // AdminTokenHash is the SHA-256 of the bootstrap admin token.
@@ -38,37 +38,22 @@ func (h AdminTokenHash) Matches(token BearerToken) bool {
 }
 
 // BearerToken is the secret from an Authorization header.
-// Printing it yields "redacted".
 type BearerToken struct {
+	user.Redacted
 	raw string
 }
 
-// String returns "redacted".
-func (t BearerToken) String() string {
-	return "redacted"
-}
-
-// GoString returns "redacted".
-func (t BearerToken) GoString() string {
-	return "redacted"
-}
-
-// Format prints "redacted" for every verb, so a log cannot show the token.
-func (t BearerToken) Format(f fmt.State, _ rune) {
-	_, _ = io.WriteString(f, "redacted")
-}
-
-// requireAdmin allows the request only when the bearer token matches the bootstrap hash.
+// requireAdmin rejects a missing or wrong bearer token.
 // The token MUST NOT reach a log or an error.
-func (r *Router) requireAdmin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		token, ok := bearerToken(req)
-		if !ok || !r.admin.Matches(token) {
+func requireAdmin(admin AdminTokenHash, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token, ok := bearerToken(r)
+		if !ok || !admin.Matches(token) {
 			writeProblem(w, http.StatusUnauthorized, "The bearer token is missing or wrong.")
 			return
 		}
-		next.ServeHTTP(w, req)
-	})
+		next(w, r)
+	}
 }
 
 // bearerToken reads Authorization: Bearer <token>.

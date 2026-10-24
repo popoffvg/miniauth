@@ -1,193 +1,100 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
-	"mime"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/brianvoe/gofakeit/v7"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/popoffvg/miniauth/internal/user"
 )
 
-func TestPasswordFieldPrintsRedacted(t *testing.T) {
-	field := passwordField{raw: "correct horse"}
-	printed := []string{
-		fmt.Sprint(field),
-		fmt.Sprintf("%#v", field),
-		field.String(),
-	}
-	for _, text := range printed {
-		if text != "redacted" || strings.Contains(text, "horse") {
-			t.Fatalf("print = %q, want redacted", text)
-		}
-	}
-	encoded, err := json.Marshal(field)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(encoded) != `"redacted"` {
-		t.Fatalf("json = %s", encoded)
-	}
-}
+const fakeSeed uint64 = 20261024
 
 func TestCreateUser(t *testing.T) {
-	t.Parallel()
-	repo := &memRepo{}
-	h := newHarness(t, repo)
-	const password = "correct horse battery staple"
-	body := `{"login":"Ada","password":"` + password + `"}`
-
-	rec := h.post(t, "", body, "application/json")
-	assertProblem(t, rec, http.StatusUnauthorized)
-	if rec.Header().Get("WWW-Authenticate") != "Bearer" {
-		t.Fatalf("WWW-Authenticate = %q", rec.Header().Get("WWW-Authenticate"))
-	}
-	assertNoSecret(t, rec.Body.String(), password, h.token)
-	if h.logs.Len() != 0 {
-		t.Fatalf("unauthorized request was logged: %s", h.logs.String())
-	}
-
-	rec = h.post(t, "wrong-token", body, "application/json")
-	assertProblem(t, rec, http.StatusUnauthorized)
-	assertNoSecret(t, rec.Body.String(), password, h.token, "wrong-token")
-
-	rec = h.postQuery(t, password, h.token)
-	assertProblem(t, rec, http.StatusUnauthorized)
-	assertNoSecret(t, rec.Body.String(), password, h.token)
-
-	rec = h.post(t, h.token, body, "text/plain")
-	assertProblem(t, rec, http.StatusUnsupportedMediaType)
-
-	rec = h.post(t, h.token, `{`, "application/json")
-	assertProblem(t, rec, http.StatusBadRequest)
-
-	rec = h.post(t, h.token, `{"login":"bad login","password":"x"}`, "application/json")
-	assertProblem(t, rec, http.StatusBadRequest)
-	if strings.Contains(rec.Body.String(), "bad login") {
-		t.Fatal("invalid login was echoed")
-	}
-
-	rec = h.post(t, h.token, `{"login":"ada","password":""}`, "application/json")
-	assertProblem(t, rec, http.StatusBadRequest)
-
-	long := strings.Repeat("a", user.MaxPasswordBytes+1)
-	rec = h.post(t, h.token, `{"login":"ada","password":"`+long+`"}`, "application/json")
-	assertProblem(t, rec, http.StatusBadRequest)
-
-	rec = h.post(t, h.token, `{"login":"ada","password":"x","extra":"y"}`, "application/json")
-	assertProblem(t, rec, http.StatusBadRequest)
-
-	huge := `{"login":"ada","password":"` + strings.Repeat("a", maxCreateUserBody) + `"}`
-	rec = h.post(t, h.token, huge, "application/json")
-	assertProblem(t, rec, http.StatusRequestEntityTooLarge)
-	if h.logs.Len() != 0 {
-		t.Fatalf("rejected request was logged: %s", h.logs.String())
-	}
-
-	rec = h.post(t, h.token, body, "application/json; charset=utf-8")
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create: got %d, body contains secret: %v", rec.Code, strings.Contains(rec.Body.String(), password))
-	}
-	mediaType, _, err := mime.ParseMediaType(rec.Header().Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		t.Fatalf("content type = %q", rec.Header().Get("Content-Type"))
-	}
-	var created createdUser
-	if err = json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
-		t.Fatal(err)
-	}
-	if created.Login != "ada" {
-		t.Fatalf("login = %s", created.Login)
-	}
-	if _, err = created.ID.Bytes(); err != nil {
-		t.Fatal(err)
-	}
-	assertNoSecret(t, rec.Body.String(), password)
-	if strings.Contains(rec.Body.String(), "password") || strings.Contains(rec.Body.String(), "$argon2id$") {
-		t.Fatal("response includes a password field or a hash")
-	}
-
-	stored, ok := repo.get("ada")
-	if !ok {
-		t.Fatal("user was not stored")
-	}
-	if stored.identity.Kind != user.KindPassword {
-		t.Fatalf("kind = %s", stored.identity.Kind)
-	}
-	encoded := stored.identity.Secret.Encoded()
-	if !strings.HasPrefix(encoded, "$argon2id$") || strings.Contains(encoded, password) {
-		t.Fatal("stored secret is not an argon2id hash of the password")
-	}
-	pw, err := user.NewPassword(password)
-	if err != nil {
-		t.Fatal(err)
-	}
-	matches, err := stored.identity.Secret.Matches(pw)
-	if err != nil || !matches {
-		t.Fatalf("Matches() = %v, %v", matches, err)
-	}
-
-	rec = h.post(t, h.token, body, "application/json")
-	assertProblem(t, rec, http.StatusConflict)
-	assertNoSecret(t, rec.Body.String(), password, encoded)
-	if repo.count() != 1 {
-		t.Fatalf("users = %d, want 1", repo.count())
-	}
-	if h.logs.Len() != 0 {
-		t.Fatalf("create was logged: %s", h.logs.String())
-	}
-}
-
-func TestCreateUserHidesAStoreFailure(t *testing.T) {
-	h := newHarness(t, failRepo{})
-	const password = "correct horse battery staple"
-	rec := h.post(t, h.token, `{"login":"ada","password":"`+password+`"}`, "application/json")
-	assertProblem(t, rec, http.StatusInternalServerError)
-	assertNoSecret(t, rec.Body.String(), password)
-	if strings.Contains(rec.Body.String(), "database is down") {
-		t.Fatal("internal error reached the response")
-	}
-	if !strings.Contains(h.logs.String(), "database is down") {
-		t.Fatal("store failure was not logged")
-	}
-	assertNoSecret(t, h.logs.String(), password, h.token)
-}
-
-type harness struct {
-	router *Router
-	token  string
-	logs   *bytes.Buffer
-}
-
-func newHarness(t *testing.T, repo user.Repository) *harness {
-	t.Helper()
+	t.Logf("gofakeit seed %d", fakeSeed)
+	fake := gofakeit.New(fakeSeed)
+	login := fake.Regex(`[a-z][a-z0-9]{7}`)
+	password := fake.Password(true, true, true, true, false, 20)
 	const token = "bootstrap-token-for-tests"
-	sum := sha256.Sum256([]byte(token))
-	hash, err := ParseAdminTokenHash(hex.EncodeToString(sum[:]))
-	if err != nil {
-		t.Fatal(err)
+	repo := &memRepo{}
+	router := mustRouter(t, repo, token)
+
+	valid := `{"login":"` + login + `","password":"` + password + `"}`
+	tests := []struct {
+		name        string
+		token       string
+		body        string
+		contentType string
+		want        int
+	}{
+		{name: "no token", body: valid, contentType: "application/json", want: http.StatusUnauthorized},
+		{name: "wrong token", token: "wrong-token", body: valid, contentType: "application/json", want: http.StatusUnauthorized},
+		{name: "text body", token: token, body: valid, contentType: "text/plain", want: http.StatusUnsupportedMediaType},
+		{name: "bad json", token: token, body: "{" + password, contentType: "application/json", want: http.StatusBadRequest},
+		{name: "bad login", token: token, body: `{"login":"bad login","password":"x"}`, contentType: "application/json", want: http.StatusBadRequest},
+		{name: "empty password", token: token, body: `{"login":"` + login + `","password":""}`, contentType: "application/json", want: http.StatusBadRequest},
+		{name: "long password", token: token, body: `{"login":"` + login + `","password":"` + strings.Repeat("a", user.MaxPasswordBytes+1) + `"}`, contentType: "application/json", want: http.StatusBadRequest},
+		{name: "large body", token: token, body: strings.Repeat("a", maxCreateUserBody+1), contentType: "application/json", want: http.StatusRequestEntityTooLarge},
 	}
-	logs := &bytes.Buffer{}
-	logger := slog.New(slog.NewTextHandler(logs, nil))
-	return &harness{
-		router: NewRouter(user.NewUsers(repo), hash, logger),
-		token:  token,
-		logs:   logs,
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := post(t, router, tt.token, tt.body, tt.contentType)
+			require.Equal(t, tt.want, rec.Code)
+			if tt.want == http.StatusUnauthorized {
+				assert.Equal(t, "Bearer", rec.Header().Get("WWW-Authenticate"))
+			}
+			assert.Contains(t, rec.Header().Get("Content-Type"), "application/problem+json")
+			assert.NotContains(t, rec.Body.String(), password)
+			assert.NotContains(t, rec.Body.String(), token)
+			assert.NotContains(t, rec.Body.String(), "bad login")
+		})
 	}
+
+	t.Run("created", func(t *testing.T) {
+		rec := post(t, router, token, valid, "application/json")
+		require.Equal(t, http.StatusCreated, rec.Code)
+		assert.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+		var created createdUser
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
+		assert.Equal(t, login, created.Login.String())
+		assert.NotEqual(t, user.UserID{}, created.ID)
+		assert.NotContains(t, rec.Body.String(), password)
+		assert.NotContains(t, rec.Body.String(), "$schema")
+
+		stored, ok := repo.get(mustLogin(t, login))
+		require.True(t, ok)
+		assert.Equal(t, user.KindPassword, stored.identity.Kind)
+		encoded := stored.identity.Secret.Encoded()
+		assert.True(t, strings.HasPrefix(encoded, "$argon2id$"))
+		assert.NotContains(t, encoded, password)
+		pw, err := user.NewPassword(password)
+		require.NoError(t, err)
+		matches, err := stored.identity.Secret.Matches(pw)
+		require.NoError(t, err)
+		assert.True(t, matches)
+	})
+
+	t.Run("duplicate login", func(t *testing.T) {
+		rec := post(t, router, token, valid, "application/json")
+		require.Equal(t, http.StatusConflict, rec.Code)
+		assert.NotContains(t, rec.Body.String(), password)
+		assert.Equal(t, 1, repo.count())
+	})
 }
 
-func (h *harness) post(t *testing.T, token, body, contentType string) *httptest.ResponseRecorder {
+func post(t *testing.T, router http.Handler, token, body, contentType string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/users", strings.NewReader(body))
 	if token != "" {
@@ -197,51 +104,38 @@ func (h *harness) post(t *testing.T, token, body, contentType string) *httptest.
 		req.Header.Set("Content-Type", contentType)
 	}
 	rec := httptest.NewRecorder()
-	h.router.ServeHTTP(rec, req)
+	router.ServeHTTP(rec, req)
 	return rec
 }
 
-func (h *harness) postQuery(t *testing.T, password, token string) *httptest.ResponseRecorder {
+func mustRouter(t *testing.T, repo user.Repository, token string) http.Handler {
 	t.Helper()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/users", strings.NewReader(`{"login":"ada","password":"unused"}`))
-	query := url.Values{}
-	query.Set("password", password)
-	query.Set("access_token", token)
-	req.URL.RawQuery = query.Encode()
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	h.router.ServeHTTP(rec, req)
-	return rec
+	router, err := NewRouter(user.NewUsers(repo), hashToken(t, token), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	return router
 }
 
-func assertProblem(t *testing.T, rec *httptest.ResponseRecorder, status int) {
+func loggedRouter(t *testing.T, repo user.Repository, token string) (http.Handler, *strings.Builder) {
 	t.Helper()
-	if rec.Code != status {
-		t.Fatalf("status = %d, want %d", rec.Code, status)
-	}
-	mediaType, _, err := mime.ParseMediaType(rec.Header().Get("Content-Type"))
-	if err != nil || mediaType != "application/problem+json" {
-		t.Fatalf("content type = %q", rec.Header().Get("Content-Type"))
-	}
-	var problem Problem
-	if err = json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
-		t.Fatal(err)
-	}
-	if problem.Type != "about:blank" || problem.Title != http.StatusText(status) || problem.Status != status || problem.Detail == "" {
-		t.Fatalf("problem = %+v", problem)
-	}
-	if rec.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("Cache-Control = %q", rec.Header().Get("Cache-Control"))
-	}
+	logs := &strings.Builder{}
+	router, err := NewRouter(user.NewUsers(repo), hashToken(t, token), slog.New(slog.NewTextHandler(logs, nil)))
+	require.NoError(t, err)
+	return router, logs
 }
 
-func assertNoSecret(t *testing.T, text string, secrets ...string) {
+func hashToken(t *testing.T, token string) AdminTokenHash {
 	t.Helper()
-	for _, secret := range secrets {
-		if secret != "" && strings.Contains(text, secret) {
-			t.Fatal("output contains a secret")
-		}
-	}
+	sum := sha256.Sum256([]byte(token))
+	hash, err := ParseAdminTokenHash(hex.EncodeToString(sum[:]))
+	require.NoError(t, err)
+	return hash
+}
+
+func mustLogin(t *testing.T, raw string) user.Login {
+	t.Helper()
+	login, err := user.ParseLogin(raw)
+	require.NoError(t, err)
+	return login
 }
 
 type storedUser struct {

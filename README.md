@@ -4,7 +4,7 @@ A small identity server in Go and PostgreSQL: password login, persistent browser
 
 Status: early. The service answers `GET /healthz` and `POST /api/v1/users`.
 
-`POST /api/v1/users` creates a user and one password identity. The body is JSON: `login` and `password`. The caller sends `Authorization: Bearer <token>`. `MINIAUTH_ADMIN_TOKEN_SHA256` is the hex SHA-256 of that token. The token is not in the config. The route is described in `api/openapi.yaml`.
+`POST /api/v1/users` creates a user and one password identity. The body is JSON: `login` and `password`. The caller sends `Authorization: Bearer <token>`. `MINIAUTH_ADMIN_TOKEN_SHA256` is the hex SHA-256 of that token. The token is not in the config. `GET /openapi.yaml` serves the description generated from the handlers.
 
 ## Development
 
