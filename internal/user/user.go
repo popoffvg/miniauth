@@ -57,14 +57,8 @@ func (s *Users) Create(ctx context.Context, login Login, password Password) (Use
 	if password.raw == "" {
 		return User{}, ErrEmptyPassword
 	}
-	id, err := NewUserID()
-	if err != nil {
-		return User{}, err
-	}
-	identityID, err := NewIdentityID()
-	if err != nil {
-		return User{}, err
-	}
+	id := NewUserID()
+	identityID := NewIdentityID()
 	hash, err := HashPassword(password)
 	if err != nil {
 		return User{}, err

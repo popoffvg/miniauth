@@ -2,7 +2,9 @@
 // dependencies never reach the binary. Run one with: go tool -modfile=tools/go.mod <name>
 module github.com/popoffvg/miniauth/tools
 
-go 1.26.0
+go 1.27.0
+
+toolchain go1.27.3
 
 tool (
 	github.com/axw/gocov/gocov

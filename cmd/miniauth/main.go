@@ -34,7 +34,7 @@ func runAdmin() int {
 	defer stop()
 	err := runCLI(ctx, os.Args[1:], os.Getenv("MINIAUTH_DATABASE_URL"), os.Stdin, os.Stdout)
 	if err != nil && !errors.Is(err, errHelp) {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
+		slog.Error("miniauth: command failed", "err", err)
 		return 1
 	}
 	return 0
