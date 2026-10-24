@@ -26,8 +26,8 @@ func TestMigrateAppliesEveryMigrationOnce(t *testing.T) {
 	if err = pool.QueryRow(ctx, "SELECT max(version_id) FROM goose_db_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("goose version: got %d, want 2", version)
+	if version != 3 {
+		t.Fatalf("goose version: got %d, want 3", version)
 	}
 
 	ok, err := sqlcgen.New(pool).Ping(ctx)

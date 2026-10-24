@@ -18,11 +18,26 @@ import (
 const shutdownTimeout = 10 * time.Second
 
 func main() {
+	if len(os.Args) > 1 {
+		os.Exit(runAdmin())
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger, listenAddr(), os.Getenv("MINIAUTH_DATABASE_URL")); err != nil {
 		logger.Error("miniauth: stopped", "err", err)
 		os.Exit(1)
 	}
+}
+
+func runAdmin() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	err := runCLI(ctx, os.Args[1:], os.Getenv("MINIAUTH_DATABASE_URL"), os.Stdin, os.Stdout)
+	if err != nil && !errors.Is(err, errHelp) {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		return 1
+	}
+	return 0
 }
 
 func listenAddr() string {

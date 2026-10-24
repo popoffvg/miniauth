@@ -8,6 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Identity struct {
+	ID           pgtype.UUID
+	UserID       pgtype.UUID
+	Kind         string
+	PasswordHash string
+	CreatedAt    pgtype.Timestamptz
+}
+
 type LoginFlow struct {
 	ID            pgtype.UUID
 	SecretHash    []byte
@@ -18,4 +26,10 @@ type LoginFlow struct {
 	NeedsSecond   bool
 	PendingFactor int32
 	ExpiresAt     pgtype.Timestamptz
+}
+
+type User struct {
+	ID        pgtype.UUID
+	Login     string
+	CreatedAt pgtype.Timestamptz
 }
