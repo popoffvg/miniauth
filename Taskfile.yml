@@ -21,8 +21,8 @@ tasks:
     desc: Install a git pre-push hook that runs `task pre-push`
     cmds:
       - |
-        hook="$(git rev-parse --git-path hooks)/pre-push"
-        printf '#!/bin/sh\nexec task pre-push\n' > "$hook"
+        hook="$(git rev-parse --git-dir)/hooks/pre-push"
+        printf '#!/bin/sh\nexec mise exec -- task pre-push\n' > "$hook"
         chmod +x "$hook"
         echo "installed $hook"
 
