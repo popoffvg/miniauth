@@ -12,11 +12,14 @@ import (
 
 type Querier interface {
 	CountLoginFlows(ctx context.Context) (int64, error)
+	CountUsers(ctx context.Context) (int64, error)
 	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
 	DeleteExpiredLoginFlows(ctx context.Context) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
 	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
+	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
+	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
 	Ping(ctx context.Context) (int32, error)
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
 }

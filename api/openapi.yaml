@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: miniauth
+  version: 0.0.0
+paths:
+  /api/v1/users:
+    post:
+      operationId: createUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiCreateUserRequest'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiCreatedUser'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+      security:
+      - bearerAuth: []
+  /healthz:
+    get:
+      operationId: getHealth
+      responses:
+        "204":
+          description: No Content
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPI
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: OK
+components:
+  schemas:
+    ApiCreateUserRequest:
+      properties:
+        login:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._@+-]{0,62}[A-Za-z0-9])?$
+          type: string
+        password:
+          format: password
+          maxLength: 1024
+          minLength: 1
+          type: string
+      required:
+      - login
+      - password
+      type: object
+    ApiCreatedUser:
+      properties:
+        id:
+          format: uuid
+          type: string
+        login:
+          type: string
+      type: object
+    ApiProblemBody:
+      properties:
+        detail:
+          type: string
+        status:
+          type: integer
+        title:
+          type: string
+        type:
+          type: string
+      type: object
+  securitySchemes:
+    bearerAuth:
+      description: Bootstrap admin token. MINIAUTH_ADMIN_TOKEN_SHA256 holds the hex
+        SHA-256 of the token. The token is not in the config.
+      scheme: bearer
+      type: http

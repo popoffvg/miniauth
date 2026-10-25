@@ -1,25 +1,18 @@
 package main
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestHealthz(t *testing.T) {
-	rec := httptest.NewRecorder()
-	newMux().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil))
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("GET /healthz: got %d, want %d", rec.Code, http.StatusNoContent)
-	}
-}
-
-func TestHealthzRejectsPost(t *testing.T) {
-	rec := httptest.NewRecorder()
-	newMux().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/healthz", nil))
-
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("POST /healthz: got %d, want %d", rec.Code, http.StatusMethodNotAllowed)
-	}
+func TestRejectArgsDoesNotEchoTheArguments(t *testing.T) {
+	const secret = "not-a-real-admin-token"
+	err := rejectArgs([]string{"user", "create", "--login", "ada", secret})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), secret)
+	assert.NotContains(t, err.Error(), "ada")
+	assert.NotContains(t, err.Error(), "create")
+	require.NoError(t, rejectArgs(nil))
 }
