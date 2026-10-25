@@ -49,6 +49,14 @@ func listenAddr() string {
 	return "127.0.0.1:8080"
 }
 
+func publicURL() (api.PublicURL, error) {
+	parsed, err := api.ParsePublicURL(os.Getenv("MINIAUTH_PUBLIC_URL"))
+	if err != nil {
+		return api.PublicURL{}, errors.New("miniauth: MINIAUTH_PUBLIC_URL is not an http or https origin")
+	}
+	return parsed, nil
+}
+
 func sessionDomain() (sessions.Domain, error) {
 	domain, err := sessions.ParseDomain(os.Getenv("MINIAUTH_COOKIE_DOMAIN"))
 	if err != nil {
@@ -93,10 +101,16 @@ func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error 
 	if err != nil {
 		return err
 	}
+	public, err := publicURL()
+	if err != nil {
+		return err
+	}
 	handler, err := api.NewRouter(
 		users.NewService(postgres.NewUserRepository(pool)),
 		sessions.NewService(postgres.NewSessionRepository(pool)),
+		postgres.NewGroupRepository(pool),
 		domain,
+		public,
 		adminHash,
 		logger,
 	)

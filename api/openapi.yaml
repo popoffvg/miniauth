@@ -50,6 +50,31 @@ paths:
           description: Unsupported Media Type
       security:
       - bearerAuth: []
+  /auth/check:
+    get:
+      description: Traefik forwardAuth. A valid session answers 200 and sets X-Auth-User,
+        X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session
+        is redirected to the login page. Any other request with no session is 401.
+        A user outside group is 403. scope does not limit a session.
+      operationId: forwardAuth
+      parameters:
+      - in: query
+        name: scope
+        schema:
+          type: string
+      - in: query
+        name: group
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+        "302":
+          description: Found
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden
   /healthz:
     get:
       operationId: getHealth

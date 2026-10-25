@@ -24,8 +24,11 @@ type Querier interface {
 	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
+	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
+	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
 	Ping(ctx context.Context) (int32, error)
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
 }

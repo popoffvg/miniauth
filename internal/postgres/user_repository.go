@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -53,6 +54,30 @@ func (r *UserRepository) Create(ctx context.Context, account users.User, identit
 		return createUserError(err)
 	}
 	return nil
+}
+
+// Find returns the user with id.
+// A missing id is users.ErrNotFound.
+func (r *UserRepository) Find(ctx context.Context, id users.ID) (users.User, error) {
+	row, err := r.q.GetUserByID(ctx, pgUUIDBytes(id.Bytes()))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return users.User{}, users.ErrNotFound
+	}
+	if err != nil {
+		return users.User{}, fmt.Errorf("postgres: load user: %w", err)
+	}
+	if !row.ID.Valid || !row.CreatedAt.Valid {
+		return users.User{}, errors.New("postgres: user row is incomplete")
+	}
+	login, err := users.ParseLogin(row.Login)
+	if err != nil {
+		return users.User{}, fmt.Errorf("postgres: load user: %w", err)
+	}
+	return users.User{
+		ID:        users.IDFromBytes(row.ID.Bytes),
+		Login:     login,
+		CreatedAt: row.CreatedAt.Time.UTC(),
+	}, nil
 }
 
 func createUserError(err error) error {

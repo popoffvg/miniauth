@@ -111,7 +111,7 @@ func post(t *testing.T, router http.Handler, token, body, contentType string) *h
 
 func mustRouter(t *testing.T, repo users.Repository, token string) http.Handler {
 	t.Helper()
-	router, err := NewRouter(users.NewService(repo), sessions.NewService(newMemSessions()), sessions.Domain{}, hashToken(t, token), slog.New(slog.DiscardHandler))
+	router, err := NewRouter(users.NewService(repo), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, token), slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	return router
 }
@@ -119,7 +119,7 @@ func mustRouter(t *testing.T, repo users.Repository, token string) http.Handler 
 func loggedRouter(t *testing.T, repo users.Repository, token string) (http.Handler, *strings.Builder) {
 	t.Helper()
 	logs := &strings.Builder{}
-	router, err := NewRouter(users.NewService(repo), sessions.NewService(newMemSessions()), sessions.Domain{}, hashToken(t, token), slog.New(slog.NewTextHandler(logs, nil)))
+	router, err := NewRouter(users.NewService(repo), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, token), slog.New(slog.NewTextHandler(logs, nil)))
 	require.NoError(t, err)
 	return router, logs
 }
@@ -162,6 +162,26 @@ func (m *memRepo) Create(_ context.Context, account users.User, identity users.I
 	return nil
 }
 
+func (m *memRepo) Find(_ context.Context, id users.ID) (users.User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, stored := range m.byLogin {
+		if stored.account.ID == id {
+			return stored.account, nil
+		}
+	}
+	return users.User{}, users.ErrNotFound
+}
+
+func (m *memRepo) put(account users.User) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.byLogin == nil {
+		m.byLogin = map[users.Login]storedUser{}
+	}
+	m.byLogin[account.Login] = storedUser{account: account}
+}
+
 func (m *memRepo) get(login users.Login) (storedUser, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -179,4 +199,8 @@ type failRepo struct{}
 
 func (failRepo) Create(context.Context, users.User, users.Identity) error {
 	return errors.New("database is down")
+}
+
+func (failRepo) Find(context.Context, users.ID) (users.User, error) {
+	return users.User{}, errors.New("database is down")
 }

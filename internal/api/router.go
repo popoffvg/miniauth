@@ -8,6 +8,7 @@ import (
 	"github.com/swaggest/openapi-go"
 	"github.com/swaggest/openapi-go/openapi3"
 
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -23,13 +24,17 @@ type route struct {
 	response any
 	status   int
 	errors   []int
+	empty    []int
+	doc      string
 	public   bool
 }
 
 type service struct {
 	accounts *users.Service
 	browser  *sessions.Service
+	members  groups.Repository
 	domain   sessions.Domain
+	public   PublicURL
 	admin    AdminTokenHash
 	spec     []byte
 }
@@ -37,11 +42,19 @@ type service struct {
 // NewRouter serves the HTTP API.
 // admin is the SHA-256 of the bootstrap token.
 // domain is the Domain attribute of the session cookie. The zero value is a host-only cookie.
-func NewRouter(accounts *users.Service, browser *sessions.Service, domain sessions.Domain, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
+// public is the origin of the login page. The zero value redirects to a path.
+func NewRouter(accounts *users.Service, browser *sessions.Service, members groups.Repository, domain sessions.Domain, public PublicURL, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	svc := &service{accounts: accounts, browser: browser, domain: domain, admin: admin}
+	svc := &service{
+		accounts: accounts,
+		browser:  browser,
+		members:  members,
+		domain:   domain,
+		public:   public,
+		admin:    admin,
+	}
 	mux := http.NewServeMux()
 	reflector := openapi3.NewReflector()
 	reflector.Spec.Info.WithTitle("miniauth").WithVersion("0.0.0")
@@ -104,6 +117,17 @@ func (s *service) routes() []route {
 			},
 		},
 		{
+			method:  http.MethodGet,
+			path:    "/auth/check",
+			id:      "forwardAuth",
+			handler: s.forwardAuth,
+			request: new(forwardAuthRequest),
+			status:  http.StatusOK,
+			empty:   []int{http.StatusFound, http.StatusUnauthorized, http.StatusForbidden},
+			doc:     "Traefik forwardAuth. A valid session answers 200 and sets X-Auth-User, X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session is redirected to the login page. Any other request with no session is 401. A user outside group is 403. scope does not limit a session.",
+			public:  true,
+		},
+		{
 			method:  http.MethodPost,
 			path:    "/logout",
 			id:      "logout",
@@ -129,6 +153,9 @@ func addOperation(reflector *openapi3.Reflector, rt route) error {
 		return fmt.Errorf("api: openapi: %w", err)
 	}
 	oc.SetID(rt.id)
+	if rt.doc != "" {
+		oc.SetDescription(rt.doc)
+	}
 	if rt.request != nil {
 		oc.AddReqStructure(rt.request)
 	}
@@ -137,6 +164,9 @@ func addOperation(reflector *openapi3.Reflector, rt route) error {
 	}
 	if !rt.public {
 		oc.AddSecurity("bearerAuth")
+	}
+	for _, status := range rt.empty {
+		oc.AddRespStructure(new(struct{}), openapi.WithHTTPStatus(status))
 	}
 	for _, status := range rt.errors {
 		oc.AddRespStructure(new(problemBody), openapi.WithHTTPStatus(status))

@@ -49,6 +49,7 @@ func TestOpenAPIIsGeneratedFromTheRoutes(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, "/healthz")
 	assert.Contains(t, body, "/api/v1/users")
+	assert.Contains(t, body, "/auth/check")
 	assert.Contains(t, body, "/logout")
 	assert.Contains(t, body, "/logout/everywhere")
 	assert.Contains(t, body, "bearerAuth")
@@ -176,6 +177,7 @@ func TestAuthFailsClosed(t *testing.T) {
 	public := map[string]bool{
 		"/healthz":           true,
 		"/openapi.yaml":      true,
+		"/auth/check":        true,
 		"/logout":            true,
 		"/logout/everywhere": true,
 	}
