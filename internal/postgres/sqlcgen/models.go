@@ -28,6 +28,14 @@ type LoginFlow struct {
 	ExpiresAt     pgtype.Timestamptz
 }
 
+type Session struct {
+	SecretHash []byte
+	UserID     pgtype.UUID
+	Factors    int32
+	AuthAt     pgtype.Timestamptz
+	ExpiresAt  pgtype.Timestamptz
+}
+
 type User struct {
 	ID        pgtype.UUID
 	Login     string

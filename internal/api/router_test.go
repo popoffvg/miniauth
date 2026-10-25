@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -48,6 +49,8 @@ func TestOpenAPIIsGeneratedFromTheRoutes(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, "/healthz")
 	assert.Contains(t, body, "/api/v1/users")
+	assert.Contains(t, body, "/logout")
+	assert.Contains(t, body, "/logout/everywhere")
 	assert.Contains(t, body, "bearerAuth")
 	assert.Contains(t, body, "maxLength: 64")
 	assert.Contains(t, body, "maxLength: 1024")
@@ -83,18 +86,22 @@ func TestRequestLogOmitsSecrets(t *testing.T) {
 	query.Set("access_token", token)
 	query.Set("password", password)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/users?"+query.Encode(), strings.NewReader(body))
+	const sessionCookie = "cookie-value-must-stay-out-of-the-log"
+	req.AddCookie(&http.Cookie{Name: sessions.CookieName, Value: sessionCookie})
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Request-ID", token)
+	req.Header.Set("X-Request-ID", sessionCookie)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	assert.NotEqual(t, token, rec.Header().Get("X-Request-ID"))
+	assert.NotEqual(t, sessionCookie, rec.Header().Get("X-Request-ID"))
 	text := logs.String()
 	assert.Contains(t, text, "http request")
 	assert.Contains(t, text, "request_id")
 	assert.NotContains(t, text, token)
 	assert.NotContains(t, text, password)
+	assert.NotContains(t, text, sessionCookie)
 	assert.NotContains(t, text, "access_token")
 	assert.NotContains(t, rec.Body.String(), token)
 	assert.NotContains(t, rec.Body.String(), password)
@@ -103,6 +110,7 @@ func TestRequestLogOmitsSecrets(t *testing.T) {
 	assert.Contains(t, recorded, "http.response.status_code=401")
 	assert.NotContains(t, recorded, token)
 	assert.NotContains(t, recorded, password)
+	assert.NotContains(t, recorded, sessionCookie)
 	assert.NotContains(t, recorded, "access_token")
 }
 
@@ -165,21 +173,25 @@ func spanText(spans []sdktrace.ReadOnlySpan) string {
 }
 
 func TestAuthFailsClosed(t *testing.T) {
+	public := map[string]bool{
+		"/healthz":           true,
+		"/openapi.yaml":      true,
+		"/logout":            true,
+		"/logout/everywhere": true,
+	}
 	svc := &service{}
+	seen := map[string]bool{}
 	for _, rt := range svc.routes() {
-		if rt.public {
-			continue
-		}
+		seen[rt.path] = true
 		assert.NotEmpty(t, rt.method)
 		assert.NotEmpty(t, rt.path)
-		assert.False(t, rt.public)
-	}
-	var sawPublic bool
-	for _, rt := range svc.routes() {
-		if rt.path == "/healthz" {
-			assert.True(t, rt.public)
-			sawPublic = true
+		if public[rt.path] {
+			assert.True(t, rt.public, rt.path)
+			continue
 		}
+		assert.False(t, rt.public, rt.path)
 	}
-	assert.True(t, sawPublic)
+	for path := range public {
+		assert.True(t, seen[path], path)
+	}
 }
