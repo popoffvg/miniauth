@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/popoffvg/miniauth/internal/sessions"
 )
 
 const httpTracerName = "github.com/popoffvg/miniauth/internal/api"
@@ -105,17 +108,27 @@ func requestID(r *http.Request) string {
 // echoesCredential reports whether id is the bearer token or a query value.
 // A client can put a secret in X-Request-ID. That value MUST NOT be logged.
 func echoesCredential(r *http.Request, id string) bool {
-	if token, ok := bearerToken(r); ok && token.raw == id {
+	if token, ok := bearerToken(r); ok && secretEqual(token.raw, id) {
+		return true
+	}
+	if cookie, err := r.Cookie(sessions.CookieName); err == nil && secretEqual(cookie.Value, id) {
 		return true
 	}
 	for _, values := range r.URL.Query() {
 		for _, value := range values {
-			if value == id {
+			if secretEqual(value, id) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func secretEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func validRequestID(id string) bool {

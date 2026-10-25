@@ -8,6 +8,7 @@ import (
 	"github.com/swaggest/openapi-go"
 	"github.com/swaggest/openapi-go/openapi3"
 
+	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -27,17 +28,20 @@ type route struct {
 
 type service struct {
 	accounts *users.Service
+	browser  *sessions.Service
+	domain   sessions.Domain
 	admin    AdminTokenHash
 	spec     []byte
 }
 
 // NewRouter serves the HTTP API.
 // admin is the SHA-256 of the bootstrap token.
-func NewRouter(accounts *users.Service, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
+// domain is the Domain attribute of the session cookie. The zero value is a host-only cookie.
+func NewRouter(accounts *users.Service, browser *sessions.Service, domain sessions.Domain, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	svc := &service{accounts: accounts, admin: admin}
+	svc := &service{accounts: accounts, browser: browser, domain: domain, admin: admin}
 	mux := http.NewServeMux()
 	reflector := openapi3.NewReflector()
 	reflector.Spec.Info.WithTitle("miniauth").WithVersion("0.0.0")
@@ -98,6 +102,23 @@ func (s *service) routes() []route {
 				http.StatusRequestEntityTooLarge,
 				http.StatusUnsupportedMediaType,
 			},
+		},
+		{
+			method:  http.MethodPost,
+			path:    "/logout",
+			id:      "logout",
+			handler: s.logout,
+			status:  http.StatusNoContent,
+			public:  true,
+		},
+		{
+			method:  http.MethodPost,
+			path:    "/logout/everywhere",
+			id:      "logoutEverywhere",
+			handler: s.logoutEverywhere,
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusUnauthorized},
+			public:  true,
 		},
 	}
 }

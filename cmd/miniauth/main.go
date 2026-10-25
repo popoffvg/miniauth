@@ -14,6 +14,7 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/postgres"
+	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/telemetry"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -48,6 +49,14 @@ func listenAddr() string {
 	return "127.0.0.1:8080"
 }
 
+func sessionDomain() (sessions.Domain, error) {
+	domain, err := sessions.ParseDomain(os.Getenv("MINIAUTH_COOKIE_DOMAIN"))
+	if err != nil {
+		return sessions.Domain{}, errors.New("miniauth: MINIAUTH_COOKIE_DOMAIN is not a valid cookie domain")
+	}
+	return domain, nil
+}
+
 func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -80,7 +89,17 @@ func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error 
 	}
 	logger.Info("miniauth: migrations applied")
 
-	handler, err := api.NewRouter(users.NewService(postgres.NewUserRepository(pool)), adminHash, logger)
+	domain, err := sessionDomain()
+	if err != nil {
+		return err
+	}
+	handler, err := api.NewRouter(
+		users.NewService(postgres.NewUserRepository(pool)),
+		sessions.NewService(postgres.NewSessionRepository(pool)),
+		domain,
+		adminHash,
+		logger,
+	)
 	if err != nil {
 		return err
 	}

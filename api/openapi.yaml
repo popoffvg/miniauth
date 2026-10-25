@@ -56,6 +56,24 @@ paths:
       responses:
         "204":
           description: No Content
+  /logout:
+    post:
+      operationId: logout
+      responses:
+        "204":
+          description: No Content
+  /logout/everywhere:
+    post:
+      operationId: logoutEverywhere
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
   /openapi.yaml:
     get:
       operationId: getOpenAPI
