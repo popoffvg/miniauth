@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
-	"github.com/popoffvg/miniauth/internal/user"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 // PostgreSQL unique_violation. The message and the detail are not returned:
@@ -26,12 +26,12 @@ func NewUserRepository(db sqlcgen.DBTX) *UserRepository {
 	return &UserRepository{q: sqlcgen.New(db)}
 }
 
-var _ user.Repository = (*UserRepository)(nil)
+var _ users.Repository = (*UserRepository)(nil)
 
 // Create inserts the user and the password identity in one statement.
-// A login that is already stored returns user.ErrLoginTaken.
-func (r *UserRepository) Create(ctx context.Context, account user.User, identity user.Identity) error {
-	if identity.Kind != user.KindPassword {
+// A login that is already stored returns users.ErrLoginTaken.
+func (r *UserRepository) Create(ctx context.Context, account users.User, identity users.Identity) error {
+	if identity.Kind != users.KindPassword {
 		return fmt.Errorf("postgres: identity kind %q", identity.Kind)
 	}
 	if identity.UserID != account.ID {
@@ -59,7 +59,7 @@ func createUserError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		if pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == "users_login_unique" {
-			return user.ErrLoginTaken
+			return users.ErrLoginTaken
 		}
 		return fmt.Errorf("postgres: create user: %s (SQLSTATE %s)", pgErr.ConstraintName, pgErr.Code)
 	}

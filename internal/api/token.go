@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/popoffvg/miniauth/internal/user"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 // AdminTokenHash is the SHA-256 of the bootstrap admin token.
@@ -39,7 +39,7 @@ func (h AdminTokenHash) Matches(token BearerToken) bool {
 
 // BearerToken is the secret from an Authorization header.
 type BearerToken struct {
-	user.Redacted
+	users.Redacted
 	raw string
 }
 

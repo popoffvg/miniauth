@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/popoffvg/miniauth/internal/user"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 const fakeSeed uint64 = 20261024
@@ -45,7 +45,7 @@ func TestCreateUser(t *testing.T) {
 		{name: "bad json", token: token, body: "{" + password, contentType: "application/json", want: http.StatusBadRequest},
 		{name: "bad login", token: token, body: `{"login":"bad login","password":"x"}`, contentType: "application/json", want: http.StatusBadRequest},
 		{name: "empty password", token: token, body: `{"login":"` + login + `","password":""}`, contentType: "application/json", want: http.StatusBadRequest},
-		{name: "long password", token: token, body: `{"login":"` + login + `","password":"` + strings.Repeat("a", user.MaxPasswordBytes+1) + `"}`, contentType: "application/json", want: http.StatusBadRequest},
+		{name: "long password", token: token, body: `{"login":"` + login + `","password":"` + strings.Repeat("a", users.MaxPasswordBytes+1) + `"}`, contentType: "application/json", want: http.StatusBadRequest},
 		{name: "large body", token: token, body: strings.Repeat("a", maxCreateUserBody+1), contentType: "application/json", want: http.StatusRequestEntityTooLarge},
 	}
 	for _, tt := range tests {
@@ -69,17 +69,17 @@ func TestCreateUser(t *testing.T) {
 		var created createdUser
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
 		assert.Equal(t, login, created.Login.String())
-		assert.NotEqual(t, user.UserID{}, created.ID)
+		assert.NotEqual(t, users.ID{}, created.ID)
 		assert.NotContains(t, rec.Body.String(), password)
 		assert.NotContains(t, rec.Body.String(), "$schema")
 
 		stored, ok := repo.get(mustLogin(t, login))
 		require.True(t, ok)
-		assert.Equal(t, user.KindPassword, stored.identity.Kind)
+		assert.Equal(t, users.KindPassword, stored.identity.Kind)
 		encoded := stored.identity.Secret.Encoded()
 		assert.True(t, strings.HasPrefix(encoded, "$argon2id$"))
 		assert.NotContains(t, encoded, password)
-		pw, err := user.NewPassword(password)
+		pw, err := users.NewPassword(password)
 		require.NoError(t, err)
 		matches, err := stored.identity.Secret.Matches(pw)
 		require.NoError(t, err)
@@ -108,17 +108,17 @@ func post(t *testing.T, router http.Handler, token, body, contentType string) *h
 	return rec
 }
 
-func mustRouter(t *testing.T, repo user.Repository, token string) http.Handler {
+func mustRouter(t *testing.T, repo users.Repository, token string) http.Handler {
 	t.Helper()
-	router, err := NewRouter(user.NewUsers(repo), hashToken(t, token), slog.New(slog.DiscardHandler))
+	router, err := NewRouter(users.NewService(repo), hashToken(t, token), slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	return router
 }
 
-func loggedRouter(t *testing.T, repo user.Repository, token string) (http.Handler, *strings.Builder) {
+func loggedRouter(t *testing.T, repo users.Repository, token string) (http.Handler, *strings.Builder) {
 	t.Helper()
 	logs := &strings.Builder{}
-	router, err := NewRouter(user.NewUsers(repo), hashToken(t, token), slog.New(slog.NewTextHandler(logs, nil)))
+	router, err := NewRouter(users.NewService(repo), hashToken(t, token), slog.New(slog.NewTextHandler(logs, nil)))
 	require.NoError(t, err)
 	return router, logs
 }
@@ -131,37 +131,37 @@ func hashToken(t *testing.T, token string) AdminTokenHash {
 	return hash
 }
 
-func mustLogin(t *testing.T, raw string) user.Login {
+func mustLogin(t *testing.T, raw string) users.Login {
 	t.Helper()
-	login, err := user.ParseLogin(raw)
+	login, err := users.ParseLogin(raw)
 	require.NoError(t, err)
 	return login
 }
 
 type storedUser struct {
-	account  user.User
-	identity user.Identity
+	account  users.User
+	identity users.Identity
 }
 
 type memRepo struct {
 	mu      sync.Mutex
-	byLogin map[user.Login]storedUser
+	byLogin map[users.Login]storedUser
 }
 
-func (m *memRepo) Create(_ context.Context, account user.User, identity user.Identity) error {
+func (m *memRepo) Create(_ context.Context, account users.User, identity users.Identity) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.byLogin == nil {
-		m.byLogin = map[user.Login]storedUser{}
+		m.byLogin = map[users.Login]storedUser{}
 	}
 	if _, ok := m.byLogin[account.Login]; ok {
-		return user.ErrLoginTaken
+		return users.ErrLoginTaken
 	}
 	m.byLogin[account.Login] = storedUser{account: account, identity: identity}
 	return nil
 }
 
-func (m *memRepo) get(login user.Login) (storedUser, bool) {
+func (m *memRepo) get(login users.Login) (storedUser, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	stored, ok := m.byLogin[login]
@@ -176,6 +176,6 @@ func (m *memRepo) count() int {
 
 type failRepo struct{}
 
-func (failRepo) Create(context.Context, user.User, user.Identity) error {
+func (failRepo) Create(context.Context, users.User, users.Identity) error {
 	return errors.New("database is down")
 }

@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/popoffvg/miniauth/internal/user"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 func TestHealthz(t *testing.T) {
@@ -69,8 +69,8 @@ func TestRequestTagsUseTheDomainLimits(t *testing.T) {
 	require.True(t, ok)
 	password, ok := typ.FieldByName("Password")
 	require.True(t, ok)
-	assert.Equal(t, strconv.Itoa(user.MaxLoginLength), login.Tag.Get("maxLength"))
-	assert.Equal(t, strconv.Itoa(user.MaxPasswordBytes), password.Tag.Get("maxLength"))
+	assert.Equal(t, strconv.Itoa(users.MaxLoginLength), login.Tag.Get("maxLength"))
+	assert.Equal(t, strconv.Itoa(users.MaxPasswordBytes), password.Tag.Get("maxLength"))
 }
 
 func TestRequestLogOmitsSecrets(t *testing.T) {

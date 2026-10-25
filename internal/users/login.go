@@ -1,4 +1,4 @@
-package user
+package users
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ type Login struct {
 func ParseLogin(raw string) (Login, error) {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	if !validLogin(s) {
-		return Login{}, fmt.Errorf("user: login: %w", ErrInvalidLogin)
+		return Login{}, fmt.Errorf("users: login: %w", ErrInvalidLogin)
 	}
 	return Login{value: s}, nil
 }

@@ -1,4 +1,4 @@
-package user
+package users
 
 import (
 	"context"
@@ -15,7 +15,7 @@ const (
 
 // User is an account. It is comparable.
 type User struct {
-	ID        UserID
+	ID        ID
 	Login     Login
 	CreatedAt time.Time
 }
@@ -23,7 +23,7 @@ type User struct {
 // Identity is one proof of a user. Secret is the argon2id PHC string for KindPassword.
 type Identity struct {
 	ID        IdentityID
-	UserID    UserID
+	UserID    ID
 	Kind      Kind
 	Secret    PasswordHash
 	CreatedAt time.Time
@@ -37,27 +37,27 @@ type Repository interface {
 	Create(ctx context.Context, account User, identity Identity) error
 }
 
-// Users creates accounts.
-type Users struct {
+// Service creates accounts.
+type Service struct {
 	repo Repository
 	now  func() time.Time
 }
 
-// NewUsers returns a service that reads the clock from time.Now.
-func NewUsers(repo Repository) *Users {
-	return &Users{repo: repo, now: time.Now}
+// NewService returns a service that reads the clock from time.Now.
+func NewService(repo Repository) *Service {
+	return &Service{repo: repo, now: time.Now}
 }
 
 // Create stores a user and a password identity.
 // The password is hashed before the write. Only the hash is stored.
-func (s *Users) Create(ctx context.Context, login Login, password Password) (User, error) {
+func (s *Service) Create(ctx context.Context, login Login, password Password) (User, error) {
 	if login.value == "" {
 		return User{}, ErrInvalidLogin
 	}
 	if password.raw == "" {
 		return User{}, ErrEmptyPassword
 	}
-	id := NewUserID()
+	id := NewID()
 	identityID := NewIdentityID()
 	hash, err := HashPassword(password)
 	if err != nil {

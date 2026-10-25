@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/popoffvg/miniauth/internal/user"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 type problemBody struct {
@@ -98,9 +98,9 @@ func writeDecodeError(w http.ResponseWriter, err error) {
 }
 
 func domainError(err error) bool {
-	return errors.Is(err, user.ErrInvalidLogin) ||
-		errors.Is(err, user.ErrEmptyPassword) ||
-		errors.Is(err, user.ErrPasswordTooLong)
+	return errors.Is(err, users.ErrInvalidLogin) ||
+		errors.Is(err, users.ErrEmptyPassword) ||
+		errors.Is(err, users.ErrPasswordTooLong)
 }
 
 func jsonContentType(header string) bool {

@@ -15,7 +15,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/telemetry"
-	"github.com/popoffvg/miniauth/internal/user"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -80,7 +80,7 @@ func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error 
 	}
 	logger.Info("miniauth: migrations applied")
 
-	handler, err := api.NewRouter(user.NewUsers(postgres.NewUserRepository(pool)), adminHash, logger)
+	handler, err := api.NewRouter(users.NewService(postgres.NewUserRepository(pool)), adminHash, logger)
 	if err != nil {
 		return err
 	}

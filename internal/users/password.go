@@ -1,4 +1,4 @@
-package user
+package users
 
 import (
 	"crypto/rand"
@@ -79,7 +79,7 @@ func HashPassword(password Password) (PasswordHash, error) {
 	}
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
-		return PasswordHash{}, fmt.Errorf("user: password hash: %w", err)
+		return PasswordHash{}, fmt.Errorf("users: password hash: %w", err)
 	}
 	key := argon2.IDKey([]byte(password.raw), salt, argonIterations, argonMemoryKiB, argonLanes, argonKeyLen)
 	encoded := encodePHC(argonMemoryKiB, argonIterations, argonLanes, salt, key)
@@ -133,11 +133,11 @@ func encodePHC(memory, iterations uint32, lanes uint8, salt, key []byte) string 
 func decodePHC(encoded string) (memory, iterations uint32, lanes uint8, salt, key []byte, err error) {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" {
-		return 0, 0, 0, nil, nil, errors.New("user: password hash: not argon2id")
+		return 0, 0, 0, nil, nil, errors.New("users: password hash: not argon2id")
 	}
 	version, err := strconv.Atoi(strings.TrimPrefix(parts[2], "v="))
 	if err != nil || !strings.HasPrefix(parts[2], "v=") || version != argon2.Version {
-		return 0, 0, 0, nil, nil, errors.New("user: password hash: bad version")
+		return 0, 0, 0, nil, nil, errors.New("users: password hash: bad version")
 	}
 	memory, iterations, lanes, err = parseArgonParams(parts[3])
 	if err != nil {
@@ -145,11 +145,11 @@ func decodePHC(encoded string) (memory, iterations uint32, lanes uint8, salt, ke
 	}
 	salt, err = base64.RawStdEncoding.DecodeString(parts[4])
 	if err != nil || len(salt) == 0 || len(salt) > argonMaxSaltLen {
-		return 0, 0, 0, nil, nil, errors.New("user: password hash: bad salt")
+		return 0, 0, 0, nil, nil, errors.New("users: password hash: bad salt")
 	}
 	key, err = base64.RawStdEncoding.DecodeString(parts[5])
 	if err != nil {
-		return 0, 0, 0, nil, nil, errors.New("user: password hash: bad key")
+		return 0, 0, 0, nil, nil, errors.New("users: password hash: bad key")
 	}
 	if _, err = argonKeyLength(len(key)); err != nil {
 		return 0, 0, 0, nil, nil, err
@@ -165,7 +165,7 @@ func argonKeyLength(n int) (uint32, error) {
 	case 32:
 		return 32, nil
 	default:
-		return 0, errors.New("user: password hash: bad key")
+		return 0, errors.New("users: password hash: bad key")
 	}
 }
 
@@ -175,11 +175,11 @@ func parseArgonParams(raw string) (memory, iterations uint32, lanes uint8, err e
 	for _, field := range strings.Split(raw, ",") {
 		name, value, ok := strings.Cut(field, "=")
 		if !ok {
-			return 0, 0, 0, errors.New("user: password hash: bad parameters")
+			return 0, 0, 0, errors.New("users: password hash: bad parameters")
 		}
 		n, parseErr := strconv.ParseUint(value, 10, 32)
 		if parseErr != nil {
-			return 0, 0, 0, errors.New("user: password hash: bad parameters")
+			return 0, 0, 0, errors.New("users: password hash: bad parameters")
 		}
 		switch name {
 		case "m":
@@ -189,11 +189,11 @@ func parseArgonParams(raw string) (memory, iterations uint32, lanes uint8, err e
 		case "p":
 			p, seenP = n, true
 		default:
-			return 0, 0, 0, errors.New("user: password hash: bad parameters")
+			return 0, 0, 0, errors.New("users: password hash: bad parameters")
 		}
 	}
 	if !seenM || !seenT || !seenP || m == 0 || m > argonMaxMemoryKiB || t == 0 || t > argonMaxIterations || p == 0 || p > argonMaxLanes {
-		return 0, 0, 0, errors.New("user: password hash: bad parameters")
+		return 0, 0, 0, errors.New("users: password hash: bad parameters")
 	}
 	return uint32(m), uint32(t), uint8(p), nil
 }

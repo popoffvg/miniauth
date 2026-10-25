@@ -8,7 +8,7 @@ import (
 	"github.com/swaggest/openapi-go"
 	"github.com/swaggest/openapi-go/openapi3"
 
-	"github.com/popoffvg/miniauth/internal/user"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 // route is one HTTP operation.
@@ -26,18 +26,18 @@ type route struct {
 }
 
 type service struct {
-	users *user.Users
-	admin AdminTokenHash
-	spec  []byte
+	accounts *users.Service
+	admin    AdminTokenHash
+	spec     []byte
 }
 
 // NewRouter serves the HTTP API.
 // admin is the SHA-256 of the bootstrap token.
-func NewRouter(users *user.Users, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
+func NewRouter(accounts *users.Service, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	svc := &service{users: users, admin: admin}
+	svc := &service{accounts: accounts, admin: admin}
 	mux := http.NewServeMux()
 	reflector := openapi3.NewReflector()
 	reflector.Spec.Info.WithTitle("miniauth").WithVersion("0.0.0")

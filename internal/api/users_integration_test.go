@@ -13,7 +13,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
-	"github.com/popoffvg/miniauth/internal/user"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 func TestCreateUserStoresAnArgon2Identity(t *testing.T) {
@@ -50,18 +50,18 @@ func TestCreateUserStoresAnArgon2Identity(t *testing.T) {
 
 	row, err := sqlcgen.New(pool).GetIdentityByLogin(ctx, login)
 	require.NoError(t, err)
-	assert.Equal(t, string(user.KindPassword), row.Kind)
+	assert.Equal(t, string(users.KindPassword), row.Kind)
 	assert.True(t, strings.HasPrefix(row.PasswordHash, "$argon2id$"))
 	assert.NotContains(t, row.PasswordHash, password)
-	hash, err := user.ParsePasswordHash(row.PasswordHash)
+	hash, err := users.ParsePasswordHash(row.PasswordHash)
 	require.NoError(t, err)
-	pw, err := user.NewPassword(password)
+	pw, err := users.NewPassword(password)
 	require.NoError(t, err)
 	matches, err := hash.Matches(pw)
 	require.NoError(t, err)
 	assert.True(t, matches)
 	assert.True(t, row.UserID.Valid)
-	assert.Equal(t, created.ID.String(), user.UserIDFromBytes(row.UserID.Bytes).String())
+	assert.Equal(t, created.ID.String(), users.IDFromBytes(row.UserID.Bytes).String())
 
 	again := post(t, router, token, body, "application/json")
 	require.Equal(t, http.StatusConflict, again.Code)
