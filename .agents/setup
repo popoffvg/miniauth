@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+repo_root="$PWD"
+export PATH="$HOME/.local/bin:$PATH"
+unset GOROOT
+export MISE_YES=1
+
+echo 'Install system packages'
+SECONDS=0
+missing_packages=()
+for package in postgresql-17 build-essential; do
+  if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+    missing_packages+=("$package")
+  fi
+done
+if ((${#missing_packages[@]})); then
+  sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
+  sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+  echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' \
+    | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+  sudo apt-get update
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing_packages[@]}"
+fi
+echo "System packages: ${SECONDS}s"
+
+echo 'Install the toolchain'
+SECONDS=0
+if ! command -v mise >/dev/null; then
+  curl -fsSL https://mise.run | sh
+fi
+mise trust
+mise install
+eval "$(mise env -s bash)"
+echo "Toolchain: ${SECONDS}s"
+
+echo 'Download modules and build tools'
+SECONDS=0
+go mod download
+go mod download -modfile=tools/go.mod
+task setup &
+wait $!
+go build ./...
+echo "Modules and builds: ${SECONDS}s"
+
+echo 'Prepare the local test database'
+SECONDS=0
+pg_data="$HOME/.local/share/miniauth/postgres"
+mkdir -p "$pg_data"
+if [[ ! -f "$pg_data/PG_VERSION" ]]; then
+  /usr/lib/postgresql/17/bin/initdb -D "$pg_data" -U miniauth --auth-local=trust --auth-host=trust
+fi
+echo "Database: ${SECONDS}s"
+
+profile_marker='# miniauth orb environment'
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<EOF
+
+$profile_marker
+if [[ "\$PWD" == "$repo_root" || "\$PWD" == "$repo_root/"* ]]; then
+  export PATH="\$HOME/.local/bin:\$PATH"
+  unset GOROOT
+  eval "\$(mise env -s bash -C "$repo_root")"
+  export MINIAUTH_TEST_DATABASE_URL="\${MINIAUTH_TEST_DATABASE_URL:-postgres://miniauth@127.0.0.1:5432/postgres?sslmode=disable}"
+fi
+EOF
+fi

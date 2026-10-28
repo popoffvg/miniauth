@@ -17,3 +17,21 @@ task check     # lint, vet, gosec, tests with coverage
 ```
 
 CI runs golangci-lint, go vet, gosec (results in the Security tab), and the tests with a gocov report. CodeRabbit reviews each pull request with the rules in `.coderabbit.yaml`.
+
+### Amp orbs
+
+`.agents/setup` installs the toolchain from `mise.toml`, downloads both Go modules,
+builds the pinned tools and the service, and prepares PostgreSQL 17. Amp can reuse
+these files and caches in project snapshots. `.agents/resume` restores the pre-push
+hook without installing dependencies.
+
+Start the local test database with `amp orb services ensure`. Then run `task check`.
+New login shells in this checkout load the toolchain and set
+`MINIAUTH_TEST_DATABASE_URL` unless it is already set. The database listens on
+loopback only. It uses trust authentication and has durability disabled. It MUST
+NOT hold real data. No secrets are required for these tests.
+
+The Docker-based Hurl test needs a Docker daemon. This orb setup does not install
+or start Docker. Without its socket, that test is skipped. The PostgreSQL
+integration tests use the supervised database and do not need Docker or
+`task test:integration`.
