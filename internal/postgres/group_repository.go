@@ -17,22 +17,28 @@ type GroupRepository struct {
 	q *sqlcgen.Queries
 }
 
-// NewGroupRepository returns a repository that uses db for queries.
-func NewGroupRepository(db sqlcgen.DBTX) *GroupRepository {
-	return &GroupRepository{q: sqlcgen.New(db)}
+// NewGroupRepository refuses a nil database before any query runs.
+func NewGroupRepository(db sqlcgen.DBTX) (*GroupRepository, error) {
+	if db == nil {
+		return nil, errors.New("postgres: group repository database is missing")
+	}
+	return &GroupRepository{q: sqlcgen.New(db)}, nil
 }
 
-var _ groups.Repository = (*GroupRepository)(nil)
+var (
+	_ groups.Repository = (*GroupRepository)(nil)
+	_ groups.Writer     = (*GroupRepository)(nil)
+)
 
 // List returns the groups of userID in ascending name order.
 func (r *GroupRepository) List(ctx context.Context, userID users.ID) ([]groups.Name, error) {
-	rows, err := r.q.ListGroupMemberships(ctx, pgUUIDBytes(userID.Bytes()))
+	rawNames, err := r.q.ListGroupMemberships(ctx, pgUUIDBytes(userID.Bytes()))
 	if err != nil {
 		return nil, groupError("list groups", err)
 	}
-	names := make([]groups.Name, 0, len(rows))
-	for _, row := range rows {
-		name, err := groups.ParseName(row)
+	names := make([]groups.Name, 0, len(rawNames))
+	for _, rawName := range rawNames {
+		name, err := groups.ParseName(rawName)
 		if err != nil {
 			return nil, fmt.Errorf("postgres: list groups: %w", err)
 		}
@@ -41,8 +47,7 @@ func (r *GroupRepository) List(ctx context.Context, userID users.ID) ([]groups.N
 	return names, nil
 }
 
-// Add stores one membership.
-// A second add of the same pair returns groups.ErrDuplicate.
+// Add returns groups.ErrDuplicate when the pair is already stored.
 // An unknown user returns groups.ErrUnknownUser.
 func (r *GroupRepository) Add(ctx context.Context, userID users.ID, name groups.Name) error {
 	if name.String() == "" {

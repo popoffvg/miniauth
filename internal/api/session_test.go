@@ -90,6 +90,51 @@ func TestLogoutEverywhere(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestLogoutDeletesTheSessionBehindAStaleCookie(t *testing.T) {
+	browser := sessions.NewService(newMemSessions())
+	user := users.NewID()
+	id, _, err := browser.Start(t.Context(), user, loginflow.Factors(loginflow.FactorPassword))
+	require.NoError(t, err)
+	stale, err := sessions.NewID()
+	require.NoError(t, err)
+	router := sessionRouter(t, browser, mustDomain(t, "example.test"))
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/logout", nil)
+	req.AddCookie(&http.Cookie{Name: sessions.CookieName, Value: stale.CookieValue()})
+	req.AddCookie(&http.Cookie{Name: sessions.CookieName, Value: id.CookieValue()})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	_, _, err = browser.Open(t.Context(), id)
+	require.ErrorIs(t, err, sessions.ErrNotFound)
+}
+
+func TestLogoutEverywhereUsesTheSessionBehindAStaleCookie(t *testing.T) {
+	browser := sessions.NewService(newMemSessions())
+	user := users.NewID()
+	factors := loginflow.Factors(loginflow.FactorPassword)
+	first, _, err := browser.Start(t.Context(), user, factors)
+	require.NoError(t, err)
+	second, _, err := browser.Start(t.Context(), user, factors)
+	require.NoError(t, err)
+	stale, err := sessions.NewID()
+	require.NoError(t, err)
+	router := sessionRouter(t, browser, mustDomain(t, "example.test"))
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/logout/everywhere", nil)
+	req.AddCookie(&http.Cookie{Name: sessions.CookieName, Value: stale.CookieValue()})
+	req.AddCookie(&http.Cookie{Name: sessions.CookieName, Value: first.CookieValue()})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	_, _, err = browser.Open(t.Context(), first)
+	require.ErrorIs(t, err, sessions.ErrNotFound)
+	_, _, err = browser.Open(t.Context(), second)
+	require.ErrorIs(t, err, sessions.ErrNotFound)
+}
+
 func TestLogoutDoesNotNeedTheAdminToken(t *testing.T) {
 	router := sessionRouter(t, sessions.NewService(newMemSessions()), sessions.Domain{})
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/logout", nil)

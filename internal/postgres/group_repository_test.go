@@ -1,8 +1,10 @@
 package postgres_test
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/postgres"
@@ -13,50 +15,31 @@ import (
 func TestGroupMembershipRoundTrip(t *testing.T) {
 	ctx := t.Context()
 	pool, err := postgres.Open(ctx, postgrestest.NewDatabase(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	if err = postgres.Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, postgres.Migrate(ctx, pool))
 
 	accounts := users.NewService(postgres.NewUserRepository(pool))
 	ada := createAccount(t, accounts, "ada")
-	repo := postgres.NewGroupRepository(pool)
+	repo, err := postgres.NewGroupRepository(pool)
+	require.NoError(t, err)
 	editors, err := groups.ParseName("Editors")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	readers, err := groups.ParseName("readers")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = repo.Add(ctx, ada.ID, editors); err != nil {
-		t.Fatal(err)
-	}
-	if err = repo.Add(ctx, ada.ID, readers); err != nil {
-		t.Fatal(err)
-	}
-	if err = repo.Add(ctx, ada.ID, editors); !errors.Is(err, groups.ErrDuplicate) {
-		t.Fatalf("duplicate = %v", err)
-	}
-	if err = repo.Add(ctx, users.NewID(), editors); !errors.Is(err, groups.ErrUnknownUser) {
-		t.Fatalf("unknown user = %v", err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, repo.Add(ctx, ada.ID, editors))
+	require.NoError(t, repo.Add(ctx, ada.ID, readers))
+	require.ErrorIs(t, repo.Add(ctx, ada.ID, editors), groups.ErrDuplicate)
+	require.ErrorIs(t, repo.Add(ctx, users.NewID(), editors), groups.ErrUnknownUser)
 
 	got, err := repo.List(ctx, ada.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got[0].String() != "editors" || got[1].String() != "readers" {
-		t.Fatalf("groups = %v", got)
-	}
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Equal(t, "editors", got[0].String())
+	assert.Equal(t, "readers", got[1].String())
 	loaded, err := accounts.Find(ctx, ada.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Login != ada.Login {
-		t.Fatalf("login = %s", loaded.Login)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, ada.Login, loaded.Login)
+	_, err = postgres.NewUserRepository(pool).Find(ctx, users.NewID())
+	require.ErrorIs(t, err, users.ErrNotFound)
 }

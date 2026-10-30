@@ -29,11 +29,6 @@ func (s *service) createUser(w http.ResponseWriter, r *http.Request) {
 		writeCreateError(w, r, err)
 		return
 	}
-	if s.accounts == nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: create user", "err", errors.New("api: user service is missing"))
-		writeProblem(w, http.StatusInternalServerError, "The user was not created.")
-		return
-	}
 	created, err := s.accounts.Create(r.Context(), body.Login, body.Password)
 	if err != nil {
 		writeCreateError(w, r, err)

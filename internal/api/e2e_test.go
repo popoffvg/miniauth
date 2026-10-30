@@ -43,6 +43,7 @@ func TestCreateUserHurl(t *testing.T) {
 		postgres.WithUsername("miniauth"),
 		postgres.WithPassword("miniauth"),
 		network.WithNetwork([]string{"postgres"}, nw),
+		postgres.BasicWaitStrategies(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {

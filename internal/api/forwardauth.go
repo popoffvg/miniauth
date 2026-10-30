@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"sort"
+	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/popoffvg/miniauth/internal/groups"
@@ -27,17 +29,12 @@ type forwardAuthRequest struct {
 }
 
 func (s *service) forwardAuth(w http.ResponseWriter, r *http.Request) {
-	if s.browser == nil || s.accounts == nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: auth check", "err", errors.New("api: auth check is not configured"))
-		writeProblem(w, http.StatusInternalServerError, "The check failed.")
+	need, ok := requiredGroups(r)
+	if !ok {
+		w.WriteHeader(http.StatusForbidden)
 		return
 	}
-	sessionID, err := sessions.FromRequest(r)
-	if err != nil {
-		s.unauthenticated(w, r)
-		return
-	}
-	session, _, err := s.browser.Open(r.Context(), sessionID)
+	session, err := s.openBrowserSession(r)
 	if errors.Is(err, sessions.ErrNotFound) {
 		s.unauthenticated(w, r)
 		return
@@ -47,7 +44,7 @@ func (s *service) forwardAuth(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "The check failed.")
 		return
 	}
-	account, err := s.accounts.Find(r.Context(), session.UserID)
+	user, err := s.accounts.Find(r.Context(), session.UserID)
 	if errors.Is(err, users.ErrNotFound) {
 		s.unauthenticated(w, r)
 		return
@@ -57,19 +54,18 @@ func (s *service) forwardAuth(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "The check failed.")
 		return
 	}
-	have, err := s.groupNames(r, account.ID)
+	have, err := s.groups.List(r.Context(), user.ID)
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: auth check", "err", err)
 		writeProblem(w, http.StatusInternalServerError, "The check failed.")
 		return
 	}
-	need, ok := requiredGroups(r)
-	if !ok || !hasGroups(have, need) {
+	if !hasGroups(have, need) {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 	method := sessions.MethodFromFactors(session.Factors)
-	if !writeAuthHeaders(w, account.Login, have, method) {
+	if !writeAuthHeaders(w, user.Login, have, method) {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: auth check", "err", errors.New("api: auth header is not safe"))
 		writeProblem(w, http.StatusInternalServerError, "The check failed.")
 		return
@@ -82,7 +78,7 @@ func (s *service) unauthenticated(w http.ResponseWriter, r *http.Request) {
 		sessions.ClearCookie(w, s.domain)
 	}
 	if browserRequest(r) {
-		w.Header().Set("Location", s.public.Login(returnURL(r, s.domain, s.public)))
+		w.Header().Set("Location", s.publicURL.Login(returnURL(r, s.domain, s.publicURL)))
 		w.WriteHeader(http.StatusFound)
 		return
 	}
@@ -90,20 +86,17 @@ func (s *service) unauthenticated(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusUnauthorized)
 }
 
-func (s *service) groupNames(r *http.Request, userID users.ID) ([]groups.Name, error) {
-	if s.members == nil {
-		return nil, nil
-	}
-	return s.members.List(r.Context(), userID)
-}
-
 func requiredGroups(r *http.Request) ([]groups.Name, bool) {
-	var need []groups.Name
-	for _, raw := range r.URL.Query()["group"] {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return nil, false
+	}
+	rawNames, ok := query["group"]
+	if !ok {
+		return nil, true
+	}
+	need := make([]groups.Name, 0, len(rawNames))
+	for _, raw := range rawNames {
 		name, err := groups.ParseName(raw)
 		if err != nil {
 			return nil, false
@@ -130,21 +123,20 @@ func hasGroups(have, need []groups.Name) bool {
 }
 
 func writeAuthHeaders(w http.ResponseWriter, login users.Login, names []groups.Name, method sessions.Method) bool {
-	user := login.String()
+	userName := login.String()
 	email := emailFromLogin(login)
 	groupsHeader := joinGroups(names)
 	methodHeader := method.String()
-	if !safeHeader(user) || !safeHeader(email) || !safeHeader(groupsHeader) || !safeHeader(methodHeader) {
+	if !safeHeader(userName) || !safeHeader(email) || !safeHeader(groupsHeader) || !safeHeader(methodHeader) {
 		return false
 	}
-	w.Header().Set(headerAuthUser, user)
+	w.Header().Set(headerAuthUser, userName)
 	w.Header().Set(headerAuthEmail, email)
 	w.Header().Set(headerAuthGroups, groupsHeader)
 	w.Header().Set(headerAuthMethod, methodHeader)
 	return true
 }
 
-// emailFromLogin uses the login when it contains @.
 // The account has no separate email column.
 func emailFromLogin(login users.Login) string {
 	value := login.String()
@@ -155,14 +147,11 @@ func emailFromLogin(login users.Login) string {
 }
 
 func joinGroups(names []groups.Name) string {
-	ordered := append([]groups.Name(nil), names...)
-	sort.Slice(ordered, func(i, j int) bool {
-		return ordered[i].String() < ordered[j].String()
-	})
-	parts := make([]string, len(ordered))
-	for i, name := range ordered {
+	parts := make([]string, len(names))
+	for i, name := range names {
 		parts[i] = name.String()
 	}
+	slices.Sort(parts)
 	return strings.Join(parts, ",")
 }
 
@@ -201,15 +190,53 @@ func browserRequest(r *http.Request) bool {
 
 func acceptsHTML(accept string) bool {
 	for part := range strings.SplitSeq(accept, ",") {
-		media := strings.TrimSpace(part)
-		if i := strings.IndexByte(media, ';'); i >= 0 {
-			media = strings.TrimSpace(media[:i])
+		media, params, _ := strings.Cut(part, ";")
+		if !strings.EqualFold(strings.TrimSpace(media), "text/html") {
+			continue
 		}
-		if strings.EqualFold(media, "text/html") {
+		if mediaQuality(params) > 0 {
 			return true
 		}
 	}
 	return false
+}
+
+func mediaQuality(params string) float64 {
+	quality := 1.0
+	for params != "" {
+		var param string
+		param, params, _ = strings.Cut(params, ";")
+		name, value, ok := strings.Cut(param, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(name), "q") {
+			continue
+		}
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil || parsed < 0 || parsed > 1 {
+			return 0
+		}
+		quality = parsed
+	}
+	return quality
+}
+
+func (s *service) openBrowserSession(r *http.Request) (sessions.Session, error) {
+	var failure error
+	for _, id := range sessions.IDsFromRequest(r) {
+		session, _, err := s.browser.Open(r.Context(), id)
+		if err == nil {
+			return session, nil
+		}
+		if errors.Is(err, sessions.ErrNotFound) {
+			continue
+		}
+		if failure == nil {
+			failure = err
+		}
+	}
+	if failure != nil {
+		return sessions.Session{}, failure
+	}
+	return sessions.Session{}, sessions.ErrNotFound
 }
 
 func sessionCookiePresent(r *http.Request) bool {
@@ -217,17 +244,17 @@ func sessionCookiePresent(r *http.Request) bool {
 	return err == nil
 }
 
-// returnURL is the page the browser asked Traefik for.
+// returnURL is the page the browser asked for.
 // The host must sit under the cookie domain.
-// With no cookie domain, the host must be the public origin.
+// The host must match the public origin when the cookie domain is empty.
 // Anything else is empty, so the login page gets no return query.
-func returnURL(r *http.Request, domain sessions.Domain, public PublicURL) string {
+func returnURL(r *http.Request, domain sessions.Domain, publicURL PublicURL) string {
 	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
 	if proto != "http" && proto != "https" {
 		return ""
 	}
 	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if !forwardedHostAllowed(host, domain, public) {
+	if !forwardedHostAllowed(host, domain, publicURL) {
 		return ""
 	}
 	uri := r.Header.Get("X-Forwarded-Uri")
@@ -240,8 +267,8 @@ func returnURL(r *http.Request, domain sessions.Domain, public PublicURL) string
 	return proto + "://" + host + uri
 }
 
-func forwardedHostAllowed(host string, domain sessions.Domain, public PublicURL) bool {
-	if host == "" || strings.ContainsAny(host, "\r\n/\\@ ") {
+func forwardedHostAllowed(host string, domain sessions.Domain, publicURL PublicURL) bool {
+	if host == "" || strings.ContainsAny(host, "\r\n/\\@ ?#") {
 		return false
 	}
 	name, ok := forwardedHostname(host)
@@ -253,18 +280,53 @@ func forwardedHostAllowed(host string, domain sessions.Domain, public PublicURL)
 		name = strings.ToLower(name)
 		return name == parent || strings.HasSuffix(name, "."+parent)
 	}
-	allowed := public.Host()
+	allowed := publicURL.Host()
 	return allowed != "" && strings.EqualFold(host, allowed)
 }
 
 func forwardedHostname(hostport string) (string, bool) {
-	if h, _, err := net.SplitHostPort(hostport); err == nil {
-		return strings.Trim(h, "[]"), true
+	if strings.HasPrefix(hostport, "[") {
+		return bracketedHost(hostport)
 	}
-	if strings.Contains(hostport, ":") {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		if strings.Contains(hostport, ":") {
+			return "", false
+		}
+		return hostport, hostport != ""
+	}
+	if !validPort(port) || strings.Contains(host, ":") {
 		return "", false
 	}
-	return hostport, hostport != ""
+	return host, true
+}
+
+func bracketedHost(hostport string) (string, bool) {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		if !strings.HasSuffix(hostport, "]") || len(hostport) < 2 {
+			return "", false
+		}
+		host = hostport[1 : len(hostport)-1]
+		if !isIPv6(host) {
+			return "", false
+		}
+		return host, true
+	}
+	if !validPort(port) || !isIPv6(host) {
+		return "", false
+	}
+	return host, true
+}
+
+func isIPv6(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.To4() == nil
+}
+
+func validPort(port string) bool {
+	number, err := strconv.Atoi(port)
+	return err == nil && number >= 1 && number <= 65535
 }
 
 func safeForwardedURI(uri string) bool {

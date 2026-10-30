@@ -40,7 +40,6 @@ func MethodFromFactors(factors loginflow.Factors) Method {
 	return Method{value: strings.Join(names, ",")}
 }
 
-// String returns the header value.
 func (m Method) String() string {
 	return m.value
 }

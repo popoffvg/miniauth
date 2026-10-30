@@ -81,8 +81,7 @@ func (s *Service) Create(ctx context.Context, login Login, password Password) (U
 	return account, nil
 }
 
-// Find returns the stored user.
-// A missing id is ErrNotFound.
+// Find returns ErrNotFound when no user has this id.
 func (s *Service) Find(ctx context.Context, id ID) (User, error) {
 	if s == nil || s.repo == nil {
 		return User{}, errors.New("users: repository is missing")

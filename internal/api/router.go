@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,7 +16,7 @@ import (
 )
 
 // route is one HTTP operation.
-// public is false unless the row sets it, so a new row is authenticated.
+// isPublic is false unless the row sets it, so a new row is authenticated.
 type route struct {
 	method   string
 	path     string
@@ -26,34 +28,53 @@ type route struct {
 	errors   []int
 	empty    []int
 	doc      string
-	public   bool
+	isPublic bool
+}
+
+// groupList is the groups one user belongs to.
+// The forward-auth check calls List and no other method.
+type groupList interface {
+	List(ctx context.Context, userID users.ID) ([]groups.Name, error)
+}
+
+type noGroups struct{}
+
+func (noGroups) List(context.Context, users.ID) ([]groups.Name, error) {
+	return nil, nil
 }
 
 type service struct {
-	accounts *users.Service
-	browser  *sessions.Service
-	members  groups.Repository
-	domain   sessions.Domain
-	public   PublicURL
-	admin    AdminTokenHash
-	spec     []byte
+	accounts  *users.Service
+	browser   *sessions.Service
+	groups    groupList
+	domain    sessions.Domain
+	publicURL PublicURL
+	admin     AdminTokenHash
+	spec      []byte
 }
 
 // NewRouter serves the HTTP API.
 // admin is the SHA-256 of the bootstrap token.
 // domain is the Domain attribute of the session cookie. The zero value is a host-only cookie.
-// public is the origin of the login page. The zero value redirects to a path.
-func NewRouter(accounts *users.Service, browser *sessions.Service, members groups.Repository, domain sessions.Domain, public PublicURL, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
+// publicURL is the origin of the login page. The zero value redirects to a path.
+// A nil group list means the user has no groups.
+func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupList, domain sessions.Domain, publicURL PublicURL, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
+	if accounts == nil || browser == nil {
+		return nil, errors.New("api: user service or session service is missing")
+	}
+	if groups == nil {
+		groups = noGroups{}
+	}
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	svc := &service{
-		accounts: accounts,
-		browser:  browser,
-		members:  members,
-		domain:   domain,
-		public:   public,
-		admin:    admin,
+	apiService := &service{
+		accounts:  accounts,
+		browser:   browser,
+		groups:    groups,
+		domain:    domain,
+		publicURL: publicURL,
+		admin:     admin,
 	}
 	mux := http.NewServeMux()
 	reflector := openapi3.NewReflector()
@@ -63,9 +84,9 @@ func NewRouter(accounts *users.Service, browser *sessions.Service, members group
 		"",
 		"Bootstrap admin token. MINIAUTH_ADMIN_TOKEN_SHA256 holds the hex SHA-256 of the token. The token is not in the config.",
 	)
-	for _, rt := range svc.routes() {
+	for _, rt := range apiService.routes() {
 		handler := rt.handler
-		if !rt.public {
+		if !rt.isPublic {
 			handler = requireAdmin(admin, handler)
 		}
 		mux.HandleFunc(rt.method+" "+rt.path, handler)
@@ -77,19 +98,19 @@ func NewRouter(accounts *users.Service, browser *sessions.Service, members group
 	if err != nil {
 		return nil, fmt.Errorf("api: openapi: %w", err)
 	}
-	svc.spec = spec
+	apiService.spec = spec
 	return logRequests(logger, mux), nil
 }
 
 func (s *service) routes() []route {
 	return []route{
 		{
-			method:  http.MethodGet,
-			path:    "/healthz",
-			id:      "getHealth",
-			handler: healthz,
-			status:  http.StatusNoContent,
-			public:  true,
+			method:   http.MethodGet,
+			path:     "/healthz",
+			id:       "getHealth",
+			handler:  healthz,
+			status:   http.StatusNoContent,
+			isPublic: true,
 		},
 		{
 			method:   http.MethodGet,
@@ -98,7 +119,7 @@ func (s *service) routes() []route {
 			handler:  s.openAPI,
 			status:   http.StatusOK,
 			response: new(string),
-			public:   true,
+			isPublic: true,
 		},
 		{
 			method:   http.MethodPost,
@@ -117,32 +138,32 @@ func (s *service) routes() []route {
 			},
 		},
 		{
-			method:  http.MethodGet,
-			path:    "/auth/check",
-			id:      "forwardAuth",
-			handler: s.forwardAuth,
-			request: new(forwardAuthRequest),
-			status:  http.StatusOK,
-			empty:   []int{http.StatusFound, http.StatusUnauthorized, http.StatusForbidden},
-			doc:     "Traefik forwardAuth. A valid session answers 200 and sets X-Auth-User, X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session is redirected to the login page. Any other request with no session is 401. A user outside group is 403. scope does not limit a session.",
-			public:  true,
+			method:   http.MethodGet,
+			path:     "/auth/check",
+			id:       "forwardAuth",
+			handler:  s.forwardAuth,
+			request:  new(forwardAuthRequest),
+			status:   http.StatusOK,
+			empty:    []int{http.StatusFound, http.StatusUnauthorized, http.StatusForbidden},
+			doc:      "Traefik forwardAuth. A valid session answers 200 and sets X-Auth-User, X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session is redirected to the login page. Any other request with no session is 401. A user outside group is 403. scope does not limit a session.",
+			isPublic: true,
 		},
 		{
-			method:  http.MethodPost,
-			path:    "/logout",
-			id:      "logout",
-			handler: s.logout,
-			status:  http.StatusNoContent,
-			public:  true,
+			method:   http.MethodPost,
+			path:     "/logout",
+			id:       "logout",
+			handler:  s.logout,
+			status:   http.StatusNoContent,
+			isPublic: true,
 		},
 		{
-			method:  http.MethodPost,
-			path:    "/logout/everywhere",
-			id:      "logoutEverywhere",
-			handler: s.logoutEverywhere,
-			status:  http.StatusNoContent,
-			errors:  []int{http.StatusUnauthorized},
-			public:  true,
+			method:   http.MethodPost,
+			path:     "/logout/everywhere",
+			id:       "logoutEverywhere",
+			handler:  s.logoutEverywhere,
+			status:   http.StatusNoContent,
+			errors:   []int{http.StatusUnauthorized},
+			isPublic: true,
 		},
 	}
 }
@@ -162,7 +183,7 @@ func addOperation(reflector *openapi3.Reflector, rt route) error {
 	if rt.response != nil || rt.status != 0 {
 		oc.AddRespStructure(rt.response, openapi.WithHTTPStatus(rt.status))
 	}
-	if !rt.public {
+	if !rt.isPublic {
 		oc.AddSecurity("bearerAuth")
 	}
 	for _, status := range rt.empty {

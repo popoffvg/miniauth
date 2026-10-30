@@ -59,24 +59,24 @@ func (r *UserRepository) Create(ctx context.Context, account users.User, identit
 // Find returns the user with id.
 // A missing id is users.ErrNotFound.
 func (r *UserRepository) Find(ctx context.Context, id users.ID) (users.User, error) {
-	row, err := r.q.GetUserByID(ctx, pgUUIDBytes(id.Bytes()))
+	stored, err := r.q.GetUserByID(ctx, pgUUIDBytes(id.Bytes()))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return users.User{}, users.ErrNotFound
 	}
 	if err != nil {
 		return users.User{}, fmt.Errorf("postgres: load user: %w", err)
 	}
-	if !row.ID.Valid || !row.CreatedAt.Valid {
-		return users.User{}, errors.New("postgres: user row is incomplete")
+	if !stored.ID.Valid || !stored.CreatedAt.Valid {
+		return users.User{}, errors.New("postgres: stored user is incomplete")
 	}
-	login, err := users.ParseLogin(row.Login)
+	login, err := users.ParseLogin(stored.Login)
 	if err != nil {
 		return users.User{}, fmt.Errorf("postgres: load user: %w", err)
 	}
 	return users.User{
-		ID:        users.IDFromBytes(row.ID.Bytes),
+		ID:        users.IDFromBytes(stored.ID.Bytes),
 		Login:     login,
-		CreatedAt: row.CreatedAt.Time.UTC(),
+		CreatedAt: stored.CreatedAt.Time.UTC(),
 	}, nil
 }
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -174,26 +175,19 @@ func spanText(spans []sdktrace.ReadOnlySpan) string {
 }
 
 func TestAuthFailsClosed(t *testing.T) {
-	public := map[string]bool{
-		"/healthz":           true,
-		"/openapi.yaml":      true,
-		"/auth/check":        true,
-		"/logout":            true,
-		"/logout/everywhere": true,
-	}
-	svc := &service{}
-	seen := map[string]bool{}
-	for _, rt := range svc.routes() {
-		seen[rt.path] = true
+	router, err := NewRouter(users.NewService(&memRepo{}), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, "bootstrap-token-for-tests"), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	const adminRefusal = "The bearer token is missing or wrong."
+	for _, rt := range (&service{}).routes() {
 		assert.NotEmpty(t, rt.method)
 		assert.NotEmpty(t, rt.path)
-		if public[rt.path] {
-			assert.True(t, rt.public, rt.path)
+		req := httptest.NewRequestWithContext(t.Context(), rt.method, rt.path, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rt.isPublic {
+			assert.NotContains(t, rec.Body.String(), adminRefusal, rt.path)
 			continue
 		}
-		assert.False(t, rt.public, rt.path)
-	}
-	for path := range public {
-		assert.True(t, seen[path], path)
+		assert.Contains(t, rec.Body.String(), adminRefusal, rt.path)
 	}
 }

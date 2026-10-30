@@ -3,10 +3,10 @@ package groups
 import "errors"
 
 var (
-	// ErrName means the group name does not match the name rules.
+	// ErrName is what ParseName returns for a refused name.
 	ErrName = errors.New("groups: name is not valid")
-	// ErrDuplicate means the user is already in the group.
+	// ErrDuplicate is what Add returns for a pair that is already stored.
 	ErrDuplicate = errors.New("groups: membership already exists")
-	// ErrUnknownUser means the user id is not stored.
+	// ErrUnknownUser is what Add returns when the user is not stored.
 	ErrUnknownUser = errors.New("groups: user is not known")
 )

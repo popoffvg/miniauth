@@ -30,18 +30,16 @@ func ParsePublicURL(raw string) (PublicURL, error) {
 	return PublicURL{origin: parsed.Scheme + "://" + parsed.Host}, nil
 }
 
-// Login is the absolute login page, or a path when the origin is empty.
-// returnTo is the URL the browser asked for. An empty returnTo omits the query.
+// Login is where an unauthenticated browser is sent.
 func (u PublicURL) Login(returnTo string) string {
-	loc := u.origin + "/login"
+	loginURL := u.origin + "/login"
 	if returnTo == "" {
-		return loc
+		return loginURL
 	}
-	return loc + "?return=" + url.QueryEscape(returnTo)
+	return loginURL + "?return=" + url.QueryEscape(returnTo)
 }
 
-// Host is the host of the origin, including a port.
-// The zero URL has an empty host.
+// Host is compared with X-Forwarded-Host when the cookie domain is empty.
 func (u PublicURL) Host() string {
 	if u.origin == "" {
 		return ""
@@ -54,13 +52,16 @@ func (u PublicURL) Host() string {
 }
 
 func validPublicURL(u *url.URL) bool {
-	if u == nil || u.Host == "" || u.User != nil {
+	if u == nil || u.Host == "" || u.Hostname() == "" || u.User != nil {
 		return false
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return false
 	}
 	if u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return false
+	}
+	if port := u.Port(); port != "" && !validPort(port) {
 		return false
 	}
 	return u.Path == "" || u.Path == "/"
