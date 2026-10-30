@@ -72,14 +72,31 @@ func ClearCookie(w http.ResponseWriter, domain Domain) {
 // FromRequest reads the session id from the cookie.
 // A missing or malformed cookie is ErrNotFound.
 func FromRequest(r *http.Request) (ID, error) {
+	ids := IDsFromRequest(r)
+	if len(ids) == 0 {
+		return ID{}, ErrNotFound
+	}
+	return ids[0], nil
+}
+
+// IDsFromRequest returns every session id in cookie order.
+// A browser can send a stale host-only cookie before the parent-domain cookie.
+func IDsFromRequest(r *http.Request) []ID {
 	if r == nil {
-		return ID{}, ErrNotFound
+		return nil
 	}
-	cookie, err := r.Cookie(CookieName)
-	if err != nil {
-		return ID{}, ErrNotFound
+	var ids []ID
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != CookieName {
+			continue
+		}
+		id, err := ParseID(cookie.Value)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
 	}
-	return ParseID(cookie.Value)
+	return ids
 }
 
 const lifetimeSeconds = int(Lifetime / time.Second)

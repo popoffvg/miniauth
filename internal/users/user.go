@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -33,8 +34,10 @@ type Identity struct {
 // Create inserts the user and the identity together.
 // Create MUST return ErrLoginTaken when the login is already stored.
 // Create MUST NOT write the password. It writes the PHC string.
+// Find MUST return ErrNotFound when the id is not stored.
 type Repository interface {
 	Create(ctx context.Context, account User, identity Identity) error
+	Find(ctx context.Context, id ID) (User, error)
 }
 
 // Service creates accounts.
@@ -76,6 +79,17 @@ func (s *Service) Create(ctx context.Context, login Login, password Password) (U
 		return User{}, err
 	}
 	return account, nil
+}
+
+// Find returns ErrNotFound when no user has this id.
+func (s *Service) Find(ctx context.Context, id ID) (User, error) {
+	if s == nil || s.repo == nil {
+		return User{}, errors.New("users: repository is missing")
+	}
+	if id == (ID{}) {
+		return User{}, ErrNotFound
+	}
+	return s.repo.Find(ctx, id)
 }
 
 // String returns the stored kind.

@@ -16,5 +16,34 @@ services:
       timeout: 2s
       retries: 15
 
+  miniauth:
+    build: .
+    environment:
+      MINIAUTH_LISTEN: 0.0.0.0:8080
+      MINIAUTH_DATABASE_URL: postgres://miniauth:miniauth@postgres:5432/miniauth?sslmode=disable
+      # SHA-256 of the local token dev-admin-token. The token is not a secret here.
+      MINIAUTH_ADMIN_TOKEN_SHA256: 1734d503f6aa6a047c36d113cbad769f719c93784b469b771c4c3e7c63adbefd
+      MINIAUTH_PUBLIC_URL: http://127.0.0.1:8088
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  whoami:
+    image: traefik/whoami:v1.10.3
+
+  traefik:
+    image: traefik:v3.5.0
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --entrypoints.web.address=:80
+      - --log.level=INFO
+    ports:
+      - "127.0.0.1:8088:80"
+    volumes:
+      - ./compose/traefik.yml:/etc/traefik/dynamic.yml:ro
+    depends_on:
+      - miniauth
+      - whoami
+
 volumes:
   postgres:

@@ -30,5 +30,10 @@ FROM users
 JOIN identities ON identities.user_id = users.id
 WHERE users.login = $1 AND identities.kind = 'password';
 
+-- name: GetUserByID :one
+SELECT id, login, created_at
+FROM users
+WHERE id = $1;
+
 -- name: CountUsers :one
 SELECT count(*)::bigint AS n FROM users;

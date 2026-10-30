@@ -1,0 +1,44 @@
+# Local Traefik. It asks miniauth before it serves the test page.
+http:
+  routers:
+    app:
+      rule: PathPrefix(`/app`)
+      entryPoints: [web]
+      middlewares: [auth]
+      service: whoami
+    editors:
+      rule: PathPrefix(`/editors`)
+      entryPoints: [web]
+      middlewares: [auth-editors]
+      service: whoami
+    miniauth:
+      rule: PathPrefix(`/login`) || PathPrefix(`/auth`) || PathPrefix(`/healthz`) || PathPrefix(`/logout`) || PathPrefix(`/api`) || PathPrefix(`/openapi.yaml`)
+      entryPoints: [web]
+      service: miniauth
+      priority: 100
+  services:
+    whoami:
+      loadBalancer:
+        servers:
+          - url: http://whoami:80
+    miniauth:
+      loadBalancer:
+        servers:
+          - url: http://miniauth:8080
+  middlewares:
+    auth:
+      forwardAuth:
+        address: http://miniauth:8080/auth/check
+        authResponseHeaders:
+          - X-Auth-User
+          - X-Auth-Email
+          - X-Auth-Groups
+          - X-Auth-Method
+    auth-editors:
+      forwardAuth:
+        address: http://miniauth:8080/auth/check?group=editors
+        authResponseHeaders:
+          - X-Auth-User
+          - X-Auth-Email
+          - X-Auth-Groups
+          - X-Auth-Method

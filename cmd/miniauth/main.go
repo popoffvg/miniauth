@@ -49,6 +49,14 @@ func listenAddr() string {
 	return "127.0.0.1:8080"
 }
 
+func publicURL() (api.PublicURL, error) {
+	parsed, err := api.ParsePublicURL(os.Getenv("MINIAUTH_PUBLIC_URL"))
+	if err != nil {
+		return api.PublicURL{}, errors.New("miniauth: MINIAUTH_PUBLIC_URL is not an http or https origin")
+	}
+	return parsed, nil
+}
+
 func sessionDomain() (sessions.Domain, error) {
 	domain, err := sessions.ParseDomain(os.Getenv("MINIAUTH_COOKIE_DOMAIN"))
 	if err != nil {
@@ -58,12 +66,25 @@ func sessionDomain() (sessions.Domain, error) {
 }
 
 func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	if databaseURL == "" {
 		return errors.New("miniauth: MINIAUTH_DATABASE_URL is not set")
 	}
+	origin, err := publicURL()
+	if err != nil {
+		return err
+	}
+	domain, err := sessionDomain()
+	if err != nil {
+		return err
+	}
+	adminHash, err := api.ParseAdminTokenHash(adminTokenSHA256)
+	if err != nil {
+		return errors.New("miniauth: MINIAUTH_ADMIN_TOKEN_SHA256 must be the hex SHA-256 of the admin token")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	stopTelemetry, err := telemetry.Install(ctx)
 	if err != nil {
 		return err
@@ -75,10 +96,6 @@ func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error 
 			logger.Error("miniauth: traces", "err", stopErr)
 		}
 	}()
-	adminHash, err := api.ParseAdminTokenHash(adminTokenSHA256)
-	if err != nil {
-		return errors.New("miniauth: MINIAUTH_ADMIN_TOKEN_SHA256 must be the hex SHA-256 of the admin token")
-	}
 	pool, err := postgres.Open(ctx, databaseURL)
 	if err != nil {
 		return err
@@ -89,14 +106,16 @@ func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error 
 	}
 	logger.Info("miniauth: migrations applied")
 
-	domain, err := sessionDomain()
+	groups, err := postgres.NewGroupRepository(pool)
 	if err != nil {
 		return err
 	}
 	handler, err := api.NewRouter(
 		users.NewService(postgres.NewUserRepository(pool)),
 		sessions.NewService(postgres.NewSessionRepository(pool)),
+		groups,
 		domain,
+		origin,
 		adminHash,
 		logger,
 	)

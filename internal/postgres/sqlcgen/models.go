@@ -8,6 +8,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type GroupMembership struct {
+	UserID pgtype.UUID
+	Name   string
+}
+
 type Identity struct {
 	ID           pgtype.UUID
 	UserID       pgtype.UUID

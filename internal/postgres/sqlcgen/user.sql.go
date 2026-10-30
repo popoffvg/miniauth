@@ -61,6 +61,19 @@ func (q *Queries) GetIdentityByLogin(ctx context.Context, login string) (GetIden
 	return i, err
 }
 
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, login, created_at
+FROM users
+WHERE id = $1
+`
+
+func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(&i.ID, &i.Login, &i.CreatedAt)
+	return i, err
+}
+
 const insertUserIdentity = `-- name: InsertUserIdentity :exec
 WITH new_user AS (
     INSERT INTO users (id, login, created_at)
