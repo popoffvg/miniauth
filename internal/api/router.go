@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/swaggest/openapi-go"
 	"github.com/swaggest/openapi-go/openapi3"
 
 	"github.com/popoffvg/miniauth/internal/groups"
+	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -29,6 +32,10 @@ type route struct {
 	errors   []int
 	empty    []int
 	doc      string
+	// contentType is the media type of the response body. Empty is JSON.
+	contentType string
+	// pages are the other statuses that answer with an HTML page.
+	pages    []int
 	isPublic bool
 }
 
@@ -53,7 +60,17 @@ type service struct {
 	admin     AdminTokenHash
 	tokens    *tokens.Service
 	ready     Readiness
+	flows     *loginflow.LoginFlows
+	passwords *passwordstep.Service
 	spec      []byte
+}
+
+// WithLogin serves the login page. Without it, the login routes answer 503.
+func WithLogin(flows *loginflow.LoginFlows, passwords *passwordstep.Service) RouterOption {
+	return func(s *service) {
+		s.flows = flows
+		s.passwords = passwords
+	}
 }
 
 // Readiness reports whether the process can take traffic.
@@ -172,6 +189,42 @@ func (s *service) routes() []route {
 			isPublic: true,
 		},
 		{
+			method:      http.MethodGet,
+			path:        "/login",
+			id:          "loginPage",
+			handler:     s.loginPage,
+			request:     new(loginPageRequest),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			pages:       []int{http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Starts a login flow and shows the login form. The flow id and secret go to the HttpOnly cookie __Host-id_login_flow.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     "/login",
+			id:       "login",
+			handler:  s.login,
+			request:  new(loginFormRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Checks the password for the flow in the login flow cookie. Origin MUST be the public origin, else 403. A complete flow sets the session cookie and redirects to the return URL. A wrong login or password shows the form again with 200. A backoff is 429.",
+			isPublic: true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        "/{$}",
+			id:          "home",
+			handler:     s.home,
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			empty:       []int{http.StatusFound},
+			doc:         "The default page after a login. It shows the login of the session. With no session it redirects to the login page.",
+			isPublic:    true,
+		},
+		{
 			method:   http.MethodPost,
 			path:     "/logout",
 			id:       "logout",
@@ -192,7 +245,8 @@ func (s *service) routes() []route {
 }
 
 func addOperation(reflector *openapi3.Reflector, rt route) error {
-	oc, err := reflector.NewOperationContext(rt.method, rt.path)
+	// The mux suffix {$} matches only the exact path. OpenAPI has no such syntax.
+	oc, err := reflector.NewOperationContext(rt.method, strings.TrimSuffix(rt.path, "{$}"))
 	if err != nil {
 		return fmt.Errorf("api: openapi: %w", err)
 	}
@@ -204,13 +258,16 @@ func addOperation(reflector *openapi3.Reflector, rt route) error {
 		oc.AddReqStructure(rt.request)
 	}
 	if rt.response != nil || rt.status != 0 {
-		oc.AddRespStructure(rt.response, openapi.WithHTTPStatus(rt.status))
+		oc.AddRespStructure(rt.response, openapi.WithHTTPStatus(rt.status), withContentType(rt.contentType))
 	}
 	if !rt.isPublic {
 		oc.AddSecurity("bearerAuth")
 	}
 	for _, status := range rt.empty {
 		oc.AddRespStructure(new(struct{}), openapi.WithHTTPStatus(status))
+	}
+	for _, status := range rt.pages {
+		oc.AddRespStructure(new(htmlPage), openapi.WithHTTPStatus(status), openapi.WithContentType("text/html"))
 	}
 	for _, status := range rt.errors {
 		oc.AddRespStructure(new(problemBody), openapi.WithHTTPStatus(status))
@@ -219,6 +276,15 @@ func addOperation(reflector *openapi3.Reflector, rt route) error {
 		return fmt.Errorf("api: openapi: %w", err)
 	}
 	return nil
+}
+
+// withContentType keeps the default JSON media type when contentType is empty.
+func withContentType(contentType string) openapi.ContentOption {
+	return func(cu *openapi.ContentUnit) {
+		if contentType != "" {
+			cu.ContentType = contentType
+		}
+	}
 }
 
 func healthz(w http.ResponseWriter, _ *http.Request) {

@@ -105,14 +105,16 @@ func requestID(r *http.Request) string {
 	return uuid.New().String()
 }
 
-// echoesCredential reports whether id is the bearer token or a query value.
+// echoesCredential reports whether id is the bearer token, a secret cookie, or a query value.
 // A client can put a secret in X-Request-ID. That value MUST NOT be logged.
 func echoesCredential(r *http.Request, id string) bool {
 	if token, ok := bearerToken(r); ok && secretEqual(token.raw, id) {
 		return true
 	}
-	if cookie, err := r.Cookie(sessions.CookieName); err == nil && secretEqual(cookie.Value, id) {
-		return true
+	for _, cookie := range r.Cookies() {
+		if (cookie.Name == sessions.CookieName || cookie.Name == flowCookieName) && secretEqual(cookie.Value, id) {
+			return true
+		}
 	}
 	for _, values := range r.URL.Query() {
 		for _, value := range values {
