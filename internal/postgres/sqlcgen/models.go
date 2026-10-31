@@ -5,6 +5,8 @@
 package sqlcgen
 
 import (
+	"net/netip"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -19,6 +21,13 @@ type Identity struct {
 	Kind         string
 	PasswordHash string
 	CreatedAt    pgtype.Timestamptz
+}
+
+type LoginAttempt struct {
+	Login       string
+	Ip          netip.Addr
+	Succeeded   bool
+	AttemptedAt pgtype.Timestamptz
 }
 
 type LoginFlow struct {

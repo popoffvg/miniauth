@@ -11,11 +11,15 @@ import (
 )
 
 type Querier interface {
+	CountIPFailures(ctx context.Context, arg CountIPFailuresParams) (CountIPFailuresRow, error)
+	// A success resets the count for its login. It does not reset the count for its IP.
+	CountLoginFailures(ctx context.Context, arg CountLoginFailuresParams) (CountLoginFailuresRow, error)
 	CountLoginFlows(ctx context.Context) (int64, error)
 	CountSessions(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
 	DeleteExpiredLoginFlows(ctx context.Context) error
+	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
 	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
@@ -26,6 +30,7 @@ type Querier interface {
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
+	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
