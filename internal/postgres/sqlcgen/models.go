@@ -125,6 +125,11 @@ type Session struct {
 	DeviceID   pgtype.UUID
 }
 
+type TelegramLoginProof struct {
+	ProofHash []byte
+	ExpiresAt pgtype.Timestamptz
+}
+
 type User struct {
 	ID         pgtype.UUID
 	Login      string

@@ -23,6 +23,7 @@ type Querier interface {
 	// A success resets the count for its login. It does not reset the count for its IP.
 	CountRecoveryLoginFailures(ctx context.Context, arg CountRecoveryLoginFailuresParams) (CountRecoveryLoginFailuresRow, error)
 	CountSessions(ctx context.Context) (int64, error)
+	CountTelegramLoginProofs(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
 	DeleteAccessGrant(ctx context.Context, id pgtype.UUID) (int64, error)
@@ -30,6 +31,7 @@ type Querier interface {
 	DeleteDeviceSession(ctx context.Context, arg DeleteDeviceSessionParams) error
 	DeleteExpiredLoginFlows(ctx context.Context) error
 	DeleteExpiredPendingIdentityLinks(ctx context.Context, now pgtype.Timestamptz) error
+	DeleteExpiredTelegramLoginProofs(ctx context.Context, now pgtype.Timestamptz) error
 	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
 	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
@@ -64,6 +66,7 @@ type Querier interface {
 	InsertRecoveryAttempt(ctx context.Context, arg InsertRecoveryAttemptParams) error
 	InsertResource(ctx context.Context, arg InsertResourceParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
+	InsertTelegramLoginProof(ctx context.Context, arg InsertTelegramLoginProofParams) (int64, error)
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
 	LinkPendingIdentity(ctx context.Context, arg LinkPendingIdentityParams) (LinkPendingIdentityRow, error)
 	ListAccessGrantEntries(ctx context.Context, arg ListAccessGrantEntriesParams) ([]ListAccessGrantEntriesRow, error)

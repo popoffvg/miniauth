@@ -14,6 +14,8 @@ const (
 	KindPassword Kind = "password"
 	// KindGoogle is a Google account. Its subject is the Google `sub` claim.
 	KindGoogle Kind = "google"
+	// KindTelegram is a Telegram account. Its subject is the decimal Telegram user id.
+	KindTelegram Kind = "telegram"
 )
 
 // User is an account. It is comparable.

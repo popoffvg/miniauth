@@ -24,6 +24,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/sessions"
+	"github.com/popoffvg/miniauth/internal/telegramstep"
 	"github.com/popoffvg/miniauth/internal/telemetry"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -156,13 +157,25 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		withRecovery,
 		api.WithInvites(inviteService),
 	}
+	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
 	if cfg.Google.Enabled() {
 		google, googleErr := startGoogle(ctx, logger, cfg, accounts, flowStore)
 		if googleErr != nil {
 			return googleErr
 		}
 		defer func() { _ = google.Close() }()
-		options = append(options, api.WithGoogle(google, identitylink.NewService(postgres.NewIdentityLinkRepository(pool))))
+		options = append(options, api.WithGoogle(google, links))
+	}
+	if cfg.Telegram.Enabled() {
+		telegram, telegramErr := telegramstep.NewStep(
+			telegramstep.Config{BotName: cfg.Telegram.Name, BotToken: cfg.Telegram.Token},
+			accounts,
+			postgres.NewTelegramProofRepository(pool),
+		)
+		if telegramErr != nil {
+			return telegramErr
+		}
+		options = append(options, api.WithTelegram(telegram, links))
 	}
 
 	handler, err := api.NewRouter(

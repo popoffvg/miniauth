@@ -20,6 +20,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/sessions"
+	"github.com/popoffvg/miniauth/internal/telegramstep"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -74,6 +75,7 @@ type service struct {
 	passwords   *passwordstep.Service
 	recovery    *recovery.Service
 	google      *googlestep.Step
+	telegram    *telegramstep.Step
 	links       *identitylink.Service
 	spec        []byte
 
@@ -389,6 +391,17 @@ func (s *service) routes() []route {
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable},
 			doc:      "Checks the Google reply: state, PKCE verifier, ID token issuer, audience, expiry, and nonce. Only the sub claim links the account. A linked account completes the flow: it sets the session cookie and redirects to the return URL. An unknown account starts no session and creates no user: it is kept 15 minutes as a pending link bound to the browser by the cookie __Host-id_pending_link, and the page asks for a password login, which then links it. A bad state, verifier, or token is 400.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodGet,
+			path:     TelegramCallbackPath,
+			id:       "telegramCallback",
+			handler:  s.telegramCallback,
+			request:  new(telegramCallbackRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "The data-auth-url of the Telegram Login Widget. It needs the login flow cookie of an open flow. The hash MUST be the HMAC-SHA256 of the other fields, sorted by key and joined as key=value lines, keyed with the SHA-256 of the bot token. Data older than one day, more than a minute in the future, or used before is 400. Only the id field links the account. A linked account completes the flow: it sets the session cookie and redirects to the return URL. An unknown account starts no session and creates no user: it is kept 15 minutes as a pending link bound to the browser by the cookie __Host-id_pending_link, and the page asks for a password login, which then links it.",
 			isPublic: true,
 		},
 		{
