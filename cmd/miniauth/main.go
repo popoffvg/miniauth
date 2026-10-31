@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +22,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/passkeystep"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/sessions"
@@ -177,7 +179,9 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		}
 		options = append(options, api.WithTelegram(telegram, links))
 	}
-
+	if passkeys, ok := passkeyService(cfg, postgres.NewPasskeyRepository(pool), flowStore, logger); ok {
+		options = append(options, api.WithPasskeys(passkeys))
+	}
 	handler, err := api.NewRouter(
 		userService,
 		sessions.NewService(postgres.NewSessionRepository(pool)),
@@ -259,4 +263,25 @@ func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, id
 	}
 	go step.Watch(ctx, googlestep.DiscoveryInterval)
 	return step, nil
+}
+
+// passkeyService is false when the public URL gives no relying party id, such as an IP address.
+// The passkey routes then answer 503 and the other routes still work.
+func passkeyService(cfg config.Config, passkeys passkeystep.Store, challenges loginflow.ChallengeStore, logger *slog.Logger) (*passkeystep.Service, bool) {
+	origin, err := url.Parse(cfg.PublicURL.Origin())
+	if err != nil {
+		logger.Warn("miniauth: passkeys are off", "err", err)
+		return nil, false
+	}
+	party, err := passkeystep.NewRelyingParty(cfg.Cookie, origin)
+	if err != nil {
+		logger.Warn("miniauth: passkeys are off", "err", err)
+		return nil, false
+	}
+	service, err := passkeystep.NewService(party, passkeys, challenges)
+	if err != nil {
+		logger.Warn("miniauth: passkeys are off", "err", err)
+		return nil, false
+	}
+	return service, true
 }

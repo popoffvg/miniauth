@@ -87,6 +87,20 @@ type LoginFlow struct {
 	Challenge     []byte
 }
 
+type Passkey struct {
+	ID             pgtype.UUID
+	UserID         pgtype.UUID
+	CredentialID   []byte
+	PublicKey      []byte
+	SignCount      int64
+	Transports     []string
+	Aaguid         pgtype.UUID
+	BackupEligible bool
+	Name           string
+	CreatedAt      pgtype.Timestamptz
+	LastUsedAt     pgtype.Timestamptz
+}
+
 type PasswordReset struct {
 	TokenHash []byte
 	UserID    pgtype.UUID

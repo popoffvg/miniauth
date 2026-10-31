@@ -41,11 +41,13 @@ type Querier interface {
 	DeleteRecoveryAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteResource(ctx context.Context, name string) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
+	DeleteUserPasskey(ctx context.Context, arg DeleteUserPasskeyParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
 	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)
 	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
+	GetActivePasskeyByCredential(ctx context.Context, credentialID []byte) (Passkey, error)
 	GetExternalIdentity(ctx context.Context, arg GetExternalIdentityParams) (GetExternalIdentityRow, error)
 	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
 	GetInvite(ctx context.Context, tokenHash []byte) (Invite, error)
@@ -61,6 +63,7 @@ type Querier interface {
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
 	InsertInvite(ctx context.Context, arg InsertInviteParams) error
 	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
+	InsertPasskey(ctx context.Context, arg InsertPasskeyParams) error
 	InsertPasswordReset(ctx context.Context, arg InsertPasswordResetParams) error
 	InsertPendingIdentityLink(ctx context.Context, arg InsertPendingIdentityLinkParams) error
 	InsertRecoveryAttempt(ctx context.Context, arg InsertRecoveryAttemptParams) error
@@ -76,9 +79,11 @@ type Querier interface {
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
+	ListUserPasskeys(ctx context.Context, userID pgtype.UUID) ([]Passkey, error)
 	LockOpenPasswordReset(ctx context.Context, arg LockOpenPasswordResetParams) (pgtype.UUID, error)
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
 	Ping(ctx context.Context) (int32, error)
+	RecordPasskeyUse(ctx context.Context, arg RecordPasskeyUseParams) (int64, error)
 	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)
 	SetInviteUser(ctx context.Context, arg SetInviteUserParams) (int64, error)
 	SetLoginFlowChallenge(ctx context.Context, arg SetLoginFlowChallengeParams) (int64, error)

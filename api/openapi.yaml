@@ -724,6 +724,18 @@ paths:
           description: Unsupported Media Type
       security:
       - bearerAuth: []
+  /assets/passkey.js:
+    get:
+      description: The one script of the service. It runs the WebAuthn ceremonies
+        of the login page and of the page that adds a passkey.
+      operationId: passkeyScript
+      responses:
+        "200":
+          content:
+            text/javascript:
+              schema:
+                type: string
+          description: OK
   /auth/check:
     get:
       description: 'Traefik forwardAuth. A valid session or a valid Authorization:
@@ -1019,6 +1031,101 @@ paths:
               schema:
                 type: string
           description: Service Unavailable
+  /login/passkey:
+    post:
+      description: 'Checks the assertion against the challenge of the login flow.
+        The challenge is cleared before the check, so it is used once. A passkey with
+        user verification counts as two factors: it completes the flow alone, sets
+        the session cookie, and answers the return URL. A response without user verification,
+        an unknown credential, or a signature counter that does not increase is 400.
+        Origin MUST be the public origin, else 403.'
+      operationId: passkeyLogin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiPasskeyCredential'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiPasskeyDone'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Forbidden
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Internal Server Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+  /login/passkey/options:
+    post:
+      description: Stores a new WebAuthn challenge on the login flow in the flow cookie
+        and returns the options for navigator.credentials.get. The options require
+        user verification and name no credential. Origin MUST be the public origin,
+        else 403.
+      operationId: passkeyLoginOptions
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiPasskeyOptions'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Internal Server Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
   /login/telegram/callback:
     get:
       description: 'The data-auth-url of the Telegram Login Widget. It needs the login
@@ -1126,6 +1233,186 @@ paths:
               schema:
                 type: string
           description: OK
+  /passkeys:
+    post:
+      description: Checks the new credential against the challenge of the flow in
+        the flow cookie and stores the passkey. The challenge is used once. A credential
+        without user verification is 400. A credential that is already stored is 409.
+        A login older than 10 minutes is 403. Origin MUST be the public origin, else
+        403.
+      operationId: passkeyAdd
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiPasskeyAddRequest'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiPasskeyDone'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Forbidden
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Internal Server Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+  /passkeys/{id}/delete:
+    post:
+      description: Deletes one passkey of the session user and redirects to the sessions
+        page. Origin MUST be the public origin, else 403. A login older than 10 minutes
+        shows the step-up password form instead, which returns to the sessions page.
+        A passkey of another user is 404.
+      operationId: deletePasskey
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /passkeys/new:
+    get:
+      description: The form that adds a passkey for the session user. With no session
+        it redirects to the login page. A login older than 10 minutes shows the step-up
+        password form first, which returns here.
+      operationId: passkeyNewPage
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /passkeys/options:
+    post:
+      description: Starts a flow of the session user with a new WebAuthn challenge,
+        sets the flow cookie, and returns the options for navigator.credentials.create.
+        The options require a discoverable credential and user verification. A login
+        older than 10 minutes is 403. Origin MUST be the public origin, else 403.
+      operationId: passkeyAddOptions
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiPasskeyOptions'
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Internal Server Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
   /readyz:
     get:
       operationId: getReady
@@ -1616,6 +1903,48 @@ components:
           type: string
         resource:
           type: string
+      type: object
+    ApiPasskeyAddRequest:
+      properties:
+        credential:
+          $ref: '#/components/schemas/ApiPasskeyCredential'
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+      - name
+      - credential
+      type: object
+    ApiPasskeyCredential:
+      properties:
+        id:
+          type: string
+        rawId:
+          type: string
+        response:
+          additionalProperties: {}
+          nullable: true
+          type: object
+        type:
+          enum:
+          - public-key
+          type: string
+      type: object
+    ApiPasskeyDone:
+      properties:
+        location:
+          format: uri
+          type: string
+      type: object
+    ApiPasskeyOptions:
+      properties:
+        publicKey:
+          additionalProperties: {}
+          description: PublicKeyCredentialRequestOptions or PublicKeyCredentialCreationOptions.
+            Byte fields are base64url.
+          nullable: true
+          type: object
       type: object
     ApiProblemBody:
       properties:
