@@ -29,7 +29,7 @@ type AuthData struct {
 	authDate time.Time
 }
 
-// ParseAuthData reads the callback query. Each field MUST appear once.
+// ParseAuthData reads the callback query. Each field MUST appear once, with a key of [a-z_]+ and a value with no "\n".
 // `hash` MUST be the hex of 32 bytes, `id` a positive decimal integer, and `auth_date` positive Unix seconds.
 // The error MUST NOT contain a value.
 func ParseAuthData(query url.Values) (AuthData, error) {
@@ -38,7 +38,7 @@ func ParseAuthData(query url.Values) (AuthData, error) {
 	}
 	fields := make(map[string]string, len(query))
 	for key, values := range query {
-		if key == "" || len(values) != 1 {
+		if !validKey(key) || len(values) != 1 || strings.Contains(values[0], "\n") {
 			return AuthData{}, ErrBadData
 		}
 		fields[key] = values[0]
@@ -56,6 +56,20 @@ func ParseAuthData(query url.Values) (AuthData, error) {
 		return AuthData{}, ErrBadData
 	}
 	return AuthData{fields: fields, hash: hash, subject: subject, authDate: time.Unix(seconds, 0).UTC()}, nil
+}
+
+// validKey reports whether key is [a-z_]+. A key with "=" or "\n", or a value with "\n",
+// could move a field to another line of the check string and keep the hash.
+func validKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	for _, r := range key {
+		if (r < 'a' || r > 'z') && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // parseUserID accepts only the canonical decimal form, so one account has one subject.
