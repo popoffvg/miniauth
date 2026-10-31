@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/access"
@@ -193,19 +194,23 @@ func (s *service) listGrants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var filter access.GrantFilter
-	query := r.URL.Query()
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "The query is not valid.")
+		return
+	}
 	if raw := query.Get("user"); raw != "" {
-		login, err := users.ParseLogin(raw)
-		if err != nil {
-			writeAccessError(w, r, err)
+		login, loginErr := users.ParseLogin(raw)
+		if loginErr != nil {
+			writeAccessError(w, r, loginErr)
 			return
 		}
 		filter.User = login
 	}
 	if raw := query.Get("resource"); raw != "" {
-		name, err := access.ParseResourceName(raw)
-		if err != nil {
-			writeAccessError(w, r, err)
+		name, nameErr := access.ParseResourceName(raw)
+		if nameErr != nil {
+			writeAccessError(w, r, nameErr)
 			return
 		}
 		filter.Resource = name
