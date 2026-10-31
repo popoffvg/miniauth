@@ -1,6 +1,7 @@
 name: release
 
-# A GitHub release publishes the container image ghcr.io/<owner>/miniauth:<tag> and :latest.
+# A GitHub release publishes the container image ghcr.io/<owner>/miniauth:<version>, :<major.minor>, and :latest.
+# A prerelease gets only :<version>.
 on:
   release:
     types: [published]
@@ -16,6 +17,26 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # An older release published later MUST NOT move `latest` or its `major.minor` tag.
+      # metadata-action gives a prerelease only the `{{version}}` tag.
+      - id: order
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          stable='^v?[0-9]+\.[0-9]+\.[0-9]+$'
+          newest() { git tag -l "$1" | grep -E "$stable" | sort -V | tail -n 1; }
+          series=$(printf '%s' "$TAG" | sed -E 's/^(v?[0-9]+\.[0-9]+)\..*/\1/')
+          latest=false
+          minor=false
+          if [ "$PRERELEASE" != "true" ] && printf '%s' "$TAG" | grep -Eq "$stable"; then
+            [ "$(newest '*')" = "$TAG" ] && latest=true
+            [ "$(newest "$series.*")" = "$TAG" ] && minor=true
+          fi
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -28,8 +49,10 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.order.outputs.minor }}
+            type=raw,value=latest,enable=${{ steps.order.outputs.latest }}
+          flavor: |
+            latest=false
       - uses: docker/build-push-action@v6
         with:
           context: .
