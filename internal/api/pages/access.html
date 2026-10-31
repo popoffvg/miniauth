@@ -1,0 +1,41 @@
+{{template "head" "Access"}}
+<style>main{max-width:720px}li{margin:12px 0}dl{margin:0}dt{font-weight:600}dd{margin:0 0 4px}select{width:100%;padding:8px;font-size:1rem}.notice{background:#f0fdf4;color:#166534;padding:8px;border-radius:4px}.inline button{width:auto;margin:4px 0;padding:4px 10px}</style>
+<h1>Access</h1>
+{{with .Message}}<p class="message" role="alert">{{.}}</p>{{end}}
+{{with .Notice}}<p class="notice" role="status">{{.}}</p>{{end}}
+<p>Signed in as {{.Login}}. Times are UTC.</p>
+<h2>Resources</h2>
+<ul>
+{{range .Resources}}<li>
+<dl>
+<dt>{{.Name}}</dt>
+<dd>URL: <code>{{.URL}}</code></dd>
+{{range .Grants}}<dd>{{if .Group.String}}Group <code>{{.Group}}</code>{{else}}User <code>{{.User}}</code>{{end}}, expires: {{if .ExpiresAt.IsZero}}never{{else}}{{.ExpiresAt.Format "2006-01-02 15:04 UTC"}}{{if .Expired}} (expired){{end}}{{end}}
+<form class="inline" method="post" action="/access/grants/{{.ID}}/revoke"><button type="submit">Revoke</button></form></dd>
+{{else}}<dd>No grants.</dd>
+{{end}}</dl>
+<form class="inline" method="post" action="/access/resources/{{.Name}}/delete"><button type="submit">Delete {{.Name}} and its grants</button></form>
+</li>
+{{else}}<li>No resources.</li>
+{{end}}</ul>
+<h2>Grant access</h2>
+<form method="post" action="/access/grants">
+<label for="resource">Resource</label>
+<select id="resource" name="resource" required>{{range .Resources}}<option value="{{.Name}}">{{.Name}} ({{.URL}})</option>{{end}}</select>
+<label for="user">User login</label>
+<input id="user" name="user" maxlength="64">
+<label for="group">Or group</label>
+<input id="group" name="group" maxlength="64">
+<label for="expires">Expires at (optional, UTC)</label>
+<input id="expires" name="expires" type="datetime-local">
+<button type="submit">Grant</button>
+</form>
+<h2>Add a resource</h2>
+<form method="post" action="/access/resources">
+<label for="name">Name</label>
+<input id="name" name="name" maxlength="64" required>
+<label for="url">URL</label>
+<input id="url" name="url" type="url" placeholder="https://dash.example.test/" required>
+<button type="submit">Add resource</button>
+</form>
+{{template "foot"}}

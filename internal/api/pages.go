@@ -71,7 +71,8 @@ type pageView struct {
 // a browser applies it to the 303 after the form, and the return URL can be on another subdomain.
 const pageCSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
 
-func renderPage(w http.ResponseWriter, r *http.Request, status int, page pageName, view pageView) {
+// view is a pageView, or the view type of a page that has its own.
+func renderPage(w http.ResponseWriter, r *http.Request, status int, page pageName, view any) {
 	var body bytes.Buffer
 	if err := pageTemplates.ExecuteTemplate(&body, string(page), view); err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: render page", "page", string(page), "err", err)

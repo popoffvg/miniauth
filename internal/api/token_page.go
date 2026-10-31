@@ -131,27 +131,7 @@ func (s *service) tokenPageUser(w http.ResponseWriter, r *http.Request) (users.U
 		renderDenied(w, r, http.StatusServiceUnavailable, msgTokensUnavailable)
 		return users.User{}, sessions.Session{}, false
 	}
-	session, err := s.openBrowserSession(r)
-	if errors.Is(err, sessions.ErrNotFound) {
-		http.Redirect(w, r, s.publicURL.Login(s.publicURL.Origin()+tokensPath), http.StatusSeeOther)
-		return users.User{}, sessions.Session{}, false
-	}
-	if err != nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: token page", "err", err)
-		renderDenied(w, r, http.StatusInternalServerError, msgTokenFailed)
-		return users.User{}, sessions.Session{}, false
-	}
-	user, err := s.accounts.Find(r.Context(), session.UserID)
-	if errors.Is(err, users.ErrNotFound) || err == nil && user.Disabled() {
-		http.Redirect(w, r, s.publicURL.Login(s.publicURL.Origin()+tokensPath), http.StatusSeeOther)
-		return users.User{}, sessions.Session{}, false
-	}
-	if err != nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: token page", "err", err)
-		renderDenied(w, r, http.StatusInternalServerError, msgTokenFailed)
-		return users.User{}, sessions.Session{}, false
-	}
-	return user, session, true
+	return s.browserPageUser(w, r, tokensPath, msgTokenFailed)
 }
 
 func (s *service) renderTokens(w http.ResponseWriter, r *http.Request, status int, user users.User, message pageMessage) {
