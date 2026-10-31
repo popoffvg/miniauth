@@ -174,8 +174,23 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 
 		login := submitLogin(t, browser, base, base, rawLogin, rawPassword)
 		require.Equal(t, http.StatusSeeOther, login.status)
-		assert.Equal(t, base+"/app", login.header.Get("Location"))
+		confirmPage := base + linkPagePath + "?return=" + url.QueryEscape(base+"/app")
+		assert.Equal(t, confirmPage, login.header.Get("Location"))
 		require.Len(t, sessionCookies(login), 1)
+		assert.False(t, linked("1001"), "a password login alone MUST NOT link")
+
+		page := get(t, browser, confirmPage)
+		require.Equal(t, http.StatusOK, page.status)
+		assert.Contains(t, page.body, "Telegram account 1001")
+		assert.Contains(t, page.body, rawLogin)
+
+		refused := confirmLink(t, browser, base, "https://evil.example.test", "link", base+"/app")
+		assert.Equal(t, http.StatusForbidden, refused.status)
+		assert.False(t, linked("1001"))
+
+		done := confirmLink(t, browser, base, base, "link", base+"/app")
+		require.Equal(t, http.StatusSeeOther, done.status, done.body)
+		assert.Equal(t, base+"/app", done.header.Get("Location"))
 		assert.Zero(t, countPending())
 		assert.True(t, linked("1001"))
 	})

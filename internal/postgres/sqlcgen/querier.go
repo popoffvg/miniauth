@@ -58,6 +58,7 @@ type Querier interface {
 	GetInvite(ctx context.Context, tokenHash []byte) (Invite, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
 	GetOpenPasswordReset(ctx context.Context, arg GetOpenPasswordResetParams) (GetOpenPasswordResetRow, error)
+	GetPendingIdentityLink(ctx context.Context, arg GetPendingIdentityLinkParams) (GetPendingIdentityLinkRow, error)
 	GetResource(ctx context.Context, name string) (Resource, error)
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
 	GetStoredDeviceHash(ctx context.Context, id pgtype.UUID) ([]byte, error)

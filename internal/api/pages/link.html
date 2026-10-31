@@ -1,0 +1,10 @@
+{{template "head" "Link an account"}}
+<h1>Link an account</h1>
+<p>Link the {{.Provider}} account {{.Subject}} to your account {{.Login}}?</p>
+<p>Link it only if you signed in with this {{.Provider}} account yourself, in this browser. After the link, this {{.Provider}} account signs in to your account.</p>
+<form method="post" action="/link">
+<input type="hidden" name="return" value="{{.Return}}">
+<button type="submit" name="action" value="link">Link the {{.Provider}} account</button>
+<button type="submit" name="action" value="skip">Do not link</button>
+</form>
+{{template "foot"}}

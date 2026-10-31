@@ -76,3 +76,31 @@ func (r *IdentityLinkRepository) Cleanup(ctx context.Context, now time.Time) err
 	}
 	return nil
 }
+
+// Find returns the pending link of hash that is live at now.
+func (r *IdentityLinkRepository) Find(ctx context.Context, hash identitylink.SecretHash, now time.Time) (identitylink.PendingLink, error) {
+	row, err := r.q.GetPendingIdentityLink(ctx, sqlcgen.GetPendingIdentityLinkParams{SecretHash: hash[:], Now: pgTime(now)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return identitylink.PendingLink{}, identitylink.ErrNotFound
+	}
+	if err != nil {
+		return identitylink.PendingLink{}, fmt.Errorf("postgres: find pending identity link: %w", err)
+	}
+	subject, err := users.ParseSubject(row.Subject)
+	if err != nil {
+		return identitylink.PendingLink{}, fmt.Errorf("postgres: find pending identity link: %w", err)
+	}
+	return identitylink.PendingLink{
+		Account:   users.ExternalAccount{Kind: users.Kind(row.Provider), Subject: subject},
+		CreatedAt: row.CreatedAt.Time.UTC(),
+		ExpiresAt: row.ExpiresAt.Time.UTC(),
+	}, nil
+}
+
+// Delete deletes the pending link of hash.
+func (r *IdentityLinkRepository) Delete(ctx context.Context, hash identitylink.SecretHash) error {
+	if err := r.q.DeletePendingIdentityLink(ctx, hash[:]); err != nil {
+		return fmt.Errorf("postgres: delete pending identity link: %w", err)
+	}
+	return nil
+}

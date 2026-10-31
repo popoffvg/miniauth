@@ -31,13 +31,17 @@ import (
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
-// laterLinks moves the clock of Link forward by shift, so a test can link after LinkTTL.
+// laterLinks moves the clock of Link forward by shift, so a test can link after LinkTTL. fail makes Link fail.
 type laterLinks struct {
 	identitylink.Store
 	shift atomic.Int64
+	fail  atomic.Bool
 }
 
 func (l *laterLinks) Link(ctx context.Context, hash identitylink.SecretHash, userID users.ID, identityID users.IdentityID, now time.Time) (users.ExternalAccount, error) {
+	if l.fail.Load() {
+		return users.ExternalAccount{}, errors.New("database is down")
+	}
 	return l.Store.Link(ctx, hash, userID, identityID, now.Add(time.Duration(l.shift.Load())))
 }
 
@@ -154,11 +158,46 @@ func TestGoogleLoginEndToEnd(t *testing.T) {
 
 		resp := submitLogin(t, browser, base, base, rawLogin, rawPassword)
 		require.Equal(t, http.StatusSeeOther, resp.status)
-		assert.Equal(t, base+"/app", resp.header.Get("Location"))
+		confirmPage := base + linkPagePath + "?return=" + url.QueryEscape(base+"/app")
+		assert.Equal(t, confirmPage, resp.header.Get("Location"))
 		require.Len(t, sessionCookies(resp), 1)
+		_, linked = linkedUser("google-sub-1")
+		assert.False(t, linked, "a password login alone MUST NOT link")
+
+		confirm := get(t, browser, confirmPage)
+		require.Equal(t, http.StatusOK, confirm.status)
+		assert.Contains(t, confirm.body, "Google account google-sub-1")
+
+		links.fail.Store(true)
+		failed := confirmLink(t, browser, base, base, "link", base+"/app")
+		links.fail.Store(false)
+		assert.Equal(t, http.StatusInternalServerError, failed.status)
+		assert.Nil(t, findCookie(failed.cookies, pendingLinkCookieName), "a transient failure MUST keep the pending link cookie")
+		assert.Equal(t, int64(1), countPending())
+
+		done := confirmLink(t, browser, base, base, "link", base+"/app")
+		require.Equal(t, http.StatusSeeOther, done.status, done.body)
+		assert.Equal(t, base+"/app", done.header.Get("Location"))
 		assert.Zero(t, countPending())
 		_, linked = linkedUser("google-sub-1")
 		assert.True(t, linked)
+	})
+
+	t.Run("a declined link is deleted", func(t *testing.T) {
+		provider.SetSubject("google-sub-3")
+		browser := newBrowser(t, server)
+		openLogin(t, browser, base, base+"/app")
+		require.Equal(t, http.StatusOK, googleCallback(t, browser, base, nil).status)
+		resp := submitLogin(t, browser, base, base, rawLogin, rawPassword)
+		require.Equal(t, http.StatusSeeOther, resp.status)
+
+		declined := confirmLink(t, browser, base, base, "skip", base+"/app")
+		require.Equal(t, http.StatusSeeOther, declined.status, declined.body)
+		assert.Equal(t, base+"/app", declined.header.Get("Location"))
+		assert.Zero(t, countPending())
+		_, linked := linkedUser("google-sub-3")
+		assert.False(t, linked)
+		assert.Equal(t, http.StatusFound, get(t, browser, base+linkPagePath).status, "with no pending link the page redirects")
 	})
 
 	t.Run("a Google login alone opens a session for the linked user", func(t *testing.T) {
@@ -228,9 +267,23 @@ func TestGoogleLoginEndToEnd(t *testing.T) {
 		resp := submitLogin(t, browser, base, base, rawLogin, rawPassword)
 		require.Equal(t, http.StatusSeeOther, resp.status)
 		require.Len(t, sessionCookies(resp), 1)
+		late := confirmLink(t, browser, base, base, "link", base+"/app")
+		require.Equal(t, http.StatusSeeOther, late.status, late.body)
+		assert.Equal(t, base+"/app", late.header.Get("Location"))
 		_, linked := linkedUser("google-sub-2")
 		assert.False(t, linked)
 	})
+}
+
+// confirmLink sends the form of the link confirm page. action is "link" or "skip".
+func confirmLink(t *testing.T, browser *http.Client, base, origin, action, returnTo string) reply {
+	t.Helper()
+	form := url.Values{"action": {action}, "return": {returnTo}}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, base+linkPagePath, strings.NewReader(form.Encode()))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", origin)
+	return do(t, browser, req)
 }
 
 // postGoogle sends the Google button of the login page.
