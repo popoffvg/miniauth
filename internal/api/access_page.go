@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -173,21 +172,7 @@ func (s *service) accessPageAdmin(w http.ResponseWriter, r *http.Request) (users
 		renderDenied(w, r, http.StatusServiceUnavailable, msgAccessUnavailable)
 		return users.User{}, sessions.Session{}, false
 	}
-	user, session, ok := s.browserPageUser(w, r, accessPagePath, msgAccessFailed)
-	if !ok {
-		return users.User{}, sessions.Session{}, false
-	}
-	names, err := s.groups.List(r.Context(), user.ID)
-	if err != nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: access page", "err", err)
-		renderDenied(w, r, http.StatusInternalServerError, msgAccessFailed)
-		return users.User{}, sessions.Session{}, false
-	}
-	if !slices.Contains(names, groups.Admin()) {
-		renderDenied(w, r, http.StatusForbidden, msgAccessAdminOnly)
-		return users.User{}, sessions.Session{}, false
-	}
-	return user, session, true
+	return s.adminPageUser(w, r, accessPagePath, msgAccessFailed, msgAccessAdminOnly)
 }
 
 func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status int, user users.User, message, notice pageMessage) {

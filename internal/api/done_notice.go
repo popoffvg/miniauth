@@ -15,6 +15,10 @@ const (
 	doneForgotten       doneFlag = "forgotten"
 	donePasskeyDeleted  doneFlag = "passkey-deleted"
 	doneTwoStepOff      doneFlag = "two-step-off"
+	doneUserDisabled    doneFlag = "user-disabled"
+	doneUserEnabled     doneFlag = "user-enabled"
+	doneMemberAdded     doneFlag = "member-added"
+	doneMemberRemoved   doneFlag = "member-removed"
 )
 
 // doneNotices is the fixed message of each flag. A page ignores a flag that is not in this list.
@@ -31,6 +35,10 @@ var doneNotices = []struct {
 	{flag: doneForgotten, message: "The device is forgotten."},
 	{flag: donePasskeyDeleted, message: "The passkey is deleted."},
 	{flag: doneTwoStepOff, message: "Two-step login is off."},
+	{flag: doneUserDisabled, message: "The user is disabled and signed out everywhere."},
+	{flag: doneUserEnabled, message: "The user is enabled."},
+	{flag: doneMemberAdded, message: "The user is added to the group."},
+	{flag: doneMemberRemoved, message: "The user is removed from the group."},
 }
 
 func doneNotice(r *http.Request) pageMessage {

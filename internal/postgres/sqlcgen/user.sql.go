@@ -41,6 +41,20 @@ func (q *Queries) DisableUser(ctx context.Context, arg DisableUserParams) (int64
 	return result.RowsAffected(), nil
 }
 
+const enableUser = `-- name: EnableUser :execrows
+UPDATE users
+SET disabled_at = NULL
+WHERE id = $1
+`
+
+func (q *Queries) EnableUser(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, enableUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getIdentityByLogin = `-- name: GetIdentityByLogin :one
 SELECT
     users.id AS user_id,
@@ -155,4 +169,58 @@ func (q *Queries) InsertUserIdentity(ctx context.Context, arg InsertUserIdentity
 		arg.Login,
 	)
 	return err
+}
+
+const listUserAccounts = `-- name: ListUserAccounts :many
+SELECT
+    users.id,
+    users.login,
+    users.created_at,
+    users.disabled_at,
+    COALESCE(
+        (SELECT array_agg(gm.name ORDER BY gm.name) FROM group_memberships gm WHERE gm.user_id = users.id),
+        '{}'
+    )::text[] AS group_names,
+    (SELECT count(*) FROM devices d WHERE d.user_id = users.id)::bigint AS device_count,
+    (SELECT max(d.last_seen) FROM devices d WHERE d.user_id = users.id)::timestamptz AS last_seen
+FROM users
+ORDER BY users.login
+`
+
+type ListUserAccountsRow struct {
+	ID          pgtype.UUID
+	Login       string
+	CreatedAt   pgtype.Timestamptz
+	DisabledAt  pgtype.Timestamptz
+	GroupNames  []string
+	DeviceCount int64
+	LastSeen    pgtype.Timestamptz
+}
+
+func (q *Queries) ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, error) {
+	rows, err := q.db.Query(ctx, listUserAccounts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserAccountsRow
+	for rows.Next() {
+		var i ListUserAccountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Login,
+			&i.CreatedAt,
+			&i.DisabledAt,
+			&i.GroupNames,
+			&i.DeviceCount,
+			&i.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

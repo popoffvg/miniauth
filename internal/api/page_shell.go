@@ -40,6 +40,7 @@ var navItems = []navItem{
 	{Path: "/", Section: navAccount, Label: "Overview", Icon: iconHome},
 	{Path: tokensPath, Section: navAccount, Label: "Tokens", Icon: iconKey},
 	{Path: sessionsPagePath, Section: navAccount, Label: "Security", Icon: iconShield},
+	{Path: usersPagePath, Section: navAdministration, Label: "Users", Icon: iconUsers},
 	{Path: accessPagePath, Section: navAdministration, Label: "Access", Icon: iconLock},
 }
 

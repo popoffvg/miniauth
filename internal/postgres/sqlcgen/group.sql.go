@@ -11,6 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteGroupMembership = `-- name: DeleteGroupMembership :execrows
+DELETE FROM group_memberships
+WHERE user_id = $1 AND name = $2
+`
+
+type DeleteGroupMembershipParams struct {
+	UserID pgtype.UUID
+	Name   string
+}
+
+func (q *Queries) DeleteGroupMembership(ctx context.Context, arg DeleteGroupMembershipParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteGroupMembership, arg.UserID, arg.Name)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const ensureGroupMembership = `-- name: EnsureGroupMembership :exec
+INSERT INTO group_memberships (user_id, name)
+VALUES ($1, $2)
+ON CONFLICT (user_id, name) DO NOTHING
+`
+
+type EnsureGroupMembershipParams struct {
+	UserID pgtype.UUID
+	Name   string
+}
+
+func (q *Queries) EnsureGroupMembership(ctx context.Context, arg EnsureGroupMembershipParams) error {
+	_, err := q.db.Exec(ctx, ensureGroupMembership, arg.UserID, arg.Name)
+	return err
+}
+
 const insertGroupMembership = `-- name: InsertGroupMembership :exec
 INSERT INTO group_memberships (user_id, name)
 VALUES ($1, $2)

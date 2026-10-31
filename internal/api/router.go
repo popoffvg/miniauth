@@ -24,6 +24,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/telegramstep"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/useradmin"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -85,6 +86,8 @@ type service struct {
 
 	// invites is nil unless WithInvites sets it.
 	invites *invites.Service
+	// userAdmin is nil unless WithUserAdmin sets it.
+	userAdmin *useradmin.Service
 }
 
 // WithLogin serves the login page. Without it, the login routes answer 503.
@@ -201,6 +204,56 @@ func (s *service) routes() []route {
 				http.StatusRequestEntityTooLarge,
 				http.StatusUnsupportedMediaType,
 			},
+		},
+		{
+			method:   http.MethodGet,
+			path:     "/api/v1/users",
+			id:       "listUsers",
+			handler:  s.listUsers,
+			response: new(userListBody),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
+			doc:      "Lists every user in login order, with the groups, the state, the device count, and the last time a device was seen.",
+		},
+		{
+			method:  http.MethodPost,
+			path:    "/api/v1/users/{login}/disable",
+			id:      "disableUser",
+			handler: s.disableUserAPI,
+			request: new(userLoginPath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:     "Disables the user and deletes every session of the user in one transaction. The next /auth/check of the user is refused. A disabled user stays disabled.",
+		},
+		{
+			method:  http.MethodPost,
+			path:    "/api/v1/users/{login}/enable",
+			id:      "enableUser",
+			handler: s.enableUserAPI,
+			request: new(userLoginPath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:     "Enables the user. The user signs in again; no session comes back.",
+		},
+		{
+			method:  http.MethodPut,
+			path:    "/api/v1/groups/{group}/members/{login}",
+			id:      "addGroupMember",
+			handler: s.addMemberAPI,
+			request: new(groupMemberPath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:     "Adds the user to the group. A member stays a member: the request is idempotent.",
+		},
+		{
+			method:  http.MethodDelete,
+			path:    "/api/v1/groups/{group}/members/{login}",
+			id:      "removeGroupMember",
+			handler: s.removeMemberAPI,
+			request: new(groupMemberPath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:     "Removes the user from the group. A user who is not in the group is 404.",
 		},
 		{
 			method:   http.MethodPost,
@@ -730,6 +783,78 @@ func (s *service) routes() []route {
 			pages:    accessFormPages,
 			doc:      "Revokes a grant and redirects to GET /access?done=revoked. The next /auth/check does not count it. " + accessFormDoc,
 			isPublic: true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        usersPagePath,
+			id:          "usersPage",
+			handler:     s.usersPage,
+			request:     new(usersPageRequest),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			empty:       []int{http.StatusSeeOther},
+			pages:       []int{http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Lists the users with their groups and state, with the forms to change them and to make an invite link. Only a member of the group admin opens it; any other user is 403. With no session it redirects to the login page, which returns here.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     usersPagePath + "/{login}/disable",
+			id:       "disableUserForm",
+			handler:  s.disableUserForm,
+			request:  new(userLoginPath),
+			status:   http.StatusSeeOther,
+			pages:    usersFormPages,
+			doc:      "Disables the user, deletes every session of the user, and redirects to GET /users?done=user-disabled. An admin cannot disable itself: 409. " + usersFormDoc,
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     usersPagePath + "/{login}/enable",
+			id:       "enableUserForm",
+			handler:  s.enableUserForm,
+			request:  new(userLoginPath),
+			status:   http.StatusSeeOther,
+			pages:    usersFormPages,
+			doc:      "Enables the user and redirects to GET /users?done=user-enabled. " + usersFormDoc,
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     usersPagePath + "/{login}/groups",
+			id:       "addMemberForm",
+			handler:  s.addMemberForm,
+			request:  new(userGroupForm),
+			status:   http.StatusSeeOther,
+			pages:    usersFormPages,
+			doc:      "Adds the user to the group of the form and redirects to GET /users?done=member-added. " + usersFormDoc,
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     usersPagePath + "/{login}/groups/{group}/remove",
+			id:       "removeMemberForm",
+			handler:  s.removeMemberForm,
+			request:  new(groupMemberPath),
+			status:   http.StatusSeeOther,
+			pages:    usersFormPages,
+			doc:      "Removes the user from the group and redirects to GET /users?done=member-removed. An admin cannot leave the group admin: 409. " + usersFormDoc,
+			isPublic: true,
+		},
+		{
+			method:      http.MethodPost,
+			path:        usersPagePath + "/invites",
+			id:          "makeInviteForm",
+			handler:     s.makeInviteForm,
+			request:     new(userInviteForm),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			empty:       []int{http.StatusSeeOther},
+			pages:       []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Makes an invite link for the resource of the form and shows it once, with Cache-Control: no-store. " + usersFormDoc,
+			isPublic:    true,
 		},
 		{
 			method:   http.MethodPost,

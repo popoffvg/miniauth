@@ -1636,3 +1636,17 @@ h2.setting-title {
     border-bottom: 0;
   }
 }
+
+.menu-form {
+  display: flex;
+  gap: var(--s1);
+  padding: var(--s1);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--s1);
+}
+
+.menu-form .input {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: var(--text-small);
+}

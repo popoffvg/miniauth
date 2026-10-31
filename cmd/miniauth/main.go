@@ -30,6 +30,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/telemetry"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/useradmin"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -156,6 +157,10 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
+	userAdminRepo, err := postgres.NewUserAdminRepository(pool)
+	if err != nil {
+		return err
+	}
 
 	options := []api.RouterOption{
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
@@ -165,6 +170,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		api.WithAccessAdmin(grants),
 		withRecovery,
 		api.WithInvites(inviteService),
+		api.WithUserAdmin(useradmin.NewService(userAdminRepo, userService)),
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
 	if cfg.Google.Enabled() {
