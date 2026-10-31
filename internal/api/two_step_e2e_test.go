@@ -210,6 +210,20 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("a step page of one flow does not change the page of the next flow", func(t *testing.T) {
+		require.Len(t, recoveryCodes, totpstep.RecoveryCodeCount)
+		early := newBrowser(t, server)
+		openLogin(t, early, base, base+"/app")
+		closed := get(t, early, base+loginRecoveryCodePath)
+		require.Equal(t, http.StatusOK, closed.status)
+		assert.NotContains(t, closed.body, `action="/login/recovery-code"`, "the recovery step is not open before the password")
+
+		browser, _ := passwordOnly(t)
+		form := get(t, browser, base+loginRecoveryCodePath)
+		require.Equal(t, http.StatusOK, form.status)
+		assert.Contains(t, form.body, `action="/login/recovery-code"`)
+	})
+
 	t.Run("a recovery code works once", func(t *testing.T) {
 		require.Len(t, recoveryCodes, totpstep.RecoveryCodeCount)
 		browser, _ := passwordOnly(t)
