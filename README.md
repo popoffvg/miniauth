@@ -18,6 +18,10 @@ A personal access token is `idp_` and 43 base62 characters. A client sends it as
 
 `POST /api/v1/users` creates a user and one password identity. The body is JSON: `login` and `password`. The caller sends `Authorization: Bearer <token>`. `MINIAUTH_ADMIN_TOKEN_SHA256` is the hex SHA-256 of that token. The token is not in the config. `GET /openapi.yaml` serves the description generated from the handlers. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, request and database spans are exported there. A query string, a header, and a SQL argument are not span attributes.
 
+## Release
+
+A published GitHub release with a tag such as `v0.1.0` builds the image from `Dockerfile` and pushes it to `ghcr.io/popoffvg/miniauth` with the tags `0.1.0`, `0.1`, and `latest`.
+
 ## Development
 
 ```sh
