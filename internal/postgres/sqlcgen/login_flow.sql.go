@@ -177,8 +177,9 @@ SET
     return_url = $4,
     needs_second = $5,
     pending_factor = $6,
-    expires_at = $7
-WHERE id = $8 AND version = $9
+    expires_at = $7,
+    user_id = $8
+WHERE id = $9 AND version = $10
 `
 
 type UpdateLoginFlowParams struct {
@@ -189,6 +190,7 @@ type UpdateLoginFlowParams struct {
 	NeedsSecond   bool
 	PendingFactor int32
 	ExpiresAt     pgtype.Timestamptz
+	UserID        pgtype.UUID
 	ID            pgtype.UUID
 	PrevVersion   int64
 }
@@ -202,6 +204,7 @@ func (q *Queries) UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams
 		arg.NeedsSecond,
 		arg.PendingFactor,
 		arg.ExpiresAt,
+		arg.UserID,
 		arg.ID,
 		arg.PrevVersion,
 	)

@@ -78,7 +78,7 @@ func (m *memAttempts) Record(_ context.Context, attempt passwordstep.Attempt) er
 	return nil
 }
 
-func (m *memAttempts) CountFailures(_ context.Context, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
+func (m *memAttempts) CountFailures(_ context.Context, _ passwordstep.AttemptKind, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
 	var recent passwordstep.RecentFailures
 	for _, a := range m.stored {
 		if a.AttemptedAt.Before(since) {

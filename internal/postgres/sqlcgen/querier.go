@@ -13,9 +13,12 @@ import (
 type Querier interface {
 	ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invite, error)
 	ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error)
+	// created_at names the enrollment, so a newer enrollment of the same user is not confirmed by an older page.
+	ConfirmTOTP(ctx context.Context, arg ConfirmTOTPParams) (int64, error)
 	CountDevices(ctx context.Context) (int64, error)
+	// The IP count includes every kind.
 	CountIPFailures(ctx context.Context, arg CountIPFailuresParams) (CountIPFailuresRow, error)
-	// A success resets the count for its login. It does not reset the count for its IP.
+	// A success resets the count for its login and kind. It does not reset the count for its IP.
 	CountLoginFailures(ctx context.Context, arg CountLoginFailuresParams) (CountLoginFailuresRow, error)
 	CountLoginFlows(ctx context.Context) (int64, error)
 	CountPendingIdentityLinks(ctx context.Context) (int64, error)
@@ -39,8 +42,10 @@ type Querier interface {
 	DeletePasswordResetsBefore(ctx context.Context, expiresAt pgtype.Timestamptz) error
 	DeletePendingIdentityLink(ctx context.Context, secretHash []byte) error
 	DeleteRecoveryAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
+	DeleteRecoveryCodes(ctx context.Context, userID pgtype.UUID) error
 	DeleteResource(ctx context.Context, name string) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
+	DeleteTOTP(ctx context.Context, userID pgtype.UUID) error
 	DeleteUserPasskey(ctx context.Context, arg DeleteUserPasskeyParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
 	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)
@@ -56,6 +61,7 @@ type Querier interface {
 	GetResource(ctx context.Context, name string) (Resource, error)
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
 	GetStoredDeviceHash(ctx context.Context, id pgtype.UUID) ([]byte, error)
+	GetTOTPCredential(ctx context.Context, userID pgtype.UUID) (TotpCredential, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	GetUserByLogin(ctx context.Context, login string) (User, error)
 	InsertAccessGrant(ctx context.Context, arg InsertAccessGrantParams) error
@@ -67,6 +73,7 @@ type Querier interface {
 	InsertPasswordReset(ctx context.Context, arg InsertPasswordResetParams) error
 	InsertPendingIdentityLink(ctx context.Context, arg InsertPendingIdentityLinkParams) error
 	InsertRecoveryAttempt(ctx context.Context, arg InsertRecoveryAttemptParams) error
+	InsertRecoveryCodes(ctx context.Context, arg InsertRecoveryCodesParams) error
 	InsertResource(ctx context.Context, arg InsertResourceParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertTelegramLoginProof(ctx context.Context, arg InsertTelegramLoginProofParams) (int64, error)
@@ -94,6 +101,12 @@ type Querier interface {
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
 	UpsertDevice(ctx context.Context, arg UpsertDeviceParams) (pgtype.UUID, error)
 	UpsertDeviceSession(ctx context.Context, arg UpsertDeviceSessionParams) error
+	// A confirmed row is not replaced: zero rows means the user is already enrolled.
+	UpsertPendingTOTP(ctx context.Context, arg UpsertPendingTOTPParams) (int64, error)
+	// Zero rows means the code is unknown or spent.
+	UseRecoveryCode(ctx context.Context, arg UseRecoveryCodeParams) (int64, error)
+	// Zero rows means a code of this step or a later step was already accepted.
+	UseTOTPStep(ctx context.Context, arg UseTOTPStepParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

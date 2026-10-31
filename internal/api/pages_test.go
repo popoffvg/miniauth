@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -29,7 +30,7 @@ func TestRenderPageSetsHeaders(t *testing.T) {
 func TestRenderStepsShowsTheOneOpenForm(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil)
-	(&service{}).renderSteps(rec, req, http.StatusOK, 0, msgWrongCredentials)
+	(&service{}).renderSteps(rec, req, http.StatusOK, loginflow.LoginFlow{}, msgWrongCredentials)
 	assert.Contains(t, rec.Body.String(), `name="password"`)
 	assert.Contains(t, rec.Body.String(), string(msgWrongCredentials))
 	assert.NotContains(t, rec.Body.String(), googleLoginPath, "Google is not offered without the step")
@@ -40,8 +41,18 @@ func TestRenderStepsShowsTheOneOpenForm(t *testing.T) {
 func TestRenderStepsListsTheOpenSteps(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil)
-	(&service{}).renderSteps(rec, req, http.StatusOK, loginflow.Factors(loginflow.FactorPassword), "")
+	(&service{}).renderSteps(rec, req, http.StatusOK, loginflow.LoginFlow{Factors: loginflow.Factors(loginflow.FactorPassword)}, "")
 	assert.Contains(t, rec.Body.String(), "Choose a sign-in method")
+	assert.NotContains(t, rec.Body.String(), `name="password"`)
+}
+
+func TestRenderStepsShowsTheTOTPFormAfterThePassword(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/login", nil)
+	flow := loginflow.LoginFlow{NeedsSecond: true, Factors: loginflow.Factors(loginflow.FactorPassword)}
+	(&service{totp: &totpstep.Service{}}).renderSteps(rec, req, http.StatusOK, flow, "")
+	assert.Contains(t, rec.Body.String(), `action="/login/totp"`)
+	assert.Contains(t, rec.Body.String(), `href="/login/recovery-code"`)
 	assert.NotContains(t, rec.Body.String(), `name="password"`)
 }
 

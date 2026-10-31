@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -144,5 +145,35 @@ func validEnv(listen string) func(string) string {
 		default:
 			return ""
 		}
+	}
+}
+
+func TestLoadTOTPKey(t *testing.T) {
+	cfg, err := Load(validEnv(""))
+	require.NoError(t, err)
+	assert.False(t, cfg.TOTPKey.Set(), "no MINIAUTH_TOTP_KEY means TOTP enrollment is off")
+
+	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	cfg, err = Load(withEnv(validEnv(""), envTOTPKey, key))
+	require.NoError(t, err)
+	assert.True(t, cfg.TOTPKey.Set())
+	var logs strings.Builder
+	slog.New(slog.NewJSONHandler(&logs, nil)).Info("config", "value", cfg)
+	assert.NotContains(t, logs.String(), key)
+	assert.NotContains(t, fmt.Sprintf("%#v", cfg), "0123456789abcdef")
+
+	short := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef"))
+	_, err = Load(withEnv(validEnv(""), envTOTPKey, short))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "MINIAUTH_TOTP_KEY")
+	assert.NotContains(t, err.Error(), short)
+}
+
+func withEnv(base func(string) string, name, value string) func(string) string {
+	return func(key string) string {
+		if key == name {
+			return value
+		}
+		return base(key)
 	}
 }

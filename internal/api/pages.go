@@ -10,6 +10,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/tokens"
+	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -38,6 +39,12 @@ const (
 	pageAddKey pageName = "passkey_new.html"
 	// pageTokenCreated shows the clear token. The handler MUST set Cache-Control: no-store.
 	pageTokenCreated pageName = "token_created.html"
+	pageTOTP         pageName = "totp.html"
+	pageRecoveryCode pageName = "recovery_code.html"
+	// pageTOTPEnroll shows the TOTP secret. The handler MUST set Cache-Control: no-store.
+	pageTOTPEnroll pageName = "totp_enroll.html"
+	// pageRecoveryCodes shows the clear recovery codes. The handler MUST set Cache-Control: no-store.
+	pageRecoveryCodes pageName = "recovery_codes.html"
 )
 
 // pageMessage is a sentence a page shows to the user. It MUST NOT tell which logins exist,
@@ -67,8 +74,10 @@ const (
 
 // pageView is the data of every page. A page reads only the fields it needs.
 type pageView struct {
-	Message  pageMessage
-	Steps    []loginStep
+	Message pageMessage
+	Steps   []loginStep
+	// Links are the other open form steps next to the form of one step.
+	Links    []loginStep
 	Buttons  []loginStep
 	Login    users.Login
 	Telegram telegramWidget
@@ -83,6 +92,10 @@ type pageView struct {
 	Invite invites.Token
 	// Script loads passkey.js and adds passkeySources to the CSP.
 	Script bool
+	// Enrollment is set only on pageTOTPEnroll.
+	Enrollment *enrollmentView
+	// RecoveryCodes is set only on pageRecoveryCodes.
+	RecoveryCodes []totpstep.RecoveryCode
 }
 
 // pageCSP allows inline style and nothing else. form-action is not set:

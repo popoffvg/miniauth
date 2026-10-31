@@ -54,6 +54,15 @@ form { display: inline; }
 {{- end}}
 <p><a href="/passkeys/new">Add a passkey</a></p>
 {{- end}}
+{{- with .TwoStep}}{{if .Shown}}
+<h2>Two-step login</h2>
+<p>Two-step login: {{if .On}}on{{else}}off{{end}}</p>
+{{- if .On}}
+<form method="post" action="/sessions/totp/disable"><button type="submit">Turn off two-step login</button></form>
+{{- else if .CanEnroll}}
+<form method="post" action="/sessions/totp/enroll"><button type="submit">Turn on two-step login</button></form>
+{{- end}}
+{{- end}}{{end}}
 </main>
 </body>
 </html>

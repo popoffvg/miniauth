@@ -124,8 +124,8 @@ func (s *service) revokeToken(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.publicURL.Origin()+tokensPath, http.StatusSeeOther)
 }
 
-// tokenPageUser returns the active user of the browser session.
-// With no session it redirects to the login page, and it returns false after it wrote a reply.
+// tokenPageUser returns the active user of the browser session for the token page.
+// It returns false after it wrote a reply.
 func (s *service) tokenPageUser(w http.ResponseWriter, r *http.Request) (users.User, sessions.Session, bool) {
 	if s.tokens == nil || s.flows == nil || s.passwords == nil {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgTokensUnavailable)

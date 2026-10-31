@@ -32,13 +32,13 @@ func (f *fakeAttempts) Record(_ context.Context, attempt Attempt) error {
 	return nil
 }
 
-func (f *fakeAttempts) CountFailures(_ context.Context, login users.Login, ip ClientIP, since time.Time) (RecentFailures, error) {
+func (f *fakeAttempts) CountFailures(_ context.Context, kind AttemptKind, login users.Login, ip ClientIP, since time.Time) (RecentFailures, error) {
 	var recent RecentFailures
 	for _, a := range f.stored {
 		if a.AttemptedAt.Before(since) {
 			continue
 		}
-		if a.Login == login {
+		if a.Login == login && a.Kind == kind {
 			if a.Succeeded {
 				recent.Login = FailureCount{}
 			} else {
@@ -138,7 +138,24 @@ func TestVerifyRightPassword(t *testing.T) {
 	want := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPassword, UserID: f.user.UserID}
 	assertEvents(t, flow, want)
 	assertVerifies(t, f, 1)
-	assertLastAttempt(t, f, Attempt{Login: f.login, IP: ip, Succeeded: true, AttemptedAt: f.now})
+	assertLastAttempt(t, f, Attempt{Kind: KindPassword, Login: f.login, IP: ip, Succeeded: true, AttemptedAt: f.now})
+}
+
+type fakeSecondFactors map[users.ID]bool
+
+func (f fakeSecondFactors) HasSecondFactor(_ context.Context, userID users.ID) (bool, error) {
+	return f[userID], nil
+}
+
+func TestVerifyRightPasswordOfAUserWithTOTPNeedsASecondStep(t *testing.T) {
+	f := newStepFixture(t)
+	WithSecondFactors(fakeSecondFactors{f.user.UserID: true})(f.svc)
+	_, flow, err := f.verify(t, f.login, f.password, mustIP(t, "192.0.2.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPassword, UserID: f.user.UserID, NeedsSecond: true}
+	assertEvents(t, flow, want)
 }
 
 func TestVerifyWrongPassword(t *testing.T) {
@@ -153,7 +170,7 @@ func TestVerifyWrongPassword(t *testing.T) {
 	}
 	assertEvents(t, flow, loginflow.Event{Kind: loginflow.EventStepFailed, Factor: loginflow.FactorPassword})
 	assertVerifies(t, f, 1)
-	assertLastAttempt(t, f, Attempt{Login: f.login, IP: ip, Succeeded: false, AttemptedAt: f.now})
+	assertLastAttempt(t, f, Attempt{Kind: KindPassword, Login: f.login, IP: ip, Succeeded: false, AttemptedAt: f.now})
 }
 
 func TestVerifyUnknownLoginRunsOneArgon2idVerify(t *testing.T) {
@@ -169,7 +186,7 @@ func TestVerifyUnknownLoginRunsOneArgon2idVerify(t *testing.T) {
 	if got, want := argonParams(t, f.verified[0]), argonParams(t, f.user.Secret); got != want {
 		t.Fatalf("unknown login hash parameters %q, stored hash parameters %q", got, want)
 	}
-	assertLastAttempt(t, f, Attempt{Login: mustLogin(t, "ghost"), IP: ip, Succeeded: false, AttemptedAt: f.now})
+	assertLastAttempt(t, f, Attempt{Kind: KindPassword, Login: mustLogin(t, "ghost"), IP: ip, Succeeded: false, AttemptedAt: f.now})
 }
 
 func TestVerifyBackoffPerLogin(t *testing.T) {

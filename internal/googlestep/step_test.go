@@ -112,12 +112,15 @@ func TestFinishPassesAKnownSubject(t *testing.T) {
 	assert.NotContains(t, string(stored), verifier.CookieValue())
 	state, code := authorize(t, authURL)
 
+	// The user has TOTP, so the flow MUST still ask for a second factor.
+	h.step.config.SecondFactors = enrolledUsers{userID: true}
 	flow := &recordedFlow{}
 	outcome, err := h.step.Finish(t.Context(), flow, testFlow, verifier, state, code)
 	require.NoError(t, err)
 	assert.True(t, outcome.Linked())
 	assert.Equal(t, userID, outcome.UserID)
-	assert.Equal(t, []loginflow.Event{{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorGoogle}}, flow.events)
+	want := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorGoogle, UserID: userID, NeedsSecond: true}
+	assert.Equal(t, []loginflow.Event{want}, flow.events)
 
 	_, err = h.step.Finish(t.Context(), flow, testFlow, verifier, state, code)
 	require.ErrorIs(t, err, ErrBadCallback, "a challenge is good for one callback")
@@ -221,4 +224,11 @@ func TestClientSecretPrintsRedacted(t *testing.T) {
 	verifier, err := ParseVerifier("verifier-value")
 	require.NoError(t, err)
 	assert.Equal(t, "redacted", verifier.String())
+}
+
+// enrolledUsers reports a second factor for each user set to true.
+type enrolledUsers map[users.ID]bool
+
+func (e enrolledUsers) HasSecondFactor(_ context.Context, userID users.ID) (bool, error) {
+	return e[userID], nil
 }

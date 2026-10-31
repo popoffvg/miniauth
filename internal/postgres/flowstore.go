@@ -105,6 +105,7 @@ func (s *FlowStore) Write(ctx context.Context, id loginflow.FlowID, prev, next l
 			NeedsSecond:   next.NeedsSecond,
 			PendingFactor: int32(next.PendingFactor),
 			ExpiresAt:     pgTime(next.ExpiresAt),
+			UserID:        flowUserID(next.UserID),
 			ID:            pgID,
 			PrevVersion:   int64(prev.Version),
 		})
@@ -211,7 +212,7 @@ func factorFrom(n int32) (loginflow.Factor, error) {
 	return loginflow.Factor(n), nil
 }
 
-// flowUserID is NULL for the zero id, so a login flow stores no user.
+// flowUserID is NULL for the zero id: a login flow has no user before its first factor.
 func flowUserID(id users.ID) pgtype.UUID {
 	if id == (users.ID{}) {
 		return pgtype.UUID{}

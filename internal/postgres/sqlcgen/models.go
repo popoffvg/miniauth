@@ -69,6 +69,7 @@ type LoginAttempt struct {
 	Ip          netip.Addr
 	Succeeded   bool
 	AttemptedAt pgtype.Timestamptz
+	Kind        string
 }
 
 type LoginFlow struct {
@@ -124,6 +125,12 @@ type RecoveryAttempt struct {
 	AttemptedAt pgtype.Timestamptz
 }
 
+type RecoveryCode struct {
+	UserID   pgtype.UUID
+	CodeHash []byte
+	UsedAt   pgtype.Timestamptz
+}
+
 type Resource struct {
 	Name       string
 	Host       string
@@ -142,6 +149,14 @@ type Session struct {
 type TelegramLoginProof struct {
 	ProofHash []byte
 	ExpiresAt pgtype.Timestamptz
+}
+
+type TotpCredential struct {
+	UserID       pgtype.UUID
+	SealedSecret []byte
+	LastStep     int64
+	CreatedAt    pgtype.Timestamptz
+	ConfirmedAt  pgtype.Timestamptz
 }
 
 type User struct {

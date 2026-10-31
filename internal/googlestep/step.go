@@ -136,7 +136,12 @@ func (s *Step) Finish(ctx context.Context, flow Flow, flowID loginflow.FlowID, v
 	if err != nil && !errors.Is(err, users.ErrNotFound) {
 		return Outcome{}, err
 	}
-	event := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorGoogle, UnknownAccount: !known}
+	event := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorGoogle, UnknownAccount: true}
+	if known {
+		if event, err = loginflow.Passed(ctx, s.config.SecondFactors, loginflow.FactorGoogle, identity.UserID); err != nil {
+			return Outcome{}, err
+		}
+	}
 	if err := flow.Apply(ctx, event); err != nil {
 		return Outcome{}, fmt.Errorf("googlestep: apply %s: %w", event.Kind, err)
 	}

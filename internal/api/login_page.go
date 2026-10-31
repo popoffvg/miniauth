@@ -12,6 +12,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/sessions"
+	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -46,44 +47,14 @@ func (s *service) loginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setFlowCookie(w, id, secret, time.Now())
-	s.renderSteps(w, r, http.StatusOK, 0, "")
+	s.renderSteps(w, r, http.StatusOK, loginflow.LoginFlow{}, "")
 }
 
 // login runs the password step of the flow in the flow cookie.
 // A complete flow starts a session and redirects to the return URL of the flow.
 func (s *service) login(w http.ResponseWriter, r *http.Request) {
-	if !s.sameOrigin(r) {
-		renderDenied(w, r, http.StatusForbidden, msgCrossOrigin)
-		return
-	}
-	if s.flows == nil || s.passwords == nil {
-		renderDenied(w, r, http.StatusServiceUnavailable, msgLoginUnavailable)
-		return
-	}
-	id, secret, err := flowFromRequest(r)
-	if err != nil {
-		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxLoginFormBody)
-	if r.ParseForm() != nil {
-		renderDenied(w, r, http.StatusBadRequest, msgBadForm)
-		return
-	}
-	ip, err := clientIP(r)
-	if err != nil {
-		renderDenied(w, r, http.StatusBadRequest, msgBadForm)
-		return
-	}
-	machine, err := s.flows.Open(r.Context(), id, secret)
-	if errors.Is(err, loginflow.ErrFlowNotFound) {
-		clearFlowCookie(w)
-		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
-		return
-	}
-	if err != nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: open login", "err", err)
-		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+	machine, ip, ok := s.openLoginForm(w, r, s.passwords != nil)
+	if !ok {
 		return
 	}
 	defer func() { _ = machine.Close() }()
@@ -93,7 +64,7 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	retry := func(status int, message pageMessage) {
-		s.renderSteps(w, r, status, machine.Get().Factors, message)
+		s.renderSteps(w, r, status, machine.Get(), message)
 	}
 	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
 	password, passwordErr := users.NewPassword(r.PostForm.Get("password"))
@@ -102,21 +73,72 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID, err := s.passwords.Verify(r.Context(), machine, login, password, ip)
-	if passwordStepFailed(w, r, err, retry) {
+	if stepFailed(w, r, err, retry) {
 		return
 	}
 	s.finishStep(w, r, userID, machine.Get())
 }
 
-// passwordStepFailed answers the error of a password step and reports whether it wrote a reply.
+// openLoginForm runs the checks of a login form POST and opens the flow in the flow cookie.
+// available is false when the step service is missing.
+// It returns false after it wrote a reply. Else the caller MUST close the machine.
+func (s *service) openLoginForm(w http.ResponseWriter, r *http.Request, available bool) (loginMachine, passwordstep.ClientIP, bool) {
+	if !s.sameOrigin(r) {
+		renderDenied(w, r, http.StatusForbidden, msgCrossOrigin)
+		return nil, passwordstep.ClientIP{}, false
+	}
+	if s.flows == nil || !available {
+		renderDenied(w, r, http.StatusServiceUnavailable, msgLoginUnavailable)
+		return nil, passwordstep.ClientIP{}, false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginFormBody)
+	if r.ParseForm() != nil {
+		renderDenied(w, r, http.StatusBadRequest, msgBadForm)
+		return nil, passwordstep.ClientIP{}, false
+	}
+	ip, err := clientIP(r)
+	if err != nil {
+		renderDenied(w, r, http.StatusBadRequest, msgBadForm)
+		return nil, passwordstep.ClientIP{}, false
+	}
+	machine, ok := s.openFlow(w, r)
+	return machine, ip, ok
+}
+
+// openFlow opens the flow in the flow cookie. It returns false after it wrote a reply.
+func (s *service) openFlow(w http.ResponseWriter, r *http.Request) (loginMachine, bool) {
+	id, secret, err := flowFromRequest(r)
+	if err != nil {
+		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
+		return nil, false
+	}
+	machine, err := s.flows.Open(r.Context(), id, secret)
+	if errors.Is(err, loginflow.ErrFlowNotFound) {
+		clearFlowCookie(w)
+		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
+		return nil, false
+	}
+	if err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: open login", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+		return nil, false
+	}
+	return machine, true
+}
+
+// stepFailed answers the error of a login step and reports whether it wrote a reply.
 // retry shows the form of the step again with a message.
-func passwordStepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(status int, message pageMessage)) bool {
+func stepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(status int, message pageMessage)) bool {
 	var tooSoon *passwordstep.TooSoonError
 	switch {
 	case err == nil:
 		return false
 	case errors.Is(err, passwordstep.ErrWrongCredentials):
 		retry(http.StatusOK, msgWrongCredentials)
+	case errors.Is(err, totpstep.ErrWrongCode), errors.Is(err, totpstep.ErrInvalidCode):
+		retry(http.StatusOK, msgWrongCode)
+	case errors.Is(err, totpstep.ErrKeyMissing):
+		renderDenied(w, r, http.StatusServiceUnavailable, msgLoginUnavailable)
 	case errors.As(err, &tooSoon):
 		w.Header().Set("Retry-After", retryAfter(tooSoon.RetryAt))
 		retry(http.StatusTooManyRequests, msgTooSoon)
@@ -124,7 +146,7 @@ func passwordStepFailed(w http.ResponseWriter, r *http.Request, err error, retry
 		clearFlowCookie(w)
 		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
 	default:
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: password step", "err", err)
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: login step", "err", err)
 		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
 	}
 	return true
@@ -133,7 +155,7 @@ func passwordStepFailed(w http.ResponseWriter, r *http.Request, err error, retry
 // finishStep shows the open steps until the flow is complete.
 func (s *service) finishStep(w http.ResponseWriter, r *http.Request, userID users.ID, flow loginflow.LoginFlow) {
 	if !flow.State.Final() {
-		s.renderSteps(w, r, http.StatusOK, flow.Factors, "")
+		s.renderSteps(w, r, http.StatusOK, flow, "")
 		return
 	}
 	clearFlowCookie(w)

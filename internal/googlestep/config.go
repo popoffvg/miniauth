@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/popoffvg/miniauth/internal/loginflow"
+
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -48,10 +50,12 @@ type RedirectURL string
 
 // Config is what the step needs. HTTPClient is used for discovery, keys, and the code exchange.
 // A nil HTTPClient is a client with a 10 second timeout.
+// SecondFactors tells which linked users need a second step. Nil means none.
 type Config struct {
-	Issuer       Issuer
-	ClientID     ClientID
-	ClientSecret ClientSecret
-	RedirectURL  RedirectURL
-	HTTPClient   *http.Client
+	Issuer        Issuer
+	ClientID      ClientID
+	ClientSecret  ClientSecret
+	RedirectURL   RedirectURL
+	HTTPClient    *http.Client
+	SecondFactors loginflow.SecondFactors
 }

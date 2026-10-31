@@ -32,6 +32,7 @@ type CountIPFailuresRow struct {
 	LastFailure pgtype.Timestamptz
 }
 
+// The IP count includes every kind.
 func (q *Queries) CountIPFailures(ctx context.Context, arg CountIPFailuresParams) (CountIPFailuresRow, error) {
 	row := q.db.QueryRow(ctx, countIPFailures, arg.Ip, arg.Since)
 	var i CountIPFailuresRow
@@ -45,13 +46,14 @@ SELECT
     max(f.attempted_at)::timestamptz AS last_failure
 FROM login_attempts AS f
 WHERE f.login = $1
+    AND f.kind = $2
     AND NOT f.succeeded
-    AND f.attempted_at >= $2::timestamptz
+    AND f.attempted_at >= $3::timestamptz
     AND f.attempted_at > coalesce(
         (
             SELECT max(s.attempted_at)
             FROM login_attempts AS s
-            WHERE s.login = $1 AND s.succeeded
+            WHERE s.login = $1 AND s.kind = $2 AND s.succeeded
         ),
         '-infinity'::timestamptz
     )
@@ -59,6 +61,7 @@ WHERE f.login = $1
 
 type CountLoginFailuresParams struct {
 	Login string
+	Kind  string
 	Since pgtype.Timestamptz
 }
 
@@ -67,9 +70,9 @@ type CountLoginFailuresRow struct {
 	LastFailure pgtype.Timestamptz
 }
 
-// A success resets the count for its login. It does not reset the count for its IP.
+// A success resets the count for its login and kind. It does not reset the count for its IP.
 func (q *Queries) CountLoginFailures(ctx context.Context, arg CountLoginFailuresParams) (CountLoginFailuresRow, error) {
-	row := q.db.QueryRow(ctx, countLoginFailures, arg.Login, arg.Since)
+	row := q.db.QueryRow(ctx, countLoginFailures, arg.Login, arg.Kind, arg.Since)
 	var i CountLoginFailuresRow
 	err := row.Scan(&i.Failures, &i.LastFailure)
 	return i, err
@@ -86,8 +89,8 @@ func (q *Queries) DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgt
 }
 
 const insertLoginAttempt = `-- name: InsertLoginAttempt :exec
-INSERT INTO login_attempts (login, ip, succeeded, attempted_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO login_attempts (login, ip, succeeded, attempted_at, kind)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type InsertLoginAttemptParams struct {
@@ -95,6 +98,7 @@ type InsertLoginAttemptParams struct {
 	Ip          netip.Addr
 	Succeeded   bool
 	AttemptedAt pgtype.Timestamptz
+	Kind        string
 }
 
 func (q *Queries) InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error {
@@ -103,6 +107,7 @@ func (q *Queries) InsertLoginAttempt(ctx context.Context, arg InsertLoginAttempt
 		arg.Ip,
 		arg.Succeeded,
 		arg.AttemptedAt,
+		arg.Kind,
 	)
 	return err
 }

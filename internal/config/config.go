@@ -13,6 +13,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/googlestep"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/telegramstep"
+	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -26,6 +27,7 @@ const (
 	envGoogleSecret  = "MINIAUTH_GOOGLE_CLIENT_SECRET" // #nosec G101 -- the name of the variable, not a secret.
 	envTelegramBot   = "MINIAUTH_TELEGRAM_BOT_NAME"
 	envTelegramToken = "MINIAUTH_TELEGRAM_BOT_TOKEN" // #nosec G101 -- the name of the variable, not a secret.
+	envTOTPKey       = "MINIAUTH_TOTP_KEY"
 
 	defaultListen = "127.0.0.1:8080"
 )
@@ -38,6 +40,7 @@ var (
 	errCookie          = errors.New("miniauth: MINIAUTH_COOKIE_DOMAIN is not a valid cookie domain")
 	errPublic          = errors.New("miniauth: MINIAUTH_PUBLIC_URL is not an http or https origin")
 	errGoogle          = errors.New("miniauth: MINIAUTH_GOOGLE_CLIENT_ID and MINIAUTH_GOOGLE_CLIENT_SECRET must be set together, with MINIAUTH_PUBLIC_URL")
+	errTOTPKey         = errors.New("miniauth: MINIAUTH_TOTP_KEY must be 32 bytes in base64")
 	errTelegram        = errors.New("miniauth: MINIAUTH_TELEGRAM_BOT_NAME and MINIAUTH_TELEGRAM_BOT_TOKEN must be set together, with MINIAUTH_PUBLIC_URL; the bot name is 5 to 32 letters, digits, or underscores")
 )
 
@@ -52,6 +55,8 @@ type Config struct {
 	Mail       Mail
 	Google     GoogleClient
 	Telegram   TelegramBot
+	// TOTPKey seals each TOTP secret. Without it, TOTP enrollment is off.
+	TOTPKey totpstep.Key
 }
 
 // GoogleClient is the OAuth client of the Google step. The zero value turns the step off.
@@ -88,6 +93,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("smtp_host", c.Mail.SMTP.Host.String()),
 		slog.Bool("google", c.Google.Enabled()),
 		slog.Bool("telegram", c.Telegram.Enabled()),
+		slog.Bool("totp_key_set", c.TOTPKey.Set()),
 	)
 }
 
@@ -129,7 +135,8 @@ func Load(getenv func(string) string) (Config, error) {
 	mail, mailErr := parseMail(getenv)
 	google, googleErr := parseGoogle(getenv(envGoogleID), getenv(envGoogleSecret), public)
 	telegram, telegramErr := parseTelegram(getenv(envTelegramBot), getenv(envTelegramToken), public)
-	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr, googleErr, telegramErr); err != nil {
+	totpKey, totpKeyErr := parseTOTPKey(getenv(envTOTPKey))
+	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr, googleErr, telegramErr, totpKeyErr); err != nil {
 		return Config{}, err
 	}
 	return Config{
@@ -141,6 +148,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Mail:       mail,
 		Google:     google,
 		Telegram:   telegram,
+		TOTPKey:    totpKey,
 	}, nil
 }
 
@@ -224,4 +232,16 @@ func parseTelegram(rawName, rawToken string, public api.PublicURL) (TelegramBot,
 		return TelegramBot{}, errTelegram
 	}
 	return TelegramBot{Name: name, Token: token}, nil
+}
+
+// parseTOTPKey reads an empty value as no key.
+func parseTOTPKey(raw string) (totpstep.Key, error) {
+	if strings.TrimSpace(raw) == "" {
+		return totpstep.Key{}, nil
+	}
+	key, err := totpstep.ParseKey(raw)
+	if err != nil {
+		return totpstep.Key{}, errTOTPKey
+	}
+	return key, nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 func TestLoginFlowEngine(t *testing.T) {
@@ -34,6 +35,7 @@ func TestLoginFlowEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	queries := sqlcgen.New(pool)
+	ada := createAccount(t, users.NewService(postgres.NewUserRepository(pool)), "ada")
 
 	t.Run("stale write and final delete", func(t *testing.T) {
 		id, secret, err := flows.Start(ctx, returnURL)
@@ -57,6 +59,7 @@ func TestLoginFlowEngine(t *testing.T) {
 			Kind:        loginflow.EventStepPassed,
 			Factor:      loginflow.FactorPassword,
 			NeedsSecond: true,
+			UserID:      ada.ID,
 		}
 		if err = first.Apply(ctx, passed); err != nil {
 			t.Fatal(err)
@@ -73,7 +76,7 @@ func TestLoginFlowEngine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if stored.State != loginflow.StateAwaitingSecond || stored.Version != 1 || !stored.NeedsSecond || !stored.Factors.Has(loginflow.FactorPassword) {
+		if stored.State != loginflow.StateAwaitingSecond || stored.Version != 1 || !stored.NeedsSecond || !stored.Factors.Has(loginflow.FactorPassword) || stored.UserID != ada.ID {
 			t.Fatalf("stored flow = %+v", stored)
 		}
 
@@ -82,7 +85,7 @@ func TestLoginFlowEngine(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = third.Close() })
-		if err = third.Apply(ctx, loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTOTP}); err != nil {
+		if err = third.Apply(ctx, loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTOTP, UserID: ada.ID}); err != nil {
 			t.Fatal(err)
 		}
 		if third.Get().State != loginflow.StateComplete {

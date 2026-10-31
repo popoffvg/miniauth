@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/identitylink"
+	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passkeystep"
 	"github.com/popoffvg/miniauth/internal/telegramstep"
 )
@@ -44,7 +45,7 @@ func TestLoginPageWithPasskeyAndTelegramAllowsBothScripts(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil)
-	s.renderSteps(rec, req, http.StatusOK, 0, "")
+	s.renderSteps(rec, req, http.StatusOK, loginflow.LoginFlow{}, "")
 	body := rec.Body.String()
 	assert.Contains(t, body, `name="password"`)
 	assert.Contains(t, body, `data-passkey-login="`+passkeyLoginPath+`"`)

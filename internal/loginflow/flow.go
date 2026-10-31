@@ -26,7 +26,8 @@ type LoginFlow struct {
 	Version       FlowVersion
 	NeedsSecond   bool
 	Kind          FlowKind
-	// UserID is the user a KindStepUp flow verifies. It is zero for KindLogin.
+	// UserID is the user a KindStepUp flow verifies. A KindLogin flow takes it from its first passed factor.
+	// Once set, only a factor of this user counts.
 	UserID users.ID
 }
 
@@ -56,9 +57,13 @@ type Event struct {
 
 // Next is the login policy. It is a pure function of the flow and the event.
 //
-// One collected factor completes the flow. A passkey counts as two, so it completes on its own.
-// When NeedsSecond is set, the flow needs two: the password, then TOTP or a recovery code.
-// TOTP and a recovery code do not count until NeedsSecond is set.
+// A first factor is the password, Google, or Telegram. Any number of first factors counts as one.
+// One first factor completes the flow. A passkey counts as two, so it completes on its own.
+// When NeedsSecond is set, a first factor is not enough: the flow also needs TOTP or a recovery code.
+// TOTP and a recovery code never count without a first factor.
+// A KindStepUp flow ignores NeedsSecond: the step-up checks the password only.
+// An event carries one factor. Every known factor MUST carry the user it belongs to,
+// and the first one binds the flow to that user.
 // An unknown external account moves the flow to pending_link and records the factor.
 // A later known factor can then complete the flow. The pending factor stays on the value
 // so the caller can link the account; a final state is not stored.
@@ -82,7 +87,10 @@ func (f LoginFlow) Next(event Event) (LoginFlow, error) {
 }
 
 func (f LoginFlow) pass(event Event) (LoginFlow, error) {
-	if event.Factor == 0 || f.Kind == KindStepUp && event.UserID != f.UserID {
+	if !event.Factor.known() || f.UserID != (users.ID{}) && event.UserID != f.UserID {
+		return f, ErrNoTransition
+	}
+	if !event.UnknownAccount && event.UserID == (users.ID{}) {
 		return f, ErrNoTransition
 	}
 	next := f
@@ -95,9 +103,10 @@ func (f LoginFlow) pass(event Event) (LoginFlow, error) {
 		next.Version++
 		return next, nil
 	}
-	if event.NeedsSecond {
+	if event.NeedsSecond && f.Kind != KindStepUp {
 		next.NeedsSecond = true
 	}
+	next.UserID = event.UserID
 	next.Factors = next.Factors.With(event.Factor)
 	switch {
 	case next.satisfied():
@@ -105,7 +114,7 @@ func (f LoginFlow) pass(event Event) (LoginFlow, error) {
 	case next.NeedsSecond:
 		next.State = StateAwaitingSecond
 	}
-	if next.State == f.State && next.Factors == f.Factors && next.NeedsSecond == f.NeedsSecond && next.PendingFactor == f.PendingFactor {
+	if next.State == f.State && next.Factors == f.Factors && next.NeedsSecond == f.NeedsSecond && next.PendingFactor == f.PendingFactor && next.UserID == f.UserID {
 		return f, nil
 	}
 	next.Version = f.Version + 1
@@ -114,25 +123,11 @@ func (f LoginFlow) pass(event Event) (LoginFlow, error) {
 
 // satisfied reports whether the collected factors meet the policy.
 func (f LoginFlow) satisfied() bool {
-	n := 0
-	if f.Factors.Has(FactorPassword) {
-		n++
-	}
-	if f.Factors.Has(FactorGoogle) {
-		n++
-	}
-	if f.Factors.Has(FactorTelegram) {
-		n++
-	}
 	if f.Factors.Has(FactorPasskey) {
-		n += 2
+		return true
 	}
-	need := 1
-	if f.NeedsSecond {
-		need = 2
-		if f.Factors.Has(FactorPassword) && (f.Factors.Has(FactorTOTP) || f.Factors.Has(FactorRecovery)) {
-			n++
-		}
+	if f.Factors&firstFactors == 0 {
+		return false
 	}
-	return n >= need
+	return !f.NeedsSecond || f.Factors&secondFactors != 0
 }

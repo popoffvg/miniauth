@@ -6,8 +6,21 @@ import (
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
-// Attempt is one password try. It has no field for the password.
+// AttemptKind groups the steps that share one failure count per login.
+type AttemptKind string
+
+const (
+	// KindPassword is a password try.
+	KindPassword AttemptKind = "password"
+	// KindSecondFactor is a TOTP code or a recovery code. A password success does not reset its count.
+	KindSecondFactor AttemptKind = "second_factor"
+	// KindRecovery is a password recovery request. Its store keeps no other kind.
+	KindRecovery AttemptKind = "recovery"
+)
+
+// Attempt is one try of a step. It has no field for the password or the code.
 type Attempt struct {
+	Kind        AttemptKind
 	Login       users.Login
 	IP          ClientIP
 	Succeeded   bool

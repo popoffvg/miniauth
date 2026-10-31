@@ -38,7 +38,8 @@ func (r *RecoveryAttemptRepository) Record(ctx context.Context, attempt password
 }
 
 // CountFailures counts the failures of login and of ip at or after since.
-func (r *RecoveryAttemptRepository) CountFailures(ctx context.Context, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
+// The table holds only passwordstep.KindRecovery, so kind does not filter.
+func (r *RecoveryAttemptRepository) CountFailures(ctx context.Context, _ passwordstep.AttemptKind, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
 	byLogin, err := r.q.CountRecoveryLoginFailures(ctx, sqlcgen.CountRecoveryLoginFailuresParams{
 		Login: login.String(),
 		Since: pgTime(since),

@@ -57,7 +57,9 @@ type Step struct {
 	key        [sha256.Size]byte
 	identities IdentityStore
 	proofs     ProofStore
-	now        func() time.Time
+	// secondFactors is nil when no user has a second factor.
+	secondFactors loginflow.SecondFactors
+	now           func() time.Time
 }
 
 // NewStep returns a step for the bot in config.
@@ -69,11 +71,12 @@ func NewStep(config Config, identities IdentityStore, proofs ProofStore) (*Step,
 		return nil, errors.New("telegramstep: store is missing")
 	}
 	return &Step{
-		botName:    config.BotName,
-		key:        sha256.Sum256([]byte(config.BotToken.value)),
-		identities: identities,
-		proofs:     proofs,
-		now:        time.Now,
+		botName:       config.BotName,
+		key:           sha256.Sum256([]byte(config.BotToken.value)),
+		identities:    identities,
+		proofs:        proofs,
+		secondFactors: config.SecondFactors,
+		now:           time.Now,
 	}, nil
 }
 
@@ -107,7 +110,12 @@ func (s *Step) Finish(ctx context.Context, flow Flow, data AuthData) (Outcome, e
 	if err != nil && !errors.Is(err, users.ErrNotFound) {
 		return Outcome{}, err
 	}
-	event := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTelegram, UnknownAccount: !known}
+	event := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTelegram, UnknownAccount: true}
+	if known {
+		if event, err = loginflow.Passed(ctx, s.secondFactors, loginflow.FactorTelegram, identity.UserID); err != nil {
+			return Outcome{}, err
+		}
+	}
 	if err := flow.Apply(ctx, event); err != nil {
 		return Outcome{}, fmt.Errorf("telegramstep: apply %s: %w", event.Kind, err)
 	}

@@ -31,6 +31,7 @@ func (r *AttemptRepository) Record(ctx context.Context, attempt passwordstep.Att
 		Ip:          attempt.IP.Addr(),
 		Succeeded:   attempt.Succeeded,
 		AttemptedAt: pgTime(attempt.AttemptedAt),
+		Kind:        string(attempt.Kind),
 	})
 	if err != nil {
 		return fmt.Errorf("postgres: record login attempt: %w", err)
@@ -38,10 +39,11 @@ func (r *AttemptRepository) Record(ctx context.Context, attempt passwordstep.Att
 	return nil
 }
 
-// CountFailures counts the failures of login and of ip at or after since.
-func (r *AttemptRepository) CountFailures(ctx context.Context, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
+// CountFailures counts the failures of login for kind, and of ip for every kind, at or after since.
+func (r *AttemptRepository) CountFailures(ctx context.Context, kind passwordstep.AttemptKind, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
 	byLogin, err := r.q.CountLoginFailures(ctx, sqlcgen.CountLoginFailuresParams{
 		Login: login.String(),
+		Kind:  string(kind),
 		Since: pgTime(since),
 	})
 	if err != nil {
