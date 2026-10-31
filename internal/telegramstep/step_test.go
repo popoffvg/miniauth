@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -231,6 +233,50 @@ func flipHex(raw string) string {
 
 func addFields(q url.Values, n int) {
 	for i := range n {
-		q.Set(fmt.Sprintf("f%d", i), "x")
+		q.Set("f_"+strings.Repeat("x", i+1), "x")
+	}
+}
+
+// A reshaped query keeps the check string and the hash of the signed data, but moves `id`.
+func TestParseAuthDataRefusesAReshapedCheckString(t *testing.T) {
+	signed := telegramtest.Sign(telegramtest.BotToken, url.Values{
+		"first_name": {"Ada\nid=123"},
+		"id":         {"456"},
+		"username":   {"ada"},
+		"auth_date":  {strconv.FormatInt(testNow.Unix(), 10)},
+	})
+	reshaped := url.Values{
+		"first_name":       {"Ada"},
+		"id":               {"123"},
+		"id=456\nusername": {"ada"},
+		"auth_date":        signed["auth_date"],
+		"hash":             signed["hash"],
+	}
+	flat := func(q url.Values) AuthData {
+		fields := map[string]string{}
+		for key, values := range q {
+			fields[key] = values[0]
+		}
+		return AuthData{fields: fields}
+	}
+	require.Equal(t, flat(signed).checkString(), flat(reshaped).checkString(), "the reshaped query MUST keep the signed check string")
+	for name, query := range map[string]url.Values{"signed": signed, "reshaped": reshaped} {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseAuthData(query)
+			require.ErrorIs(t, err, ErrBadData)
+		})
+	}
+	for name, query := range map[string]url.Values{
+		"an upper case key":  {"First_name": {"Ada"}},
+		"a key with a digit": {"name1": {"Ada"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fields := telegramtest.Fields(4242, testNow)
+			for key, values := range query {
+				fields[key] = values
+			}
+			_, err := ParseAuthData(telegramtest.Sign(telegramtest.BotToken, fields))
+			require.ErrorIs(t, err, ErrBadData)
+		})
 	}
 }
