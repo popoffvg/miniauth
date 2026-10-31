@@ -3,6 +3,7 @@ package sessions
 import (
 	"time"
 
+	"github.com/popoffvg/miniauth/internal/devices"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -16,11 +17,13 @@ const (
 
 // Session is one browser session.
 // The id is not a field. The caller holds the id, and the database stores only its hash.
+// DeviceID is zero for a session that was not started on a device.
 type Session struct {
 	UserID    users.ID
 	Factors   loginflow.Factors
 	AuthAt    time.Time
 	ExpiresAt time.Time
+	DeviceID  devices.ID
 }
 
 // extendBefore is the latest stored expiry that this call may move.

@@ -15,6 +15,7 @@ SELECT
     factors,
     auth_at,
     expires_at,
+    device_id,
     secret_hash
 FROM sessions
 WHERE secret_hash = $1;

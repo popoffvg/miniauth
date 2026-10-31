@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your devices</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 48rem; padding: 0 1rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid #ccc; padding: 0.5rem; text-align: left; vertical-align: top; }
+form { display: inline; }
+</style>
+</head>
+<body>
+<main>
+<h1>Your devices</h1>
+{{- if .Devices}}
+<table>
+<thead><tr><th>Device</th><th>Last seen</th><th>Actions</th></tr></thead>
+<tbody>
+{{- range .Devices}}
+<tr>
+<td>{{.Name}}{{if .IsCurrent}} <strong>(this device)</strong>{{end}}</td>
+<td><time datetime="{{.LastSeen.Format "2006-01-02T15:04:05Z07:00"}}">{{.LastSeen.Format "2006-01-02 15:04 UTC"}}</time></td>
+<td>
+<form method="post" action="/sessions/{{.ID}}/signout"><button type="submit">Sign out</button></form>
+<form method="post" action="/sessions/{{.ID}}/forget"><button type="submit">Forget</button></form>
+</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+{{- else}}
+<p>No device is known.</p>
+{{- end}}
+</main>
+</body>
+</html>
