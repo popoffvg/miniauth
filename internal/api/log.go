@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,7 +17,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/tokens"
 )
 
@@ -107,39 +105,35 @@ func requestID(r *http.Request) string {
 	return uuid.New().String()
 }
 
-// echoesCredential reports whether id is the bearer token, a secret cookie, a query value, a secret path segment, or has the access token marker.
+// echoesCredential reports whether id contains the access token marker, the bearer token, a cookie value
+// or one "."-separated part of it, a query value, or is in a secret path segment.
 // A client can put a secret in X-Request-ID. That value MUST NOT be logged.
-// The body is not read here, so an id with the marker is refused: it can be the token of an import body.
+// The body is not read here, so the marker alone refuses an id: it can start the token of an import body.
+// The check is not constant time: the echo of the id shows its result anyway.
 func echoesCredential(r *http.Request, id string) bool {
 	if loggedPath(r.URL.Path) != r.URL.Path && strings.Contains(r.URL.Path, id) {
 		return true
 	}
-	if strings.HasPrefix(id, tokens.SecretMarker) {
+	if strings.Contains(id, tokens.SecretMarker) {
 		return true
 	}
-	if token, ok := bearerToken(r); ok && secretEqual(token.raw, id) {
-		return true
+	credentials := make([]string, 0, 8)
+	if token, ok := bearerToken(r); ok {
+		credentials = append(credentials, token.raw)
 	}
 	for _, cookie := range r.Cookies() {
-		if (cookie.Name == sessions.CookieName || cookie.Name == flowCookieName) && secretEqual(cookie.Value, id) {
+		credentials = append(credentials, cookie.Value)
+		credentials = append(credentials, strings.Split(cookie.Value, ".")...)
+	}
+	for _, values := range r.URL.Query() {
+		credentials = append(credentials, values...)
+	}
+	for _, credential := range credentials {
+		if credential != "" && strings.Contains(id, credential) {
 			return true
 		}
 	}
-	for _, values := range r.URL.Query() {
-		for _, value := range values {
-			if secretEqual(value, id) {
-				return true
-			}
-		}
-	}
 	return false
-}
-
-func secretEqual(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func validRequestID(id string) bool {
