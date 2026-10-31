@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	CountDevices(ctx context.Context) (int64, error)
 	CountIPFailures(ctx context.Context, arg CountIPFailuresParams) (CountIPFailuresRow, error)
 	// A success resets the count for its login. It does not reset the count for its IP.
 	CountLoginFailures(ctx context.Context, arg CountLoginFailuresParams) (CountLoginFailuresRow, error)
@@ -19,6 +20,8 @@ type Querier interface {
 	CountUsers(ctx context.Context) (int64, error)
 	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
 	DeleteAccessGrant(ctx context.Context, id pgtype.UUID) (int64, error)
+	DeleteDevice(ctx context.Context, arg DeleteDeviceParams) (int64, error)
+	DeleteDeviceSession(ctx context.Context, arg DeleteDeviceSessionParams) error
 	DeleteExpiredLoginFlows(ctx context.Context) error
 	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
@@ -26,6 +29,7 @@ type Querier interface {
 	DeleteResource(ctx context.Context, name string) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
+	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)
 	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
@@ -33,6 +37,7 @@ type Querier interface {
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
 	GetResource(ctx context.Context, name string) (Resource, error)
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
+	GetStoredDeviceHash(ctx context.Context, id pgtype.UUID) ([]byte, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	InsertAccessGrant(ctx context.Context, arg InsertAccessGrantParams) error
 	InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error
@@ -42,13 +47,17 @@ type Querier interface {
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
 	ListAccessGrants(ctx context.Context, resourceName string) ([]AccessGrant, error)
+	ListDevices(ctx context.Context, userID pgtype.UUID) ([]ListDevicesRow, error)
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	Ping(ctx context.Context) (int32, error)
 	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)
 	TouchAccessToken(ctx context.Context, arg TouchAccessTokenParams) error
+	TouchSessionDevice(ctx context.Context, arg TouchSessionDeviceParams) error
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
+	UpsertDevice(ctx context.Context, arg UpsertDeviceParams) (pgtype.UUID, error)
+	UpsertDeviceSession(ctx context.Context, arg UpsertDeviceSessionParams) error
 }
 
 var _ Querier = (*Queries)(nil)

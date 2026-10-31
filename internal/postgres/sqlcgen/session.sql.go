@@ -69,6 +69,7 @@ SELECT
     factors,
     auth_at,
     expires_at,
+    device_id,
     secret_hash
 FROM sessions
 WHERE secret_hash = $1
@@ -79,6 +80,7 @@ type GetSessionRow struct {
 	Factors    int32
 	AuthAt     pgtype.Timestamptz
 	ExpiresAt  pgtype.Timestamptz
+	DeviceID   pgtype.UUID
 	SecretHash []byte
 }
 
@@ -90,6 +92,7 @@ func (q *Queries) GetSession(ctx context.Context, secretHash []byte) (GetSession
 		&i.Factors,
 		&i.AuthAt,
 		&i.ExpiresAt,
+		&i.DeviceID,
 		&i.SecretHash,
 	)
 	return i, err

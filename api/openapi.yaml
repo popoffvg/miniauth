@@ -219,6 +219,94 @@ paths:
           description: OK
         "503":
           description: Service Unavailable
+  /sessions:
+    get:
+      description: HTML page with the devices of the session user. A browser with
+        no session is redirected to the login page. Any other request with no session
+        is 401.
+      operationId: listDevices
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "302":
+          description: Found
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+  /sessions/{device}/forget:
+    post:
+      description: Deletes a device of the session user and its session. Origin MUST
+        be the public URL origin, else 403. Redirects to the sessions page.
+      operationId: forgetDevice
+      parameters:
+      - in: path
+        name: device
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        "303":
+          description: See Other
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+  /sessions/{device}/signout:
+    post:
+      description: Deletes the session of a device of the session user. The device
+        stays. Origin MUST be the public URL origin, else 403. Redirects to the sessions
+        page.
+      operationId: signOutDevice
+      parameters:
+      - in: path
+        name: device
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        "303":
+          description: See Other
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
 components:
   schemas:
     ApiCreateUserRequest:

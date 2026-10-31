@@ -32,6 +32,15 @@ type AccessToken struct {
 	LastUsedAt    pgtype.Timestamptz
 }
 
+type Device struct {
+	ID         pgtype.UUID
+	UserID     pgtype.UUID
+	SecretHash []byte
+	Name       string
+	FirstSeen  pgtype.Timestamptz
+	LastSeen   pgtype.Timestamptz
+}
+
 type GroupMembership struct {
 	UserID pgtype.UUID
 	Name   string
@@ -77,6 +86,7 @@ type Session struct {
 	Factors    int32
 	AuthAt     pgtype.Timestamptz
 	ExpiresAt  pgtype.Timestamptz
+	DeviceID   pgtype.UUID
 }
 
 type User struct {

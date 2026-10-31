@@ -18,17 +18,28 @@ import (
 // a constraint failure can echo the row, and the row holds the session hash.
 const pgForeignKeyViolation = "23503"
 
-// SessionRepository is the PostgreSQL adapter for browser sessions.
+// SessionRepository is the PostgreSQL adapter for browser sessions and their devices.
 type SessionRepository struct {
-	q *sqlcgen.Queries
+	q     *sqlcgen.Queries
+	begin txBeginner
+}
+
+// txBeginner is a pool or a transaction. pgx starts a savepoint inside a transaction.
+type txBeginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 // NewSessionRepository returns a repository that uses db for queries.
+// StartOnDevice needs a db that can begin a transaction, such as a pool.
 func NewSessionRepository(db sqlcgen.DBTX) *SessionRepository {
-	return &SessionRepository{q: sqlcgen.New(db)}
+	begin, _ := db.(txBeginner)
+	return &SessionRepository{q: sqlcgen.New(db), begin: begin}
 }
 
-var _ sessions.Repository = (*SessionRepository)(nil)
+var (
+	_ sessions.Repository       = (*SessionRepository)(nil)
+	_ sessions.DeviceRepository = (*SessionRepository)(nil)
+)
 
 // Create inserts the session hash.
 func (r *SessionRepository) Create(ctx context.Context, session sessions.Session, hash sessions.Hash) error {
@@ -72,7 +83,18 @@ func (r *SessionRepository) Extend(ctx context.Context, hash sessions.Hash, expi
 	if err != nil {
 		return false, sessionError("extend session", err)
 	}
-	return n > 0, nil
+	if n == 0 {
+		return false, nil
+	}
+	// A session moves expires_at to now plus Lifetime, so that difference is the time of this request.
+	err = r.q.TouchSessionDevice(ctx, sqlcgen.TouchSessionDeviceParams{
+		SeenAt:     pgTime(expiresAt.Add(-sessions.Lifetime)),
+		SecretHash: hash[:],
+	})
+	if err != nil {
+		return false, sessionError("touch device", err)
+	}
+	return true, nil
 }
 
 // Delete removes one session. A missing row is success.
@@ -108,6 +130,7 @@ func sessionFromRow(row sqlcgen.GetSessionRow) (sessions.Session, sessions.Hash,
 		Factors:   factors,
 		AuthAt:    row.AuthAt.Time.UTC(),
 		ExpiresAt: row.ExpiresAt.Time.UTC(),
+		DeviceID:  deviceIDFrom(row.DeviceID),
 	}, hash, nil
 }
 
@@ -124,6 +147,9 @@ func sessionError(action string, err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		if pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "sessions_user_id_fkey" {
+			return sessions.ErrUnknownUser
+		}
+		if pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "devices_user_id_fkey" {
 			return sessions.ErrUnknownUser
 		}
 		return fmt.Errorf("postgres: %s: %s (SQLSTATE %s)", action, pgErr.ConstraintName, pgErr.Code)

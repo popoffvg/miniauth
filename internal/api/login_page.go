@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -128,7 +127,7 @@ func (s *service) finishStep(w http.ResponseWriter, r *http.Request, userID user
 		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
 		return
 	}
-	if err := s.startBrowserSession(r.Context(), w, userID, flow.Factors); err != nil {
+	if err := s.startBrowserSession(w, r, userID, flow.Factors); err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: start session", "err", err)
 		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
 		return
@@ -136,14 +135,11 @@ func (s *service) finishStep(w http.ResponseWriter, r *http.Request, userID user
 	http.Redirect(w, r, flow.ReturnURL.String(), http.StatusSeeOther)
 }
 
-// startBrowserSession is the one place a login starts a session and sets its cookie.
-func (s *service) startBrowserSession(ctx context.Context, w http.ResponseWriter, userID users.ID, factors loginflow.Factors) error {
-	id, session, err := s.browser.Start(ctx, userID, factors)
-	if err != nil {
-		return err
-	}
-	sessions.SetCookie(w, id, s.domain, session.AuthAt)
-	return nil
+// startBrowserSession is the one place a login starts a session.
+// It sets the session cookie and the device cookie, and replaces the session of that device.
+func (s *service) startBrowserSession(w http.ResponseWriter, r *http.Request, userID users.ID, factors loginflow.Factors) error {
+	_, _, err := s.browser.StartOnDevice(r.Context(), w, r, s.domain, userID, factors)
+	return err
 }
 
 // sameOrigin is the CSRF check of a form POST. Origin MUST be the public origin.

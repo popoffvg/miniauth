@@ -22,13 +22,16 @@ type Repository interface {
 
 // Service issues and reads sessions.
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo    Repository
+	devices DeviceRepository
+	now     func() time.Time
 }
 
 // NewService returns a service that reads the clock from time.Now.
+// When repo is also a DeviceRepository, the device operations use it. Otherwise they return ErrNoDeviceStore.
 func NewService(repo Repository) *Service {
-	return &Service{repo: repo, now: time.Now}
+	deviceRepo, _ := repo.(DeviceRepository)
+	return &Service{repo: repo, devices: deviceRepo, now: time.Now}
 }
 
 // Start stores a session for userID and returns its id.

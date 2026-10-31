@@ -73,6 +73,9 @@ func TestLoginPageEndToEnd(t *testing.T) {
 	t.Cleanup(server.Close)
 	browser := newBrowser(t, server)
 
+	var firstSession *http.Cookie
+	var firstDevice *http.Cookie
+
 	countSessions := func() int64 {
 		n, err := queries.CountSessions(ctx)
 		require.NoError(t, err)
@@ -113,6 +116,11 @@ func TestLoginPageEndToEnd(t *testing.T) {
 		require.Equal(t, http.StatusSeeOther, resp.status)
 		assert.Equal(t, returnTo, resp.header.Get("Location"))
 		require.Len(t, sessionCookies(resp), 1)
+		firstSession = sessionCookies(resp)[0]
+		firstDevice = findCookie(resp.cookies, sessions.DeviceCookieName)
+		require.NotNil(t, firstDevice)
+		assert.True(t, firstDevice.HttpOnly)
+		assert.True(t, firstDevice.Secure)
 		assert.NotContains(t, resp.header.Get("Location"), flowCookie.Value)
 		assert.Equal(t, int64(1), countSessions())
 
@@ -132,6 +140,18 @@ func TestLoginPageEndToEnd(t *testing.T) {
 		resp := submitLogin(t, browser, base, base, rawLogin, rawPassword)
 		require.Equal(t, http.StatusSeeOther, resp.status)
 		assert.Equal(t, base+"/", resp.header.Get("Location"))
+
+		device := findCookie(resp.cookies, sessions.DeviceCookieName)
+		require.NotNil(t, device)
+		assert.Equal(t, firstDevice.Value, device.Value)
+		assert.Equal(t, int64(1), countSessions(), "two logins from one browser leave one session row")
+		devices, err := queries.CountDevices(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), devices)
+		replaced := forwardedCheckWithSession(t, browser, base, server.Listener.Addr().String(), "/app", firstSession)
+		assert.Equal(t, http.StatusFound, replaced.status)
+		current := forwardedCheck(t, browser, base, server.Listener.Addr().String(), "/app")
+		assert.Equal(t, http.StatusOK, current.status)
 
 		home := get(t, browser, base+"/")
 		require.Equal(t, http.StatusOK, home.status)
@@ -248,6 +268,21 @@ func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
 		}
 	}
 	return nil
+}
+
+// forwardedCheckWithSession sends session instead of the cookies in the jar.
+func forwardedCheckWithSession(t *testing.T, browser *http.Client, base, host, uri string, session *http.Cookie) reply {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+"/auth/check", nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", "text/html")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", host)
+	req.Header.Set("X-Forwarded-Uri", uri)
+	req.AddCookie(&http.Cookie{Name: session.Name, Value: session.Value})
+	plain := *browser
+	plain.Jar = nil
+	return do(t, &plain, req)
 }
 
 // forwardedCheck calls /auth/check with the headers Traefik sends for host and uri.
