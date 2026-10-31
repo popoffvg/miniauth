@@ -26,6 +26,7 @@ const createLoginFlow = `-- name: CreateLoginFlow :exec
 INSERT INTO login_flows (
     id,
     secret_hash,
+    secret_salt,
     state,
     factors,
     version,
@@ -34,13 +35,14 @@ INSERT INTO login_flows (
     pending_factor,
     expires_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
 `
 
 type CreateLoginFlowParams struct {
 	ID            pgtype.UUID
 	SecretHash    []byte
+	SecretSalt    []byte
 	State         string
 	Factors       int32
 	Version       int64
@@ -54,6 +56,7 @@ func (q *Queries) CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams
 	_, err := q.db.Exec(ctx, createLoginFlow,
 		arg.ID,
 		arg.SecretHash,
+		arg.SecretSalt,
 		arg.State,
 		arg.Factors,
 		arg.Version,
@@ -107,6 +110,7 @@ const getLoginFlow = `-- name: GetLoginFlow :one
 SELECT
     id,
     secret_hash,
+    secret_salt,
     state,
     factors,
     version,
@@ -122,6 +126,7 @@ WHERE id = $1
 type GetLoginFlowRow struct {
 	ID            pgtype.UUID
 	SecretHash    []byte
+	SecretSalt    []byte
 	State         string
 	Factors       int32
 	Version       int64
@@ -138,6 +143,7 @@ func (q *Queries) GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlo
 	err := row.Scan(
 		&i.ID,
 		&i.SecretHash,
+		&i.SecretSalt,
 		&i.State,
 		&i.Factors,
 		&i.Version,

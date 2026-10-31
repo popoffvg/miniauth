@@ -2,6 +2,7 @@
 INSERT INTO login_flows (
     id,
     secret_hash,
+    secret_salt,
     state,
     factors,
     version,
@@ -10,13 +11,14 @@ INSERT INTO login_flows (
     pending_factor,
     expires_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 );
 
 -- name: GetLoginFlow :one
 SELECT
     id,
     secret_hash,
+    secret_salt,
     state,
     factors,
     version,

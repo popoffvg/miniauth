@@ -56,7 +56,11 @@ func (s *LoginFlows) Start(ctx context.Context, returnURL ReturnURL) (FlowID, Fl
 		ExpiresAt: s.now().UTC().Add(FlowTTL),
 		State:     StateAwaiting,
 	}
-	if err := s.store.Create(ctx, flow, secret.Hash()); err != nil {
+	hash, err := secret.Hash()
+	if err != nil {
+		return "", FlowSecret{}, err
+	}
+	if err := s.store.Create(ctx, flow, hash); err != nil {
 		return "", FlowSecret{}, err
 	}
 	return id, secret, nil
