@@ -57,11 +57,11 @@ func requireAdmin(admin AdminTokenHash, next http.HandlerFunc) http.HandlerFunc 
 	}
 }
 
-// bearerToken reads Authorization: Bearer <token>.
+// bearerToken reads Authorization: Bearer <token>. The scheme name ignores case.
 // The token MUST NOT be written to a URL, a log, or an error.
 func bearerToken(r *http.Request) (BearerToken, bool) {
 	scheme, secret, ok := strings.Cut(r.Header.Get("Authorization"), " ")
-	if !ok || scheme != "Bearer" || secret == "" || strings.Contains(secret, " ") {
+	if !ok || !strings.EqualFold(scheme, "Bearer") || secret == "" || strings.Contains(secret, " ") {
 		return BearerToken{}, false
 	}
 	return BearerToken{raw: secret}, true

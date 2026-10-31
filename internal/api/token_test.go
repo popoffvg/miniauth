@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -46,4 +48,23 @@ func TestBearerTokenPrintsRedacted(t *testing.T) {
 	slog.New(slog.NewJSONHandler(&logs, nil)).Info("token", "value", token)
 	assert.NotContains(t, logs.String(), "bootstrap")
 	assert.Contains(t, logs.String(), "redacted")
+}
+
+func TestBearerTokenSchemeIgnoresCase(t *testing.T) {
+	for header, want := range map[string]bool{
+		"Bearer secret-token": true,
+		"bearer secret-token": true,
+		"BEARER secret-token": true,
+		"Basic secret-token":  false,
+		"Bearer":              false,
+		"Bearer a b":          false,
+	} {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+		r.Header.Set("Authorization", header)
+		token, ok := bearerToken(r)
+		assert.Equal(t, want, ok, header)
+		if want {
+			assert.Equal(t, "secret-token", token.raw, header)
+		}
+	}
 }

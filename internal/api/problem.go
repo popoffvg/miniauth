@@ -51,7 +51,7 @@ var (
 	errUnsupportedMedia = errors.New("api: content type must be application/json")
 )
 
-// decodeJSON reads one JSON object.
+// decodeJSON reads one JSON object. Only white space may follow it.
 // The caller maps the error to 400, 413, or 415.
 // The buffer is cleared because it can hold a password.
 func decodeJSON[T any](w http.ResponseWriter, r *http.Request, maxBytes int64) (T, error) {
@@ -81,7 +81,7 @@ func decodeJSON[T any](w http.ResponseWriter, r *http.Request, maxBytes int64) (
 		}
 		return zero, errBadJSON
 	}
-	if decoder.More() {
+	if _, err = decoder.Token(); !errors.Is(err, io.EOF) {
 		return zero, errBadJSON
 	}
 	return body, nil
