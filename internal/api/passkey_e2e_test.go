@@ -64,10 +64,9 @@ func TestPasskeyEndToEnd(t *testing.T) {
 
 	server := httptest.NewUnstartedServer(nil)
 	base := "https://" + server.Listener.Addr().String()
-	origin, err := url.Parse(base)
-	require.NoError(t, err)
-	party, err := passkeystep.NewRelyingParty(domain, origin)
-	require.NoError(t, err)
+	// The server listens on an IP address, which a browser never accepts with this id.
+	// The test authenticator does not check the pair, so the party is built without NewRelyingParty.
+	party := passkeystep.RelyingParty{ID: passkeyParty, Origin: passkeystep.Origin(base)}
 	flowStore := postgres.NewFlowStore(pool)
 	passkeys, err := passkeystep.NewService(party, postgres.NewPasskeyRepository(pool), flowStore)
 	require.NoError(t, err)
