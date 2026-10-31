@@ -1,0 +1,11 @@
+{{template "head" "Forgot password"}}
+<h1>Forgot password</h1>
+{{with .Message}}<p class="message" role="alert">{{.}}</p>{{end}}
+<p>Type the email address that is your login. If the address is known, we send a link to set a new password.</p>
+<form method="post" action="/recover">
+<label for="email">Email</label>
+<input id="email" name="email" type="email" autocomplete="username" required autofocus>
+<button type="submit">Send the link</button>
+</form>
+<p><a href="/login">Back to sign in</a></p>
+{{template "foot"}}

@@ -130,6 +130,12 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	userService := users.NewService(accounts)
 	grants := access.NewService(grantRepo, userService)
 
+	withRecovery, stopRecovery, err := startRecovery(ctx, cfg, pool, logger)
+	if err != nil {
+		return err
+	}
+	defer stopRecovery()
+
 	handler, err := api.NewRouter(
 		userService,
 		sessions.NewService(postgres.NewSessionRepository(pool)),
@@ -143,6 +149,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		api.WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
 		api.WithURLGrants(grants),
 		api.WithAccessAdmin(grants),
+		withRecovery,
 	)
 	if err != nil {
 		return err

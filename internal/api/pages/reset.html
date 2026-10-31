@@ -1,0 +1,10 @@
+{{template "head" "Set a new password"}}
+<h1>Set a new password</h1>
+{{with .Message}}<p class="message" role="alert">{{.}}</p>{{end}}
+<form method="post" action="/recover/reset">
+<input type="hidden" name="token" value="{{.ResetToken.LinkValue}}">
+<label for="password">New password</label>
+<input id="password" name="password" type="password" autocomplete="new-password" required autofocus>
+<button type="submit">Set the password</button>
+</form>
+{{template "foot"}}

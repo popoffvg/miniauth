@@ -8,4 +8,5 @@
 <input id="password" name="password" type="password" autocomplete="current-password" required>
 <button type="submit">Sign in</button>
 </form>
+{{if .Recovery}}<p><a href="/recover">Forgot password?</a></p>{{end}}
 {{template "foot"}}

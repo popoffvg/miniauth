@@ -46,7 +46,7 @@ func (s *service) loginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setFlowCookie(w, id, secret, time.Now())
-	renderSteps(w, r, http.StatusOK, 0, "")
+	s.renderSteps(w, r, http.StatusOK, 0, "")
 }
 
 // login runs the password step of the flow in the flow cookie.
@@ -93,7 +93,7 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	retry := func(status int, message pageMessage) {
-		renderSteps(w, r, status, machine.Get().Factors, message)
+		s.renderSteps(w, r, status, machine.Get().Factors, message)
 	}
 	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
 	password, passwordErr := users.NewPassword(r.PostForm.Get("password"))
@@ -133,7 +133,7 @@ func passwordStepFailed(w http.ResponseWriter, r *http.Request, err error, retry
 // finishStep shows the open steps until the flow is complete.
 func (s *service) finishStep(w http.ResponseWriter, r *http.Request, userID users.ID, flow loginflow.LoginFlow) {
 	if !flow.State.Final() {
-		renderSteps(w, r, http.StatusOK, flow.Factors, "")
+		s.renderSteps(w, r, http.StatusOK, flow.Factors, "")
 		return
 	}
 	clearFlowCookie(w)
@@ -189,13 +189,15 @@ func (s *service) home(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderSteps shows the form of the one open step, or the chooser when more steps are open.
-func renderSteps(w http.ResponseWriter, r *http.Request, status int, collected loginflow.Factors, message pageMessage) {
+func (s *service) renderSteps(w http.ResponseWriter, r *http.Request, status int, collected loginflow.Factors, message pageMessage) {
+	view := pageView{Message: message, Recovery: s.recovery != nil}
 	steps := openSteps(collected)
 	if len(steps) == 1 {
-		renderPage(w, r, status, steps[0].Page, pageView{Message: message})
+		renderPage(w, r, status, steps[0].Page, view)
 		return
 	}
-	renderPage(w, r, status, pageSteps, pageView{Message: message, Steps: steps})
+	view.Steps = steps
+	renderPage(w, r, status, pageSteps, view)
 }
 
 // retryAfter is the Retry-After value in whole seconds, at least 1.

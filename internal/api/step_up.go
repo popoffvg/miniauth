@@ -58,7 +58,7 @@ func (s *service) stepUp(w http.ResponseWriter, r *http.Request, machine loginMa
 	}
 	flow = machine.Get()
 	if !flow.State.Final() {
-		renderSteps(w, r, http.StatusOK, flow.Factors, "")
+		s.renderSteps(w, r, http.StatusOK, flow.Factors, "")
 		return
 	}
 	clearFlowCookie(w)

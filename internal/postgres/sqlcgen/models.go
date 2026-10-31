@@ -76,6 +76,21 @@ type LoginFlow struct {
 	UserID        pgtype.UUID
 }
 
+type PasswordReset struct {
+	TokenHash []byte
+	UserID    pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+	UsedAt    pgtype.Timestamptz
+}
+
+type RecoveryAttempt struct {
+	Login       string
+	Ip          netip.Addr
+	Succeeded   bool
+	AttemptedAt pgtype.Timestamptz
+}
+
 type Resource struct {
 	Name       string
 	Host       string

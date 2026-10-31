@@ -15,6 +15,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
+	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -68,6 +69,7 @@ type service struct {
 	ready       Readiness
 	flows       *loginflow.LoginFlows
 	passwords   *passwordstep.Service
+	recovery    *recovery.Service
 	spec        []byte
 }
 
@@ -317,6 +319,57 @@ func (s *service) routes() []route {
 			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable},
 			doc:      "Checks the password for the flow in the login flow cookie. Origin MUST be the public origin, else 403. A complete flow sets the session cookie and redirects to the return URL. A wrong login or password shows the form again with 200. A backoff is 429. A step-up flow reads only the password, checks it for the user of the flow, renews the auth time of the session, and redirects to the return URL.",
 			isPublic: true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        recoverPath,
+			id:          "recoverPage",
+			handler:     s.recoverPage,
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			pages:       []int{http.StatusServiceUnavailable},
+			doc:         "Asks for the email address of a user who forgot the password. 503 when no mail sender is configured.",
+			isPublic:    true,
+		},
+		{
+			method:      http.MethodPost,
+			path:        recoverPath,
+			id:          "recover",
+			handler:     s.requestRecovery,
+			request:     new(recoverFormRequest),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			pages:       []int{http.StatusBadRequest, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Sends a one-time reset link to the login equal to the email, in the background. A known and an unknown address get the same 200 page. Origin MUST be the public origin, else 403. A backoff per address and per client IP is 429.",
+			isPublic:    true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        resetLinkPattern,
+			id:          "resetPage",
+			handler:     s.resetPage,
+			request:     new(resetPageRequest),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			pages:       []int{http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "The link from the recovery mail. It shows the new password form with the token in a hidden field. Referrer-Policy is no-referrer. An unknown, used, or expired link is 400.",
+			isPublic:    true,
+		},
+		{
+			method:      http.MethodPost,
+			path:        resetFormPath,
+			id:          "resetPassword",
+			handler:     s.reset,
+			request:     new(resetFormRequest),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			pages:       []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Sets the new password through the token in the form. Every session of the user is deleted. Personal access tokens stay valid. The link cannot be used again. Origin MUST be the public origin, else 403.",
+			isPublic:    true,
 		},
 		{
 			method:      http.MethodGet,

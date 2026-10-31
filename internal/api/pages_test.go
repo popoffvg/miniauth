@@ -29,7 +29,7 @@ func TestRenderPageSetsHeaders(t *testing.T) {
 func TestRenderStepsShowsTheOneOpenForm(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil)
-	renderSteps(rec, req, http.StatusOK, 0, msgWrongCredentials)
+	(&service{}).renderSteps(rec, req, http.StatusOK, 0, msgWrongCredentials)
 	assert.Contains(t, rec.Body.String(), `name="password"`)
 	assert.Contains(t, rec.Body.String(), string(msgWrongCredentials))
 }
@@ -37,7 +37,7 @@ func TestRenderStepsShowsTheOneOpenForm(t *testing.T) {
 func TestRenderStepsListsTheOpenSteps(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil)
-	renderSteps(rec, req, http.StatusOK, loginflow.Factors(loginflow.FactorPassword), "")
+	(&service{}).renderSteps(rec, req, http.StatusOK, loginflow.Factors(loginflow.FactorPassword), "")
 	assert.Contains(t, rec.Body.String(), "Choose a sign-in method")
 	assert.NotContains(t, rec.Body.String(), `name="password"`)
 }
