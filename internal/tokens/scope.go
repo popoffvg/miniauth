@@ -62,9 +62,9 @@ func (s Scope) Covers(target Target) bool {
 	return strings.HasPrefix(target.path, s.path+"/")
 }
 
-// String is the stored form.
+// String is the stored form. The path is escaped again, so ParseScope of the stored form decodes it to the same path.
 func (s Scope) String() string {
-	return s.scheme + "://" + s.host + s.path
+	return s.scheme + "://" + s.host + (&url.URL{Path: s.path}).EscapedPath()
 }
 
 // MarshalText encodes the stored form.
