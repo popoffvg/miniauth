@@ -22,7 +22,7 @@ const (
 )
 
 // forwardAuthRequest documents the query Traefik sends.
-// scope is not a limit on a session. The bearer check uses token scopes.
+// scope is not a limit. A token limits itself with its own scopes.
 type forwardAuthRequest struct {
 	Scope string `query:"scope"`
 	Group string `query:"group"`
@@ -32,6 +32,10 @@ func (s *service) forwardAuth(w http.ResponseWriter, r *http.Request) {
 	need, ok := requiredGroups(r)
 	if !ok {
 		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	if bearer, ok := accessTokenBearer(r); ok {
+		s.forwardAuthToken(w, r, need, bearer)
 		return
 	}
 	session, err := s.openBrowserSession(r)
@@ -45,7 +49,7 @@ func (s *service) forwardAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := s.accounts.Find(r.Context(), session.UserID)
-	if errors.Is(err, users.ErrNotFound) {
+	if errors.Is(err, users.ErrNotFound) || err == nil && user.Disabled() {
 		s.unauthenticated(w, r)
 		return
 	}

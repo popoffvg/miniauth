@@ -6,7 +6,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/loginflow"
 )
 
-// Method is how a session was authenticated.
+// Method is how a request was authenticated.
 // The value is safe for a response header.
 type Method struct {
 	value string
@@ -42,4 +42,9 @@ func MethodFromFactors(factors loginflow.Factors) Method {
 
 func (m Method) String() string {
 	return m.value
+}
+
+// MethodAccessToken names a request authenticated by a personal access token.
+func MethodAccessToken() Method {
+	return Method{value: "token"}
 }

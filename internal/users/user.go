@@ -15,10 +15,17 @@ const (
 )
 
 // User is an account. It is comparable.
+// A zero DisabledAt is an active account.
 type User struct {
-	ID        ID
-	Login     Login
-	CreatedAt time.Time
+	ID         ID
+	Login      Login
+	CreatedAt  time.Time
+	DisabledAt time.Time
+}
+
+// Disabled reports whether the account may no longer authenticate.
+func (u User) Disabled() bool {
+	return !u.DisabledAt.IsZero()
 }
 
 // Identity is one proof of a user. Secret is the argon2id PHC string for KindPassword.

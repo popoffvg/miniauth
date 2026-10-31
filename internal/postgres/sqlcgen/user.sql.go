@@ -22,6 +22,25 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return n, err
 }
 
+const disableUser = `-- name: DisableUser :execrows
+UPDATE users
+SET disabled_at = COALESCE(disabled_at, $1)
+WHERE id = $2
+`
+
+type DisableUserParams struct {
+	DisabledAt pgtype.Timestamptz
+	ID         pgtype.UUID
+}
+
+func (q *Queries) DisableUser(ctx context.Context, arg DisableUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, disableUser, arg.DisabledAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getIdentityByLogin = `-- name: GetIdentityByLogin :one
 SELECT
     users.id AS user_id,
@@ -33,7 +52,7 @@ SELECT
     identities.created_at AS identity_created_at
 FROM users
 JOIN identities ON identities.user_id = users.id
-WHERE users.login = $1 AND identities.kind = 'password'
+WHERE users.login = $1 AND identities.kind = 'password' AND users.disabled_at IS NULL
 `
 
 type GetIdentityByLoginRow struct {
@@ -62,7 +81,7 @@ func (q *Queries) GetIdentityByLogin(ctx context.Context, login string) (GetIden
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, login, created_at
+SELECT id, login, created_at, disabled_at
 FROM users
 WHERE id = $1
 `
@@ -70,7 +89,12 @@ WHERE id = $1
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i User
-	err := row.Scan(&i.ID, &i.Login, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.Login,
+		&i.CreatedAt,
+		&i.DisabledAt,
+	)
 	return i, err
 }
 

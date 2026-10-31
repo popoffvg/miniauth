@@ -19,6 +19,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/telemetry"
+	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -124,6 +125,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		cfg.AdminToken,
 		machine,
 		logger,
+		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
 	)
 	if err != nil {
 		return err

@@ -10,6 +10,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccessToken struct {
+	ID            pgtype.UUID
+	UserID        pgtype.UUID
+	SecretHash    []byte
+	DisplayPrefix string
+	Name          string
+	Scopes        []string
+	CreatedAt     pgtype.Timestamptz
+	ExpiresAt     pgtype.Timestamptz
+	RevokedAt     pgtype.Timestamptz
+	LastUsedAt    pgtype.Timestamptz
+}
+
 type GroupMembership struct {
 	UserID pgtype.UUID
 	Name   string
@@ -52,7 +65,8 @@ type Session struct {
 }
 
 type User struct {
-	ID        pgtype.UUID
-	Login     string
-	CreatedAt pgtype.Timestamptz
+	ID         pgtype.UUID
+	Login      string
+	CreatedAt  pgtype.Timestamptz
+	DisabledAt pgtype.Timestamptz
 }

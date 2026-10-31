@@ -28,12 +28,17 @@ SELECT
     identities.created_at AS identity_created_at
 FROM users
 JOIN identities ON identities.user_id = users.id
-WHERE users.login = $1 AND identities.kind = 'password';
+WHERE users.login = $1 AND identities.kind = 'password' AND users.disabled_at IS NULL;
 
 -- name: GetUserByID :one
-SELECT id, login, created_at
+SELECT id, login, created_at, disabled_at
 FROM users
 WHERE id = $1;
 
 -- name: CountUsers :one
 SELECT count(*)::bigint AS n FROM users;
+
+-- name: DisableUser :execrows
+UPDATE users
+SET disabled_at = COALESCE(disabled_at, sqlc.arg(disabled_at))
+WHERE id = sqlc.arg(id);

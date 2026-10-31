@@ -52,10 +52,13 @@ paths:
       - bearerAuth: []
   /auth/check:
     get:
-      description: Traefik forwardAuth. A valid session answers 200 and sets X-Auth-User,
-        X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session
-        is redirected to the login page. Any other request with no session is 401.
-        A user outside group is 403. scope does not limit a session.
+      description: 'Traefik forwardAuth. A valid session or a valid Authorization:
+        Bearer idp_ token answers 200 and sets X-Auth-User, X-Auth-Email, X-Auth-Groups,
+        and X-Auth-Method. A browser with no session is redirected to the login page.
+        Any other request with no session is 401. An invalid, revoked, or expired
+        token, or a token of a disabled user, is 401 with error="invalid_token". A
+        URL under no scope of the token is 403. A user outside group is 403. The scope
+        query does not limit a session.'
       operationId: forwardAuth
       parameters:
       - in: query
