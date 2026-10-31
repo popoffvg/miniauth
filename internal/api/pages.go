@@ -54,12 +54,16 @@ const (
 	msgRecoveryFailed     pageMessage = "The password recovery failed. Try again."
 	msgResetLinkInvalid   pageMessage = "The link is not valid, was used, or expired. Ask for a new link."
 	msgNewPasswordInvalid pageMessage = "The password is not valid. It must have 1 to 1024 bytes."
+	msgLinkGoogle         pageMessage = "Sign in with your password to link this Google account."
+	msgGoogleFailed       pageMessage = "The Google sign-in failed. Try again."
+	msgGoogleUnavailable  pageMessage = "The Google sign-in is not available."
 )
 
 // pageView is the data of every page. A page reads only the fields it needs.
 type pageView struct {
 	Message pageMessage
 	Steps   []loginStep
+	Buttons []loginStep
 	Login   users.Login
 	Tokens  []tokens.Token
 	// NewToken is set only on pageTokenCreated.

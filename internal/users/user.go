@@ -12,6 +12,8 @@ type Kind string
 const (
 	// KindPassword is an argon2id password.
 	KindPassword Kind = "password"
+	// KindGoogle is a Google account. Its subject is the Google `sub` claim.
+	KindGoogle Kind = "google"
 )
 
 // User is an account. It is comparable.
@@ -29,11 +31,13 @@ func (u User) Disabled() bool {
 }
 
 // Identity is one proof of a user. Secret is the argon2id PHC string for KindPassword.
+// Subject is the outside account id for any other kind.
 type Identity struct {
 	ID        IdentityID
 	UserID    ID
 	Kind      Kind
 	Secret    PasswordHash
+	Subject   Subject
 	CreatedAt time.Time
 }
 

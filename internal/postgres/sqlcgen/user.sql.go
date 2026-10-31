@@ -61,7 +61,7 @@ type GetIdentityByLoginRow struct {
 	UserCreatedAt     pgtype.Timestamptz
 	IdentityID        pgtype.UUID
 	Kind              string
-	PasswordHash      string
+	PasswordHash      pgtype.Text
 	IdentityCreatedAt pgtype.Timestamptz
 }
 
@@ -139,7 +139,7 @@ FROM new_user
 type InsertUserIdentityParams struct {
 	IdentityID   pgtype.UUID
 	Kind         string
-	PasswordHash string
+	PasswordHash pgtype.Text
 	CreatedAt    pgtype.Timestamptz
 	UserID       pgtype.UUID
 	Login        string

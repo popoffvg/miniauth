@@ -146,6 +146,7 @@ func (s *service) finishStep(w http.ResponseWriter, r *http.Request, userID user
 		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
 		return
 	}
+	s.linkPendingIdentity(w, r, userID, flow.Factors)
 	http.Redirect(w, r, flow.ReturnURL.String(), http.StatusSeeOther)
 }
 
@@ -186,18 +187,6 @@ func (s *service) home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderPage(w, r, http.StatusOK, pageSignedIn, pageView{Login: user.Login})
-}
-
-// renderSteps shows the form of the one open step, or the chooser when more steps are open.
-func (s *service) renderSteps(w http.ResponseWriter, r *http.Request, status int, collected loginflow.Factors, message pageMessage) {
-	view := pageView{Message: message, Recovery: s.recovery != nil}
-	steps := openSteps(collected)
-	if len(steps) == 1 {
-		renderPage(w, r, status, steps[0].Page, view)
-		return
-	}
-	view.Steps = steps
-	renderPage(w, r, status, pageSteps, view)
 }
 
 // retryAfter is the Retry-After value in whole seconds, at least 1.

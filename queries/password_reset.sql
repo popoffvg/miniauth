@@ -23,7 +23,7 @@ FOR UPDATE OF password_resets;
 
 -- name: SetPasswordHash :execrows
 UPDATE identities
-SET password_hash = sqlc.arg(password_hash)
+SET password_hash = sqlc.arg(password_hash)::text
 WHERE user_id = sqlc.arg(user_id) AND kind = 'password';
 
 -- name: MarkPasswordResetUsed :exec

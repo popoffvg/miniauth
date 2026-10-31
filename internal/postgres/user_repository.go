@@ -53,7 +53,7 @@ func (r *UserRepository) Create(ctx context.Context, account users.User, identit
 		CreatedAt:    pgTime(account.CreatedAt),
 		IdentityID:   pgUUIDBytes(identity.ID.Bytes()),
 		Kind:         identity.Kind.String(),
-		PasswordHash: encoded,
+		PasswordHash: pgtype.Text{String: encoded, Valid: true},
 	})
 	if err != nil {
 		return createUserError(err)
@@ -109,7 +109,7 @@ func (r *UserRepository) FindPasswordIdentity(ctx context.Context, login users.L
 		return users.Identity{}, errors.New("postgres: stored identity is incomplete")
 	}
 	// The parse error does not wrap the PHC string, so it is safe to return.
-	hash, err := users.ParsePasswordHash(stored.PasswordHash)
+	hash, err := users.ParsePasswordHash(stored.PasswordHash.String)
 	if err != nil {
 		return users.Identity{}, fmt.Errorf("postgres: load identity: %w", err)
 	}

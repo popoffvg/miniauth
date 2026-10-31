@@ -32,6 +32,7 @@ func TestRenderStepsShowsTheOneOpenForm(t *testing.T) {
 	(&service{}).renderSteps(rec, req, http.StatusOK, 0, msgWrongCredentials)
 	assert.Contains(t, rec.Body.String(), `name="password"`)
 	assert.Contains(t, rec.Body.String(), string(msgWrongCredentials))
+	assert.NotContains(t, rec.Body.String(), googleLoginPath, "Google is not offered without the step")
 }
 
 func TestRenderStepsListsTheOpenSteps(t *testing.T) {

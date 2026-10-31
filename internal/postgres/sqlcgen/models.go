@@ -50,8 +50,9 @@ type Identity struct {
 	ID           pgtype.UUID
 	UserID       pgtype.UUID
 	Kind         string
-	PasswordHash string
+	PasswordHash pgtype.Text
 	CreatedAt    pgtype.Timestamptz
+	Subject      pgtype.Text
 }
 
 type Invite struct {
@@ -83,6 +84,7 @@ type LoginFlow struct {
 	SecretSalt    []byte
 	Kind          string
 	UserID        pgtype.UUID
+	Challenge     []byte
 }
 
 type PasswordReset struct {
@@ -91,6 +93,14 @@ type PasswordReset struct {
 	CreatedAt pgtype.Timestamptz
 	ExpiresAt pgtype.Timestamptz
 	UsedAt    pgtype.Timestamptz
+}
+
+type PendingIdentityLink struct {
+	SecretHash []byte
+	Provider   string
+	Subject    string
+	CreatedAt  pgtype.Timestamptz
+	ExpiresAt  pgtype.Timestamptz
 }
 
 type RecoveryAttempt struct {

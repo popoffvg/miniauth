@@ -12,7 +12,9 @@ import (
 	"github.com/swaggest/openapi-go/openapi3"
 
 	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/googlestep"
 	"github.com/popoffvg/miniauth/internal/groups"
+	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
@@ -71,6 +73,8 @@ type service struct {
 	flows       *loginflow.LoginFlows
 	passwords   *passwordstep.Service
 	recovery    *recovery.Service
+	google      *googlestep.Step
+	links       *identitylink.Service
 	spec        []byte
 
 	// invites is nil unless WithInvites sets it.
@@ -364,6 +368,27 @@ func (s *service) routes() []route {
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable},
 			doc:      "Checks the password for the flow in the login flow cookie. Origin MUST be the public origin, else 403. A complete flow sets the session cookie and redirects to the return URL. A wrong login or password shows the form again with 200. A backoff is 429. A step-up flow reads only the password, checks it for the user of the flow, renews the auth time of the session, and redirects to the return URL.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     googleLoginPath,
+			id:       "googleLogin",
+			handler:  s.googleLogin,
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Starts the Google step for the flow in the login flow cookie and redirects to Google with PKCE. Origin MUST be the public origin, else 403. The PKCE verifier goes to the HttpOnly cookie __Host-id_google_verifier. Without Google config, or while Google discovery fails, it is 503.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodGet,
+			path:     GoogleCallbackPath,
+			id:       "googleCallback",
+			handler:  s.googleCallback,
+			request:  new(googleCallbackRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Checks the Google reply: state, PKCE verifier, ID token issuer, audience, expiry, and nonce. Only the sub claim links the account. A linked account completes the flow: it sets the session cookie and redirects to the return URL. An unknown account starts no session and creates no user: it is kept 15 minutes as a pending link bound to the browser by the cookie __Host-id_pending_link, and the page asks for a password login, which then links it. A bad state, verifier, or token is 400.",
 			isPublic: true,
 		},
 		{
