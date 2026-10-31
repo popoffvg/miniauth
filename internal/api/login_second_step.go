@@ -40,10 +40,12 @@ func (s *service) stepPage(factor loginflow.Factor) http.HandlerFunc {
 		}
 		defer func() { _ = machine.Close() }()
 		flow := machine.Get()
+		// shown is per request: factor belongs to the handler and every request shares it.
+		shown := factor
 		if _, open := findStep(s.openSteps(flow), factor); !open {
-			factor = 0
+			shown = 0
 		}
-		s.renderStep(w, r, http.StatusOK, flow, factor, "")
+		s.renderStep(w, r, http.StatusOK, flow, shown, "")
 	}
 }
 
