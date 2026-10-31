@@ -33,12 +33,13 @@ func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// Migrate applies every embedded migration that the database does not have yet.
+// Migrate applies every embedded migration that the database does not have yet, a lower number after a higher one too.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	db := stdlib.OpenDBFromPool(pool)
 	defer func() { _ = db.Close() }()
 
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	// Branches merge out of number order, so a database can run a higher number before a lower one arrives.
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS, goose.WithAllowOutofOrder(true))
 	if err != nil {
 		return fmt.Errorf("postgres: migrations: %w", err)
 	}

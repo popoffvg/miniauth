@@ -6,7 +6,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -65,4 +68,38 @@ func highestMigration(t *testing.T) int64 {
 	}
 	require.NotZero(t, highest)
 	return highest
+}
+
+// A branch can merge a lower number after a database ran a higher one, such as 00017 after 00018.
+func TestMigrateAppliesALowerNumberThatArrivesLater(t *testing.T) {
+	ctx := t.Context()
+	pool, err := postgres.Open(ctx, postgrestest.NewDatabase(t))
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+
+	const late = "00017_totp.sql"
+	early := fstest.MapFS{}
+	names, err := fs.Glob(migrations.FS, "*.sql")
+	require.NoError(t, err)
+	for _, name := range names {
+		if name == late {
+			continue
+		}
+		data, readErr := fs.ReadFile(migrations.FS, name)
+		require.NoError(t, readErr)
+		early[name] = &fstest.MapFile{Data: data}
+	}
+	require.Len(t, early, len(names)-1)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, early)
+	require.NoError(t, err)
+	_, err = provider.Up(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, postgres.Migrate(ctx, pool))
+
+	var applied bool
+	require.NoError(t, pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM goose_db_version WHERE version_id = 17 AND is_applied)").Scan(&applied))
+	assert.True(t, applied, late+" MUST be applied after a higher number")
 }
