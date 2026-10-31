@@ -17,6 +17,287 @@ paths:
           description: OK
         "302":
           description: Found
+  /access:
+    get:
+      description: Lists the resources and their grants, with the forms to change
+        them. Only a member of the group admin opens it; any other user is 403. With
+        no session it redirects to the login page, which returns here.
+      operationId: accessPage
+      parameters:
+      - description: The result of the last change. The page shows a fixed message
+          for a known value and ignores any other value.
+        in: query
+        name: done
+        schema:
+          description: The result of the last change. The page shows a fixed message
+            for a known value and ignores any other value.
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /access/grants:
+    post:
+      description: 'Gives one user or one group a resource and redirects to GET /access?done=granted.
+        Only a member of the group admin can send it; any other user is 403. Origin
+        MUST be the public origin, else 403. A login older than 10 minutes starts
+        a step-up instead: the page asks for the password of the session user and
+        returns to GET /access. A refused change shows the page with a message and
+        400, 404, or 409.'
+      operationId: grantForm
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiAccessGrantForm'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /access/grants/{id}/revoke:
+    post:
+      description: 'Revokes a grant and redirects to GET /access?done=revoked. The
+        next /auth/check does not count it. Only a member of the group admin can send
+        it; any other user is 403. Origin MUST be the public origin, else 403. A login
+        older than 10 minutes starts a step-up instead: the page asks for the password
+        of the session user and returns to GET /access. A refused change shows the
+        page with a message and 400, 404, or 409.'
+      operationId: revokeForm
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /access/resources:
+    post:
+      description: 'Adds a resource through the access service and redirects to GET
+        /access?done=resource-added. Only a member of the group admin can send it;
+        any other user is 403. Origin MUST be the public origin, else 403. A login
+        older than 10 minutes starts a step-up instead: the page asks for the password
+        of the session user and returns to GET /access. A refused change shows the
+        page with a message and 400, 404, or 409.'
+      operationId: addResourceForm
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiAccessResourceForm'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /access/resources/{name}/delete:
+    post:
+      description: 'Deletes a resource and its grants and redirects to GET /access?done=resource-deleted.
+        Only a member of the group admin can send it; any other user is 403. Origin
+        MUST be the public origin, else 403. A login older than 10 minutes starts
+        a step-up instead: the page asks for the password of the session user and
+        returns to GET /access. A refused change shows the page with a message and
+        400, 404, or 409.'
+      operationId: deleteResourceForm
+      parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
   /api/v1/grants:
     get:
       description: Lists the grants, expired ones too, in resource name order. Each
@@ -1035,6 +1316,37 @@ components:
           type: array
       required:
       - resources
+      type: object
+    FormDataApiAccessGrantForm:
+      properties:
+        expires:
+          description: An HTML date (the grant works until the end of that UTC day)
+            or datetime-local in UTC. Empty never expires.
+          type: string
+        group:
+          description: A group name. Exactly one of user and group.
+          type: string
+        resource:
+          type: string
+        user:
+          description: A login. Exactly one of user and group.
+          type: string
+      required:
+      - resource
+      type: object
+    FormDataApiAccessResourceForm:
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+        url:
+          description: An absolute http or https URL with no query.
+          format: uri
+          type: string
+      required:
+      - name
+      - url
       type: object
     FormDataApiLoginFormRequest:
       properties:
