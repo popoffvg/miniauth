@@ -43,7 +43,8 @@ SET
     return_url = sqlc.arg(return_url),
     needs_second = sqlc.arg(needs_second),
     pending_factor = sqlc.arg(pending_factor),
-    expires_at = sqlc.arg(expires_at)
+    expires_at = sqlc.arg(expires_at),
+    user_id = sqlc.arg(user_id)
 WHERE id = sqlc.arg(id) AND version = sqlc.arg(prev_version);
 
 -- name: DeleteLoginFlowVersion :execrows

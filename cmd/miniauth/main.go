@@ -29,6 +29,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/telegramstep"
 	"github.com/popoffvg/miniauth/internal/telemetry"
 	"github.com/popoffvg/miniauth/internal/tokens"
+	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -126,7 +127,12 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	}
 	accounts := postgres.NewUserRepository(pool)
 	flowStore := postgres.NewFlowStore(pool)
-	passwords, err := passwordstep.NewService(accounts, postgres.NewAttemptRepository(pool))
+	attempts := postgres.NewAttemptRepository(pool)
+	totp, err := totpstep.NewService(postgres.NewTOTPRepository(pool), attempts, cfg.TOTPKey)
+	if err != nil {
+		return err
+	}
+	passwords, err := passwordstep.NewService(accounts, attempts, passwordstep.WithSecondFactors(totp))
 	if err != nil {
 		return err
 	}
@@ -154,6 +160,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	options := []api.RouterOption{
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
 		api.WithLogin(loginflow.NewLoginFlows(flowStore), passwords),
+		api.WithTOTP(totp),
 		api.WithURLGrants(grants),
 		api.WithAccessAdmin(grants),
 		withRecovery,
@@ -161,7 +168,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
 	if cfg.Google.Enabled() {
-		google, googleErr := startGoogle(ctx, logger, cfg, accounts, flowStore)
+		google, googleErr := startGoogle(ctx, logger, cfg, accounts, flowStore, totp)
 		if googleErr != nil {
 			return googleErr
 		}
@@ -170,7 +177,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	}
 	if cfg.Telegram.Enabled() {
 		telegram, telegramErr := telegramstep.NewStep(
-			telegramstep.Config{BotName: cfg.Telegram.Name, BotToken: cfg.Telegram.Token},
+			telegramstep.Config{BotName: cfg.Telegram.Name, BotToken: cfg.Telegram.Token, SecondFactors: totp},
 			accounts,
 			postgres.NewTelegramProofRepository(pool),
 		)
@@ -251,12 +258,13 @@ func stopServing(ctx context.Context, machine *lifecycle.Machine, server *http.S
 
 // startGoogle builds the Google step and runs its discovery in the background.
 // The step is offered only after the first discovery succeeds. Close stops the discovery.
-func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, identities googlestep.IdentityStore, challenges loginflow.ChallengeStore) (*googlestep.Step, error) {
+func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, identities googlestep.IdentityStore, challenges loginflow.ChallengeStore, secondFactors loginflow.SecondFactors) (*googlestep.Step, error) {
 	step, err := googlestep.NewStep(googlestep.Config{
-		Issuer:       googlestep.GoogleIssuer,
-		ClientID:     cfg.Google.ID,
-		ClientSecret: cfg.Google.Secret,
-		RedirectURL:  googlestep.RedirectURL(cfg.PublicURL.Origin() + api.GoogleCallbackPath),
+		Issuer:        googlestep.GoogleIssuer,
+		ClientID:      cfg.Google.ID,
+		ClientSecret:  cfg.Google.Secret,
+		RedirectURL:   googlestep.RedirectURL(cfg.PublicURL.Origin() + api.GoogleCallbackPath),
+		SecondFactors: secondFactors,
 	}, identities, challenges, logger)
 	if err != nil {
 		return nil, err

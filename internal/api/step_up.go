@@ -53,12 +53,12 @@ func (s *service) stepUp(w http.ResponseWriter, r *http.Request, machine loginMa
 		return
 	}
 	userID, err := s.passwords.Verify(r.Context(), machine, user.Login, password, ip)
-	if passwordStepFailed(w, r, err, retry) {
+	if stepFailed(w, r, err, retry) {
 		return
 	}
 	flow = machine.Get()
 	if !flow.State.Final() {
-		s.renderSteps(w, r, http.StatusOK, flow.Factors, "")
+		s.renderSteps(w, r, http.StatusOK, flow, "")
 		return
 	}
 	clearFlowCookie(w)

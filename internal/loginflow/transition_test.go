@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 func TestLoginFlowNext(t *testing.T) {
@@ -15,7 +17,9 @@ func TestLoginFlowNext(t *testing.T) {
 		State:     StateAwaiting,
 		Version:   3,
 	}
+	ada := users.NewID()
 	second := base
+	second.UserID = ada
 	second.State = StateAwaitingSecond
 	second.Factors = Factors(FactorPassword)
 	second.NeedsSecond = true
@@ -48,8 +52,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "password completes",
 			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorPassword},
+			event: Event{Kind: EventStepPassed, Factor: FactorPassword, UserID: ada},
 			want: with(base, func(f *LoginFlow) {
+				f.UserID = ada
 				f.State = StateComplete
 				f.Factors = Factors(FactorPassword)
 				f.Version = 4
@@ -58,8 +63,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "password with totp enrolled waits",
 			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorPassword, NeedsSecond: true},
+			event: Event{Kind: EventStepPassed, Factor: FactorPassword, NeedsSecond: true, UserID: ada},
 			want: with(base, func(f *LoginFlow) {
+				f.UserID = ada
 				f.State = StateAwaitingSecond
 				f.Factors = Factors(FactorPassword)
 				f.NeedsSecond = true
@@ -69,7 +75,7 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "totp completes the second factor",
 			state: second,
-			event: Event{Kind: EventStepPassed, Factor: FactorTOTP},
+			event: Event{Kind: EventStepPassed, Factor: FactorTOTP, UserID: ada},
 			want: with(second, func(f *LoginFlow) {
 				f.State = StateComplete
 				f.Factors = Factors(FactorPassword).With(FactorTOTP)
@@ -79,7 +85,7 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "recovery code completes the second factor",
 			state: second,
-			event: Event{Kind: EventStepPassed, Factor: FactorRecovery},
+			event: Event{Kind: EventStepPassed, Factor: FactorRecovery, UserID: ada},
 			want: with(second, func(f *LoginFlow) {
 				f.State = StateComplete
 				f.Factors = Factors(FactorPassword).With(FactorRecovery)
@@ -95,8 +101,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "passkey counts as two factors",
 			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorPasskey},
+			event: Event{Kind: EventStepPassed, Factor: FactorPasskey, UserID: ada},
 			want: with(base, func(f *LoginFlow) {
+				f.UserID = ada
 				f.State = StateComplete
 				f.Factors = Factors(FactorPasskey)
 				f.Version = 4
@@ -105,7 +112,7 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "passkey satisfies a flow that still needs a second factor",
 			state: second,
-			event: Event{Kind: EventStepPassed, Factor: FactorPasskey},
+			event: Event{Kind: EventStepPassed, Factor: FactorPasskey, UserID: ada},
 			want: with(second, func(f *LoginFlow) {
 				f.State = StateComplete
 				f.Factors = Factors(FactorPassword).With(FactorPasskey)
@@ -115,8 +122,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "recovery alone does not complete",
 			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorRecovery},
+			event: Event{Kind: EventStepPassed, Factor: FactorRecovery, UserID: ada},
 			want: with(base, func(f *LoginFlow) {
+				f.UserID = ada
 				f.Factors = Factors(FactorRecovery)
 				f.Version = 4
 			}),
@@ -124,8 +132,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "totp alone does not complete",
 			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorTOTP},
+			event: Event{Kind: EventStepPassed, Factor: FactorTOTP, UserID: ada},
 			want: with(base, func(f *LoginFlow) {
+				f.UserID = ada
 				f.Factors = Factors(FactorTOTP)
 				f.Version = 4
 			}),
@@ -133,8 +142,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "google completes",
 			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorGoogle},
+			event: Event{Kind: EventStepPassed, Factor: FactorGoogle, UserID: ada},
 			want: with(base, func(f *LoginFlow) {
+				f.UserID = ada
 				f.State = StateComplete
 				f.Factors = Factors(FactorGoogle)
 				f.Version = 4
@@ -143,8 +153,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "telegram completes",
 			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorTelegram},
+			event: Event{Kind: EventStepPassed, Factor: FactorTelegram, UserID: ada},
 			want: with(base, func(f *LoginFlow) {
+				f.UserID = ada
 				f.State = StateComplete
 				f.Factors = Factors(FactorTelegram)
 				f.Version = 4
@@ -163,8 +174,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "known password completes a pending link",
 			state: pending,
-			event: Event{Kind: EventStepPassed, Factor: FactorPassword},
+			event: Event{Kind: EventStepPassed, Factor: FactorPassword, UserID: ada},
 			want: with(pending, func(f *LoginFlow) {
+				f.UserID = ada
 				f.State = StateComplete
 				f.Factors = Factors(FactorPassword)
 				f.Version = 5
@@ -173,8 +185,9 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "pending link still needs totp",
 			state: pending,
-			event: Event{Kind: EventStepPassed, Factor: FactorPassword, NeedsSecond: true},
+			event: Event{Kind: EventStepPassed, Factor: FactorPassword, NeedsSecond: true, UserID: ada},
 			want: with(pending, func(f *LoginFlow) {
+				f.UserID = ada
 				f.State = StateAwaitingSecond
 				f.Factors = Factors(FactorPassword)
 				f.NeedsSecond = true
@@ -190,7 +203,7 @@ func TestLoginFlowNext(t *testing.T) {
 		{
 			name:  "same password again stays",
 			state: second,
-			event: Event{Kind: EventStepPassed, Factor: FactorPassword, NeedsSecond: true},
+			event: Event{Kind: EventStepPassed, Factor: FactorPassword, NeedsSecond: true, UserID: ada},
 			want:  second,
 		},
 		{

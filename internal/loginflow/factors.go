@@ -21,6 +21,19 @@ const (
 // Factors is the set of factors collected in one flow.
 type Factors uint16
 
+const (
+	// firstFactors identify the user. Two of them count as one factor.
+	firstFactors = Factors(FactorPassword) | Factors(FactorGoogle) | Factors(FactorTelegram)
+	// secondFactors count only after a first factor of a user with NeedsSecond.
+	secondFactors = Factors(FactorTOTP) | Factors(FactorRecovery)
+	allFactors    = firstFactors | secondFactors | Factors(FactorPasskey)
+)
+
+// known reports whether f is exactly one factor of this package.
+func (f Factor) known() bool {
+	return f != 0 && f&(f-1) == 0 && Factors(f)&allFactors != 0
+}
+
 // With returns the set plus f.
 func (s Factors) With(f Factor) Factors {
 	return s | Factors(f)

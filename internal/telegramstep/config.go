@@ -3,6 +3,8 @@ package telegramstep
 import (
 	"strings"
 
+	"github.com/popoffvg/miniauth/internal/loginflow"
+
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -55,7 +57,9 @@ func (t BotToken) Empty() bool {
 }
 
 // Config is the bot that the step checks the widget data for.
+// SecondFactors tells which linked users need a second step. Nil means none.
 type Config struct {
-	BotName  BotName
-	BotToken BotToken
+	BotName       BotName
+	BotToken      BotToken
+	SecondFactors loginflow.SecondFactors
 }

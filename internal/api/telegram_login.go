@@ -79,19 +79,19 @@ func (s *service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		s.renderSteps(w, r, http.StatusBadRequest, machine.Get().Factors, msgTelegramFailed)
+		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
 	}
 	data, err := telegramstep.ParseAuthData(query)
 	if err != nil {
-		s.renderSteps(w, r, http.StatusBadRequest, machine.Get().Factors, msgTelegramFailed)
+		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
 	}
 	outcome, err := s.telegram.Finish(r.Context(), machine, data)
 	switch {
 	case errors.Is(err, telegramstep.ErrBadHash), errors.Is(err, telegramstep.ErrStale), errors.Is(err, telegramstep.ErrReplay):
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: telegram data refused", "err", err)
-		s.renderSteps(w, r, http.StatusBadRequest, machine.Get().Factors, msgTelegramFailed)
+		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
 	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
 		clearFlowCookie(w)
@@ -103,7 +103,7 @@ func (s *service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !outcome.Linked() {
-		s.rememberPendingLink(w, r, outcome.Unlinked, machine.Get().Factors, msgLinkTelegram)
+		s.rememberPendingLink(w, r, outcome.Unlinked, machine.Get(), msgLinkTelegram)
 		return
 	}
 	s.finishStep(w, r, outcome.UserID, machine.Get())

@@ -23,6 +23,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/telegramstep"
 	"github.com/popoffvg/miniauth/internal/tokens"
+	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -79,6 +80,7 @@ type service struct {
 	telegram    *telegramstep.Step
 	links       *identitylink.Service
 	passkeys    *passkeystep.Service
+	totp        *totpstep.Service
 	spec        []byte
 
 	// invites is nil unless WithInvites sets it.
@@ -540,6 +542,52 @@ func (s *service) routes() []route {
 		},
 		{
 			method:      http.MethodGet,
+			path:        loginTOTPPath,
+			id:          "loginTOTPPage",
+			handler:     s.stepPage(loginflow.FactorTOTP),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			pages:       []int{http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Shows the TOTP form of the flow in the login flow cookie, after the password of a user with two-step login. When the step is not open, it shows the open steps.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     loginTOTPPath,
+			id:       "loginTOTP",
+			handler:  s.loginTOTP,
+			request:  new(codeFormRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Checks a TOTP code for the user of the flow in the login flow cookie. Origin MUST be the public origin, else 403. A code is accepted once. A complete flow sets the session cookie and redirects to the return URL. A wrong or used code shows the form again with 200. A backoff is 429.",
+			isPublic: true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        loginRecoveryCodePath,
+			id:          "loginRecoveryCodePage",
+			handler:     s.stepPage(loginflow.FactorRecovery),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			pages:       []int{http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Shows the recovery code form of the flow in the login flow cookie. A recovery code replaces the TOTP code once.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     loginRecoveryCodePath,
+			id:       "loginRecoveryCode",
+			handler:  s.loginRecoveryCode,
+			request:  new(recoveryFormRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Spends one recovery code of the user of the flow in the login flow cookie, in place of a TOTP code. Origin MUST be the public origin, else 403. A used code shows the form again with 200. A backoff is 429, shared with the TOTP step.",
+			isPublic: true,
+		},
+		{
+			method:      http.MethodGet,
 			path:        "/{$}",
 			id:          "home",
 			handler:     s.home,
@@ -696,6 +744,43 @@ func (s *service) routes() []route {
 			status:   http.StatusSeeOther,
 			errors:   []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
 			doc:      "Deletes a device of the session user and its session. Origin MUST be the public URL origin, else 403. Redirects to the sessions page.",
+			isPublic: true,
+		},
+		{
+			method:      http.MethodPost,
+			path:        totpEnrollPath,
+			id:          "enrollTOTP",
+			handler:     s.enrollTOTP,
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			empty:       []int{http.StatusSeeOther},
+			pages:       []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Makes a TOTP secret for the session user and shows it once as a QR code and as base32 text, with Cache-Control: no-store. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up first: the page asks for the password and returns to GET /sessions. Without MINIAUTH_TOTP_KEY it is 503.",
+			isPublic:    true,
+		},
+		{
+			method:      http.MethodPost,
+			path:        totpConfirmPath,
+			id:          "confirmTOTP",
+			handler:     s.confirmTOTP,
+			request:     new(codeFormRequest),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			empty:       []int{http.StatusSeeOther},
+			pages:       []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Turns on two-step login when the code matches the new secret, and shows 10 recovery codes once, with Cache-Control: no-store. A wrong code shows the secret again with 200. A setup older than 15 minutes is 400.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     totpDisablePath,
+			id:       "disableTOTP",
+			handler:  s.disableTOTP,
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Turns off two-step login and deletes the recovery codes, then redirects to GET /sessions. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up first.",
 			isPublic: true,
 		},
 	}

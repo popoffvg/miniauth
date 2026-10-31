@@ -41,7 +41,7 @@ func TestAttemptRepositoryCountsFailures(t *testing.T) {
 	other := mustClientIP(t, "192.0.2.1")
 	record := func(login users.Login, ip passwordstep.ClientIP, ok bool, at time.Time) {
 		t.Helper()
-		err := repo.Record(ctx, passwordstep.Attempt{Login: login, IP: ip, Succeeded: ok, AttemptedAt: at})
+		err := repo.Record(ctx, passwordstep.Attempt{Kind: passwordstep.KindPassword, Login: login, IP: ip, Succeeded: ok, AttemptedAt: at})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,7 +52,7 @@ func TestAttemptRepositoryCountsFailures(t *testing.T) {
 	record(ada, home, false, start.Add(3*time.Minute))
 	record(bea, sameNet, false, start.Add(4*time.Minute))
 
-	got, err := repo.CountFailures(ctx, mustLogin(t, " ADA "), home, start)
+	got, err := repo.CountFailures(ctx, passwordstep.KindPassword, mustLogin(t, " ADA "), home, start)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestAttemptRepositoryCountsFailures(t *testing.T) {
 		t.Fatalf("CountFailures() = %+v, want %+v", got, want)
 	}
 
-	got, err = repo.CountFailures(ctx, bea, other, start.Add(90*time.Second))
+	got, err = repo.CountFailures(ctx, passwordstep.KindPassword, bea, other, start.Add(90*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestAttemptRepositoryCountsFailures(t *testing.T) {
 	if err = repo.Cleanup(ctx, start.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	got, err = repo.CountFailures(ctx, ada, other, start)
+	got, err = repo.CountFailures(ctx, passwordstep.KindPassword, ada, other, start)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +89,43 @@ func TestAttemptRepositoryCountsFailures(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("CountFailures() after cleanup = %+v, want %+v", got, want)
+	}
+}
+
+func TestAttemptRepositoryPasswordSuccessKeepsTheSecondFactorCount(t *testing.T) {
+	ctx := t.Context()
+	repo := postgres.NewAttemptRepository(migratedPool(t))
+	start := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	ada := mustLogin(t, "ada")
+	ip := mustClientIP(t, "192.0.2.7")
+	record := func(kind passwordstep.AttemptKind, ok bool, at time.Time) {
+		t.Helper()
+		err := repo.Record(ctx, passwordstep.Attempt{Kind: kind, Login: ada, IP: ip, Succeeded: ok, AttemptedAt: at})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	record(passwordstep.KindSecondFactor, false, start)
+	record(passwordstep.KindPassword, true, start.Add(time.Minute))
+	record(passwordstep.KindSecondFactor, false, start.Add(2*time.Minute))
+
+	got, err := repo.CountFailures(ctx, passwordstep.KindSecondFactor, ada, ip, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := passwordstep.RecentFailures{
+		Login: passwordstep.FailureCount{Failures: 2, LastFailure: start.Add(2 * time.Minute)},
+		IP:    passwordstep.FailureCount{Failures: 2, LastFailure: start.Add(2 * time.Minute)},
+	}
+	if got != want {
+		t.Fatalf("CountFailures(second factor) = %+v, want %+v", got, want)
+	}
+	got, err = repo.CountFailures(ctx, passwordstep.KindPassword, ada, ip, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Login.Failures != 0 || got.IP.Failures != 2 {
+		t.Fatalf("CountFailures(password) = %+v, want no login failures and 2 IP failures", got)
 	}
 }
 

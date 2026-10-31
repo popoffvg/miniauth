@@ -38,12 +38,12 @@ type mailJob func(ctx context.Context) error
 
 // Service sends reset links and sets a new password through one.
 type Service struct {
-	store    Store
-	attempts passwordstep.AttemptStore
-	mailer   Mailer
-	links    Links
-	now      func() time.Time
-	jobs     chan mailJob
+	store   Store
+	limiter *passwordstep.Limiter
+	mailer  Mailer
+	links   Links
+	now     func() time.Time
+	jobs    chan mailJob
 }
 
 // Option changes a Service.
@@ -62,13 +62,17 @@ func NewService(store Store, attempts passwordstep.AttemptStore, mailer Mailer, 
 	if store == nil || attempts == nil || mailer == nil || links == nil {
 		return nil, errors.New("recovery: store, attempt store, mailer, or links is missing")
 	}
+	limiter, err := passwordstep.NewLimiter(attempts, passwordstep.KindRecovery)
+	if err != nil {
+		return nil, err
+	}
 	s := &Service{
-		store:    store,
-		attempts: attempts,
-		mailer:   mailer,
-		links:    links,
-		now:      time.Now,
-		jobs:     make(chan mailJob, QueueSize),
+		store:   store,
+		limiter: limiter,
+		mailer:  mailer,
+		links:   links,
+		now:     time.Now,
+		jobs:    make(chan mailJob, QueueSize),
 	}
 	for _, option := range options {
 		option(s)
@@ -108,20 +112,11 @@ func (s *Service) Request(ctx context.Context, email users.Email, ip passwordste
 		return passwordstep.ErrInvalidClientIP
 	}
 	now := s.clock()
-	since := now.Add(-passwordstep.BackoffWindow)
-	if err := s.attempts.Cleanup(ctx, since); err != nil {
+	if err := s.limiter.Wait(ctx, email.Login(), ip, now); err != nil {
 		return err
-	}
-	recent, err := s.attempts.CountFailures(ctx, email.Login(), ip, since)
-	if err != nil {
-		return err
-	}
-	if retryAt := recent.ReadyAt(); now.Before(retryAt) {
-		return &passwordstep.TooSoonError{RetryAt: retryAt}
 	}
 	// Each request counts as a failure, so the backoff bounds the mails per address and per IP.
-	attempt := passwordstep.Attempt{Login: email.Login(), IP: ip, Succeeded: false, AttemptedAt: now}
-	if err := s.attempts.Record(ctx, attempt); err != nil {
+	if err := s.limiter.Record(ctx, email.Login(), ip, false, now); err != nil {
 		return err
 	}
 	return s.enqueue(func(ctx context.Context) error {

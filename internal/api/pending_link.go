@@ -17,7 +17,7 @@ const pendingLinkCookieName = "__Host-id_pending_link"
 const linkingFactor = loginflow.FactorPassword
 
 // rememberPendingLink stores the unknown account and asks, with message, for a password login in this browser.
-func (s *service) rememberPendingLink(w http.ResponseWriter, r *http.Request, account users.ExternalAccount, collected loginflow.Factors, message pageMessage) {
+func (s *service) rememberPendingLink(w http.ResponseWriter, r *http.Request, account users.ExternalAccount, flow loginflow.LoginFlow, message pageMessage) {
 	secret, err := s.links.Remember(r.Context(), account)
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: remember pending link", "err", err)
@@ -25,7 +25,7 @@ func (s *service) rememberPendingLink(w http.ResponseWriter, r *http.Request, ac
 		return
 	}
 	http.SetCookie(w, hostCookie(pendingLinkCookieName, secret.CookieValue(), identitylink.LinkTTL, time.Now()))
-	s.renderSteps(w, r, http.StatusOK, collected, message)
+	s.renderSteps(w, r, http.StatusOK, flow, message)
 }
 
 // linkPendingIdentity makes the pending link of this browser an identity of userID.

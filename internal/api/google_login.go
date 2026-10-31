@@ -120,7 +120,7 @@ func (s *service) googleCallback(w http.ResponseWriter, r *http.Request) {
 	outcome, err := s.google.Finish(r.Context(), machine, id, verifier, googlestep.State(query.Get("state")), googlestep.Code(query.Get("code")))
 	switch {
 	case errors.Is(err, googlestep.ErrBadCallback), errors.Is(err, googlestep.ErrBadToken):
-		s.renderSteps(w, r, http.StatusBadRequest, machine.Get().Factors, msgGoogleFailed)
+		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgGoogleFailed)
 		return
 	case errors.Is(err, googlestep.ErrUnavailable):
 		renderDenied(w, r, http.StatusServiceUnavailable, msgGoogleUnavailable)
@@ -135,7 +135,7 @@ func (s *service) googleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !outcome.Linked() {
-		s.rememberPendingLink(w, r, outcome.Unlinked, machine.Get().Factors, msgLinkGoogle)
+		s.rememberPendingLink(w, r, outcome.Unlinked, machine.Get(), msgLinkGoogle)
 		return
 	}
 	s.finishStep(w, r, outcome.UserID, machine.Get())

@@ -247,7 +247,7 @@ func TestRecoveryRoutesAnswer503WithoutAMailer(t *testing.T) {
 		assert.Equal(t, http.StatusServiceUnavailable, rec.Code, path)
 	}
 	rec := httptest.NewRecorder()
-	(&service{}).renderSteps(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil), http.StatusOK, 0, "")
+	(&service{}).renderSteps(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil), http.StatusOK, loginflow.LoginFlow{}, "")
 	assert.NotContains(t, rec.Body.String(), `href="/recover"`)
 }
 

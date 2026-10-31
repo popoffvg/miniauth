@@ -66,3 +66,37 @@ func TestParseFlowKind(t *testing.T) {
 		}
 	}
 }
+
+func TestStepUpIgnoresNeedsSecond(t *testing.T) {
+	owner := users.NewID()
+	flow := LoginFlow{ReturnURL: "https://example.test/sessions", State: StateAwaiting, Kind: KindStepUp, UserID: owner}
+	got, err := flow.Next(Event{Kind: EventStepPassed, Factor: FactorPassword, NeedsSecond: true, UserID: owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateComplete || got.NeedsSecond {
+		t.Fatalf("Next() = %s, NeedsSecond %t, want %s without NeedsSecond", got.State, got.NeedsSecond, StateComplete)
+	}
+}
+
+func TestLoginKeepsTheUserOfTheFirstFactor(t *testing.T) {
+	owner := users.NewID()
+	flow := LoginFlow{ReturnURL: "https://example.test/", State: StateAwaiting, Kind: KindLogin, Version: 1}
+	second, err := flow.Next(Event{Kind: EventStepPassed, Factor: FactorPassword, NeedsSecond: true, UserID: owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.State != StateAwaitingSecond || second.UserID != owner {
+		t.Fatalf("Next() = %s, user %s, want %s, user %s", second.State, second.UserID, StateAwaitingSecond, owner)
+	}
+	if _, err = second.Next(Event{Kind: EventStepPassed, Factor: FactorTOTP, UserID: users.NewID()}); !errors.Is(err, ErrNoTransition) {
+		t.Fatalf("TOTP of another user: error = %v, want %v", err, ErrNoTransition)
+	}
+	done, err := second.Next(Event{Kind: EventStepPassed, Factor: FactorTOTP, UserID: owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.State != StateComplete {
+		t.Fatalf("Next() state = %s, want %s", done.State, StateComplete)
+	}
+}

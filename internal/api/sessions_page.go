@@ -35,6 +35,7 @@ type sessionsPageView struct {
 	Devices      []deviceView
 	Passkeys     []passkeystep.Passkey
 	ShowPasskeys bool
+	TwoStep      twoStepView
 }
 
 type deviceView struct {
@@ -61,7 +62,13 @@ func (s *service) sessionsPage(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "The devices were not loaded.")
 		return
 	}
-	view := sessionsPageView{Devices: make([]deviceView, 0, len(list))}
+	twoStep, err := s.twoStepView(r, session.UserID)
+	if err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: sessions page", "err", err)
+		writeProblem(w, http.StatusInternalServerError, "The devices were not loaded.")
+		return
+	}
+	view := sessionsPageView{Devices: make([]deviceView, 0, len(list)), TwoStep: twoStep}
 	for _, device := range list {
 		view.Devices = append(view.Devices, deviceView{
 			ID:        device.ID,

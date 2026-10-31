@@ -86,7 +86,28 @@ func TestFinishLinkedAccount(t *testing.T) {
 	assert.True(t, outcome.Linked())
 	assert.Equal(t, userID, outcome.UserID)
 	require.Len(t, flow.events, 1)
-	assert.Equal(t, loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTelegram}, flow.events[0])
+	assert.Equal(t, loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTelegram, UserID: userID}, flow.events[0])
+}
+
+func TestFinishLinkedAccountWithTOTPNeedsASecondFactor(t *testing.T) {
+	userID := users.NewID()
+	subject, err := users.ParseSubject("4343")
+	require.NoError(t, err)
+	step := newTestStep(t, memoryIdentities{subject: userID})
+	step.secondFactors = enrolledUsers{userID: true}
+	flow := &recordedFlow{}
+
+	_, err = step.Finish(t.Context(), flow, parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4343, testNow))))
+	require.NoError(t, err)
+	require.Len(t, flow.events, 1)
+	assert.Equal(t, loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTelegram, UserID: userID, NeedsSecond: true}, flow.events[0])
+}
+
+// enrolledUsers reports a second factor for each user set to true.
+type enrolledUsers map[users.ID]bool
+
+func (e enrolledUsers) HasSecondFactor(_ context.Context, userID users.ID) (bool, error) {
+	return e[userID], nil
 }
 
 func TestFinishUnknownAccount(t *testing.T) {
