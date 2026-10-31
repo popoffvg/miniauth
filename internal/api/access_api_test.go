@@ -169,6 +169,8 @@ func TestListGrants(t *testing.T) {
 		{name: "unknown resource", query: "?resource=missing", want: http.StatusNotFound},
 		{name: "bad login", query: "?user=bad%20login", want: http.StatusBadRequest},
 		{name: "bad resource", query: "?resource=-x", want: http.StatusBadRequest},
+		{name: "a query that does not parse", query: "?user=%ZZ", want: http.StatusBadRequest},
+		{name: "a bad pair after a good one", query: "?user=ada&resource=%ZZ", want: http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
