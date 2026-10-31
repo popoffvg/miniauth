@@ -84,6 +84,14 @@ paths:
               schema:
                 type: string
           description: OK
+  /readyz:
+    get:
+      operationId: getReady
+      responses:
+        "200":
+          description: OK
+        "503":
+          description: Service Unavailable
 components:
   schemas:
     ApiCreateUserRequest:

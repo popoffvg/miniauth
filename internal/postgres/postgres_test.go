@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,4 +29,19 @@ func TestMigrateAppliesEveryMigrationOnce(t *testing.T) {
 	ok, err := sqlcgen.New(pool).Ping(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), ok)
+	require.NoError(t, postgres.Probe(ctx, pool))
+}
+
+func TestProbeErrorHidesTheConnectionString(t *testing.T) {
+	ctx := t.Context()
+	pool, err := postgres.Open(ctx, postgrestest.NewDatabase(t))
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	err = postgres.Probe(cancelled, pool)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "postgres://")
+	assert.NotContains(t, err.Error(), "password=")
 }

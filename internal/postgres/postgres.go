@@ -3,12 +3,15 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
+	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
 	"github.com/popoffvg/miniauth/migrations"
 )
 
@@ -41,6 +44,28 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("postgres: migrate up: %w", err)
+	}
+	return nil
+}
+
+// Probe opens one new connection and runs Ping.
+// A pooled connection can stay open after PostgreSQL stops, so the probe does not use one.
+// The error MUST NOT be logged. The driver can put the connection string in it.
+func Probe(ctx context.Context, pool *pgxpool.Pool) error {
+	if pool == nil {
+		return errors.New("postgres: probe: no pool")
+	}
+	conn, err := pgx.ConnectConfig(ctx, pool.Config().ConnConfig.Copy())
+	if err != nil {
+		return fmt.Errorf("postgres: probe: %w", err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	ok, err := sqlcgen.New(conn).Ping(ctx)
+	if err != nil {
+		return fmt.Errorf("postgres: probe: %w", err)
+	}
+	if ok != 1 {
+		return errors.New("postgres: probe: unexpected result")
 	}
 	return nil
 }

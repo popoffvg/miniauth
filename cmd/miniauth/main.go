@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/api"
+	"github.com/popoffvg/miniauth/internal/config"
+	"github.com/popoffvg/miniauth/internal/lifecycle"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/telemetry"
@@ -21,13 +24,31 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
+// The lifecycle machine is the readiness source for GET /readyz.
+var _ api.Readiness = (*lifecycle.Machine)(nil)
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := rejectArgs(os.Args[1:]); err != nil {
 		logger.Error("miniauth: stopped", "err", err)
 		os.Exit(2)
 	}
-	if err := run(logger, listenAddr(), os.Getenv("MINIAUTH_DATABASE_URL"), os.Getenv("MINIAUTH_ADMIN_TOKEN_SHA256")); err != nil {
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		logger.Error("miniauth: stopped", "err", err)
+		os.Exit(1)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	var listen net.ListenConfig
+	ln, err := listen.Listen(ctx, "tcp", cfg.Listen.String())
+	if err != nil {
+		stop()
+		logger.Error("miniauth: stopped", "err", err)
+		os.Exit(1)
+	}
+	err = run(ctx, logger, cfg, ln)
+	stop()
+	if err != nil {
 		logger.Error("miniauth: stopped", "err", err)
 		os.Exit(1)
 	}
@@ -42,69 +63,66 @@ func rejectArgs(args []string) error {
 	return errors.New("miniauth: the command only serves HTTP")
 }
 
-func listenAddr() string {
-	if addr := os.Getenv("MINIAUTH_LISTEN"); addr != "" {
-		return addr
-	}
-	return "127.0.0.1:8080"
-}
+func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Listener) error {
+	defer func() { _ = ln.Close() }()
 
-func sessionDomain() (sessions.Domain, error) {
-	domain, err := sessions.ParseDomain(os.Getenv("MINIAUTH_COOKIE_DOMAIN"))
-	if err != nil {
-		return sessions.Domain{}, errors.New("miniauth: MINIAUTH_COOKIE_DOMAIN is not a valid cookie domain")
-	}
-	return domain, nil
-}
+	machine := lifecycle.New(logger)
+	defer func() { _ = machine.Close() }()
 
-func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	if databaseURL == "" {
-		return errors.New("miniauth: MINIAUTH_DATABASE_URL is not set")
-	}
 	stopTelemetry, err := telemetry.Install(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if stopErr := stopTelemetry(stopCtx); stopErr != nil {
-			logger.Error("miniauth: traces", "err", stopErr)
-		}
-	}()
-	adminHash, err := api.ParseAdminTokenHash(adminTokenSHA256)
-	if err != nil {
-		return errors.New("miniauth: MINIAUTH_ADMIN_TOKEN_SHA256 must be the hex SHA-256 of the admin token")
-	}
-	pool, err := postgres.Open(ctx, databaseURL)
+	defer stopTraces(ctx, stopTelemetry, logger)
+
+	pool, err := postgres.Open(ctx, cfg.Database.DSN())
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
+
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		machine.WatchDatabase(watchCtx, func(ctx context.Context) error {
+			return postgres.Probe(ctx, pool)
+		}, lifecycle.ProbeInterval)
+	}()
+	defer func() {
+		stopWatch()
+		timer := time.NewTimer(lifecycle.ProbeTimeout)
+		defer timer.Stop()
+		select {
+		case <-watchDone:
+		case <-timer.C:
+			logger.Error("miniauth: database probe did not stop")
+		}
+	}()
+
+	if err = machine.BeginMigration(ctx); err != nil {
+		return err
+	}
 	if err = postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}
 	logger.Info("miniauth: migrations applied")
-
-	domain, err := sessionDomain()
-	if err != nil {
+	if err = machine.MigrationDone(ctx); err != nil {
 		return err
 	}
+
 	handler, err := api.NewRouter(
 		users.NewService(postgres.NewUserRepository(pool)),
 		sessions.NewService(postgres.NewSessionRepository(pool)),
-		domain,
-		adminHash,
+		cfg.Cookie,
+		cfg.AdminToken,
+		machine,
 		logger,
 	)
 	if err != nil {
 		return err
 	}
 	server := &http.Server{
-		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -114,22 +132,44 @@ func run(logger *slog.Logger, addr, databaseURL, adminTokenSHA256 string) error 
 
 	serveErr := make(chan error, 1)
 	go func() {
-		logger.Info("miniauth: listening", "addr", addr)
-		serveErr <- server.ListenAndServe()
+		logger.Info("miniauth: listening", "addr", ln.Addr().String())
+		serveErr <- server.Serve(ln)
 	}()
 
 	select {
 	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
 		return fmt.Errorf("miniauth: serve: %w", err)
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	// The signal already cancelled ctx. Shutdown needs a fresh deadline.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
+	return stopServing(shutdownCtx, machine, server, serveErr)
+}
+
+func stopTraces(ctx context.Context, stop func(context.Context) error, logger *slog.Logger) {
+	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+	defer cancel()
+	if err := stop(stopCtx); err != nil {
+		logger.Error("miniauth: traces", "err", err)
+	}
+}
+
+// stopServing moves the process to Draining and then shuts down the HTTP server.
+// Drain runs first, so /readyz returns 503 while open requests finish.
+func stopServing(ctx context.Context, machine *lifecycle.Machine, server *http.Server, serveErr <-chan error) error {
+	if err := machine.Drain(ctx); err != nil {
+		shutErr := server.Shutdown(ctx)
+		return fmt.Errorf("miniauth: drain: %w", errors.Join(err, shutErr))
+	}
+	if err := server.Shutdown(ctx); err != nil {
 		return fmt.Errorf("miniauth: shutdown: %w", err)
 	}
-	if err := <-serveErr; !errors.Is(err, http.ErrServerClosed) {
+	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("miniauth: serve: %w", err)
 	}
 	return nil

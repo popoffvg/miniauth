@@ -12,8 +12,9 @@ import (
 )
 
 // AdminTokenHash is the SHA-256 of the bootstrap admin token.
-// The token itself is not stored.
+// The token itself is not stored. Printing the hash yields "redacted".
 type AdminTokenHash struct {
+	users.Redacted
 	sum [sha256.Size]byte
 }
 

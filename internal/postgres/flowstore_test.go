@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestLoginFlowEngine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertHashIsNotSecret(t, store, id, secret)
+		assertHashIsNotSecret(ctx, t, store, id, secret)
 
 		first, err := flows.Open(ctx, id, secret)
 		if err != nil {
@@ -161,9 +162,9 @@ func TestLoginFlowEngine(t *testing.T) {
 	})
 }
 
-func assertHashIsNotSecret(t *testing.T, store *postgres.FlowStore, id loginflow.FlowID, secret loginflow.FlowSecret) {
+func assertHashIsNotSecret(ctx context.Context, t *testing.T, store *postgres.FlowStore, id loginflow.FlowID, secret loginflow.FlowSecret) {
 	t.Helper()
-	hash, err := store.SecretHash(t.Context(), id)
+	hash, err := store.SecretHash(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
