@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/stretchr/testify/assert"
@@ -172,6 +173,12 @@ func TestLoginPageEndToEnd(t *testing.T) {
 		assert.Contains(t, resp.body, string(msgTooSoon))
 		assert.Empty(t, sessionCookies(resp))
 		assert.Equal(t, before, countSessions())
+	})
+	t.Run("a disabled user is signed out on the home page", func(t *testing.T) {
+		require.NoError(t, accountRepo.Disable(t.Context(), account.ID, time.Now()))
+		home := get(t, browser, base+"/")
+		assert.Equal(t, http.StatusFound, home.status)
+		assert.NotContains(t, home.body, "You are signed in as")
 	})
 }
 

@@ -186,7 +186,7 @@ func (s *service) sameOrigin(r *http.Request) bool {
 	return origin != "" && strings.EqualFold(r.Header.Get("Origin"), origin)
 }
 
-// home is the default page after a login.
+// home is the default page after a login. A disabled user is signed out here, as in /auth/check.
 func (s *service) home(w http.ResponseWriter, r *http.Request) {
 	session, err := s.openBrowserSession(r)
 	if errors.Is(err, sessions.ErrNotFound) {
@@ -199,7 +199,7 @@ func (s *service) home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := s.accounts.Find(r.Context(), session.UserID)
-	if errors.Is(err, users.ErrNotFound) {
+	if errors.Is(err, users.ErrNotFound) || err == nil && user.Disabled() {
 		http.Redirect(w, r, s.publicURL.Login(""), http.StatusFound)
 		return
 	}
