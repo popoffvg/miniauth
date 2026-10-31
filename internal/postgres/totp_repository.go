@@ -126,6 +126,8 @@ func (r *TOTPRepository) UseRecoveryCode(ctx context.Context, userID users.ID, h
 }
 
 // Delete removes the credential and the recovery codes of userID in one transaction.
+// The credential goes first: its row lock makes a Confirm that holds the row finish first,
+// so the codes it inserts are deleted too. A later Confirm finds no row.
 func (r *TOTPRepository) Delete(ctx context.Context, userID users.ID) error {
 	if r.begin == nil {
 		return errors.New("postgres: TOTP repository cannot begin a transaction")
@@ -133,11 +135,11 @@ func (r *TOTPRepository) Delete(ctx context.Context, userID users.ID) error {
 	id := pgUUIDBytes(userID.Bytes())
 	err := pgx.BeginFunc(ctx, r.begin, func(tx pgx.Tx) error {
 		q := r.q.WithTx(tx)
-		if err := q.DeleteRecoveryCodes(ctx, id); err != nil {
-			return fmt.Errorf("postgres: delete recovery codes: %w", err)
-		}
 		if err := q.DeleteTOTP(ctx, id); err != nil {
 			return fmt.Errorf("postgres: delete TOTP: %w", err)
+		}
+		if err := q.DeleteRecoveryCodes(ctx, id); err != nil {
+			return fmt.Errorf("postgres: delete recovery codes: %w", err)
 		}
 		return nil
 	})
