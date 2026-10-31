@@ -94,7 +94,7 @@ func TestForwardAuthAccessToken(t *testing.T) {
 			if tt.expired {
 				store.expire(issued.ID)
 			}
-			grants := access.NewService(accesstest.NewRepository())
+			grants := access.NewService(accesstest.NewRepository(), nil)
 			app := createResource(t, grants, "app", "app.example.test", "/")
 			if !tt.noGrant {
 				grantResource(t, grants, app, access.UserSubject(user.ID))

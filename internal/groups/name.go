@@ -53,3 +53,18 @@ func nameRune(r rune) bool {
 func letterOrDigit(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
 }
+
+// MarshalText encodes the stored name.
+func (n Name) MarshalText() ([]byte, error) {
+	return []byte(n.value), nil
+}
+
+// UnmarshalText parses text with ParseName.
+func (n *Name) UnmarshalText(text []byte) error {
+	parsed, err := ParseName(string(text))
+	if err != nil {
+		return err
+	}
+	*n = parsed
+	return nil
+}

@@ -75,8 +75,47 @@ type ResourceURL struct {
 	Prefix PathPrefix
 }
 
+// ParseResourceURL reads an absolute http or https URL such as "https://dash.example.test/mcp".
+// It keeps only the host and the path prefix: a resource matches on host and path, not on the scheme.
+// A URL with user info, a query, or a fragment is refused. An empty path is "/".
+func ParseResourceURL(raw string) (ResourceURL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Opaque != "" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return ResourceURL{}, ErrResourceURL
+	}
+	host, err := ParseHost(parsed.Host)
+	if err != nil {
+		return ResourceURL{}, err
+	}
+	path := parsed.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	prefix, err := ParsePathPrefix(path)
+	if err != nil {
+		return ResourceURL{}, err
+	}
+	return ResourceURL{Host: host, Prefix: prefix}, nil
+}
+
 func (u ResourceURL) String() string {
 	return u.Host.String() + u.Prefix.String()
+}
+
+// MarshalText encodes the host and the prefix, with no scheme: the scheme is not stored.
+func (u ResourceURL) MarshalText() ([]byte, error) {
+	return []byte(u.String()), nil
+}
+
+// UnmarshalText parses text with ParseResourceURL, so it needs a scheme that MarshalText does not write.
+func (u *ResourceURL) UnmarshalText(text []byte) error {
+	parsed, err := ParseResourceURL(string(text))
+	if err != nil {
+		return err
+	}
+	*u = parsed
+	return nil
 }
 
 // RequestURL is the URL the reverse proxy asks about. It has no query and no fragment.

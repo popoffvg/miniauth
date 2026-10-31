@@ -24,7 +24,7 @@ func TestAccessRepositoryRoundTrip(t *testing.T) {
 	ada := createAccount(t, users.NewService(postgres.NewUserRepository(pool)), "ada")
 	repo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
-	service := access.NewService(repo)
+	service := access.NewService(repo, nil)
 	editors, err := groups.ParseName("editors")
 	require.NoError(t, err)
 
@@ -61,12 +61,14 @@ func TestAccessRepositoryRoundTrip(t *testing.T) {
 	_, err = service.Grant(ctx, accessResource(t, "missing", "x.example.test", "/").Name, access.UserSubject(ada.ID), access.Expiry{})
 	require.ErrorIs(t, err, access.ErrResourceNotFound)
 
-	grants, err := service.ListGrants(ctx, mcp.Name)
+	grants, err := service.ListGrants(ctx, access.GrantFilter{Resource: mcp.Name})
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
-	assert.Equal(t, userGrant.ID, grants[0].ID)
-	assert.Equal(t, access.UserSubject(ada.ID), grants[0].Subject)
-	at, ok := grants[0].Expiry.Time()
+	assert.Equal(t, userGrant.ID, grants[0].Grant.ID)
+	assert.Equal(t, access.UserSubject(ada.ID), grants[0].Grant.Subject)
+	assert.Equal(t, mcp.URL, grants[0].URL)
+	assert.Equal(t, ada.Login, grants[0].UserLogin)
+	at, ok := grants[0].Grant.Expiry.Time()
 	require.True(t, ok)
 	assert.True(t, at.Equal(later))
 
@@ -98,4 +100,75 @@ func accessResource(t *testing.T, rawName, rawHost, rawPrefix string) access.Res
 	prefix, err := access.ParsePathPrefix(rawPrefix)
 	require.NoError(t, err)
 	return access.Resource{Name: name, URL: access.ResourceURL{Host: host, Prefix: prefix}}
+}
+
+func TestAccessRepositoryListsGrantEntries(t *testing.T) {
+	ctx := t.Context()
+	pool, err := postgres.Open(ctx, postgrestest.NewDatabase(t))
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	require.NoError(t, postgres.Migrate(ctx, pool))
+
+	accounts := users.NewService(postgres.NewUserRepository(pool))
+	ada := createAccount(t, accounts, "ada")
+	bob := createAccount(t, accounts, "bob")
+	repo, err := postgres.NewAccessRepository(pool)
+	require.NoError(t, err)
+	service := access.NewService(repo, accounts)
+	editors, err := groups.ParseName("editors")
+	require.NoError(t, err)
+
+	root := accessResource(t, "root", "dash.example.test", "/")
+	mcp := accessResource(t, "mcp", "dash.example.test", "/mcp")
+	for _, resource := range []access.Resource{root, mcp} {
+		_, err = service.CreateResource(ctx, resource.Name, resource.URL)
+		require.NoError(t, err)
+	}
+	all, err := service.ListResources(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []access.Resource{mcp, root}, all)
+
+	adaRoot, err := service.GrantTo(ctx, root.Name, access.Grantee{User: ada.Login}, access.Expiry{})
+	require.NoError(t, err)
+	assert.Equal(t, ada.Login, adaRoot.UserLogin)
+	assert.Equal(t, root.URL, adaRoot.URL)
+	_, err = service.GrantTo(ctx, mcp.Name, access.Grantee{User: bob.Login}, access.Expiry{})
+	require.NoError(t, err)
+	_, err = service.GrantTo(ctx, mcp.Name, access.Grantee{Group: editors}, access.Expiry{})
+	require.NoError(t, err)
+	_, err = service.GrantTo(ctx, mcp.Name, access.Grantee{User: mustAccountLogin(t, "nobody")}, access.Expiry{})
+	require.ErrorIs(t, err, access.ErrUnknownUser)
+
+	tests := []struct {
+		name   string
+		filter access.GrantFilter
+		want   []string
+	}{
+		{name: "every grant", want: []string{"mcp bob", "mcp editors", "root ada"}},
+		{name: "one user", filter: access.GrantFilter{User: ada.Login}, want: []string{"root ada"}},
+		{name: "one resource", filter: access.GrantFilter{Resource: mcp.Name}, want: []string{"mcp bob", "mcp editors"}},
+		{name: "user and resource", filter: access.GrantFilter{User: ada.Login, Resource: mcp.Name}, want: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entries, err := service.ListGrants(ctx, tt.filter)
+			require.NoError(t, err)
+			got := []string{}
+			for _, entry := range entries {
+				subject := entry.UserLogin.String()
+				if name, ok := entry.Grant.Subject.Group(); ok {
+					subject = name.String()
+				}
+				got = append(got, entry.Grant.Resource.String()+" "+subject)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func mustAccountLogin(t *testing.T, raw string) users.Login {
+	t.Helper()
+	login, err := users.ParseLogin(raw)
+	require.NoError(t, err)
+	return login
 }

@@ -16,26 +16,36 @@ import (
 // CreateGrant MUST return ErrResourceNotFound, ErrUnknownUser, or ErrDuplicateGrant for those cases.
 // DeleteGrant MUST return ErrGrantNotFound for a missing id.
 // ListResources returns the resources on one host. ListGrants returns every grant of one resource, expired ones too.
+// ListGrantEntries returns the grants that match the filter, expired ones too, in resource name order.
 type Repository interface {
 	CreateResource(ctx context.Context, resource Resource) error
 	DeleteResource(ctx context.Context, name ResourceName) error
 	FindResource(ctx context.Context, name ResourceName) (Resource, error)
 	ListResources(ctx context.Context, host Host) ([]Resource, error)
+	ListAllResources(ctx context.Context) ([]Resource, error)
 	CreateGrant(ctx context.Context, grant Grant) error
 	DeleteGrant(ctx context.Context, id GrantID) error
 	ListGrants(ctx context.Context, resource ResourceName) ([]Grant, error)
+	ListGrantEntries(ctx context.Context, filter GrantFilter) ([]GrantEntry, error)
+}
+
+// UserDirectory finds a user by login. FindByLogin MUST return users.ErrNotFound when no user matches.
+type UserDirectory interface {
+	FindByLogin(ctx context.Context, login users.Login) (users.User, error)
 }
 
 // Service checks URLs against grants and changes resources and grants.
 // It keeps no cache, so a revoke applies to the next check.
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo     Repository
+	accounts UserDirectory
+	now      func() time.Time
 }
 
 // NewService returns a service that reads the clock from time.Now.
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo, now: time.Now}
+// A nil accounts value is allowed when no caller names a user by login: GrantTo and ListGrants then fail for a user.
+func NewService(repo Repository, accounts UserDirectory) *Service {
+	return &Service{repo: repo, accounts: accounts, now: time.Now}
 }
 
 // Check returns nil when the user or one of userGroups has an active grant
@@ -129,15 +139,77 @@ func (s *Service) Revoke(ctx context.Context, id GrantID) error {
 	return s.repo.DeleteGrant(ctx, id)
 }
 
-// ListGrants returns every grant of the resource, expired ones too.
-func (s *Service) ListGrants(ctx context.Context, resource ResourceName) ([]Grant, error) {
+// ListResources returns every resource in name order.
+func (s *Service) ListResources(ctx context.Context) ([]Resource, error) {
 	if err := s.ready(); err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.FindResource(ctx, resource); err != nil {
+	return s.repo.ListAllResources(ctx)
+}
+
+// GrantTo gives the user or the group in grantee the resource. A zero expiry never expires.
+// It returns ErrResourceName, ErrSubject, ErrExpiry, ErrUnknownUser, ErrResourceNotFound, or ErrDuplicateGrant for those cases.
+func (s *Service) GrantTo(ctx context.Context, resource ResourceName, grantee Grantee, expiry Expiry) (GrantEntry, error) {
+	if err := s.ready(); err != nil {
+		return GrantEntry{}, err
+	}
+	if resource == (ResourceName{}) {
+		return GrantEntry{}, ErrResourceName
+	}
+	if !grantee.Valid() {
+		return GrantEntry{}, ErrSubject
+	}
+	if !expiry.ActiveAt(s.now()) {
+		return GrantEntry{}, ErrExpiry
+	}
+	subject := GroupSubject(grantee.Group)
+	if grantee.User != (users.Login{}) {
+		account, err := s.findUser(ctx, grantee.User)
+		if err != nil {
+			return GrantEntry{}, err
+		}
+		subject = UserSubject(account.ID)
+	}
+	found, err := s.repo.FindResource(ctx, resource)
+	if err != nil {
+		return GrantEntry{}, err
+	}
+	grant, err := s.Grant(ctx, resource, subject, expiry)
+	if err != nil {
+		return GrantEntry{}, err
+	}
+	return GrantEntry{Grant: grant, URL: found.URL, UserLogin: grantee.User}, nil
+}
+
+// ListGrants returns the grants that match filter, expired ones too.
+// A user or a resource in filter that is not stored is ErrUnknownUser or ErrResourceNotFound.
+func (s *Service) ListGrants(ctx context.Context, filter GrantFilter) ([]GrantEntry, error) {
+	if err := s.ready(); err != nil {
 		return nil, err
 	}
-	return s.repo.ListGrants(ctx, resource)
+	if filter.User != (users.Login{}) {
+		if _, err := s.findUser(ctx, filter.User); err != nil {
+			return nil, err
+		}
+	}
+	if filter.Resource != (ResourceName{}) {
+		if _, err := s.repo.FindResource(ctx, filter.Resource); err != nil {
+			return nil, err
+		}
+	}
+	return s.repo.ListGrantEntries(ctx, filter)
+}
+
+// findUser returns ErrUnknownUser for a login that no user has.
+func (s *Service) findUser(ctx context.Context, login users.Login) (users.User, error) {
+	if s.accounts == nil {
+		return users.User{}, errors.New("access: user directory is missing")
+	}
+	account, err := s.accounts.FindByLogin(ctx, login)
+	if errors.Is(err, users.ErrNotFound) {
+		return users.User{}, ErrUnknownUser
+	}
+	return account, err
 }
 
 func (s *Service) ready() error {

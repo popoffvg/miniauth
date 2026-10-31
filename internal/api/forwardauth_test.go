@@ -372,7 +372,7 @@ func TestForwardAuth(t *testing.T) {
 			if tt.groupsFail {
 				groupList = failGroups{}
 			}
-			grants := access.NewService(accesstest.NewRepository())
+			grants := access.NewService(accesstest.NewRepository(), nil)
 			app := createResource(t, grants, "app", "app.example.test", "/")
 			browser := sessions.NewService(newMemSessions())
 			var cookieValue string

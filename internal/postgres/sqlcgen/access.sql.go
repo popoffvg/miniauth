@@ -100,6 +100,73 @@ func (q *Queries) InsertResource(ctx context.Context, arg InsertResourceParams) 
 	return err
 }
 
+const listAccessGrantEntries = `-- name: ListAccessGrantEntries :many
+SELECT
+    access_grants.id,
+    access_grants.resource_name,
+    access_grants.user_id,
+    access_grants.group_name,
+    access_grants.expires_at,
+    access_grants.created_at,
+    resources.host,
+    resources.path_prefix,
+    users.login AS user_login
+FROM access_grants
+JOIN resources ON resources.name = access_grants.resource_name
+LEFT JOIN users ON users.id = access_grants.user_id
+WHERE
+    ($1::text IS NULL OR users.login = $1)
+    AND ($2::text IS NULL OR access_grants.resource_name = $2)
+ORDER BY access_grants.resource_name, access_grants.created_at, access_grants.id
+`
+
+type ListAccessGrantEntriesParams struct {
+	Login        pgtype.Text
+	ResourceName pgtype.Text
+}
+
+type ListAccessGrantEntriesRow struct {
+	ID           pgtype.UUID
+	ResourceName string
+	UserID       pgtype.UUID
+	GroupName    pgtype.Text
+	ExpiresAt    pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	Host         string
+	PathPrefix   string
+	UserLogin    pgtype.Text
+}
+
+func (q *Queries) ListAccessGrantEntries(ctx context.Context, arg ListAccessGrantEntriesParams) ([]ListAccessGrantEntriesRow, error) {
+	rows, err := q.db.Query(ctx, listAccessGrantEntries, arg.Login, arg.ResourceName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccessGrantEntriesRow
+	for rows.Next() {
+		var i ListAccessGrantEntriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ResourceName,
+			&i.UserID,
+			&i.GroupName,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.Host,
+			&i.PathPrefix,
+			&i.UserLogin,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAccessGrants = `-- name: ListAccessGrants :many
 SELECT id, resource_name, user_id, group_name, expires_at, created_at
 FROM access_grants
@@ -124,6 +191,32 @@ func (q *Queries) ListAccessGrants(ctx context.Context, resourceName string) ([]
 			&i.ExpiresAt,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllResources = `-- name: ListAllResources :many
+SELECT name, host, path_prefix
+FROM resources
+ORDER BY name
+`
+
+func (q *Queries) ListAllResources(ctx context.Context) ([]Resource, error) {
+	rows, err := q.db.Query(ctx, listAllResources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Resource
+	for rows.Next() {
+		var i Resource
+		if err := rows.Scan(&i.Name, &i.Host, &i.PathPrefix); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

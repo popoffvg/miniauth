@@ -44,3 +44,18 @@ func validResourceName(s string) bool {
 	}
 	return true
 }
+
+// MarshalText encodes the stored name.
+func (n ResourceName) MarshalText() ([]byte, error) {
+	return []byte(n.value), nil
+}
+
+// UnmarshalText parses text with ParseResourceName.
+func (n *ResourceName) UnmarshalText(text []byte) error {
+	parsed, err := ParseResourceName(string(text))
+	if err != nil {
+		return err
+	}
+	*n = parsed
+	return nil
+}

@@ -81,7 +81,7 @@ func TestTokenPageEndToEnd(t *testing.T) {
 	base := "https://" + server.Listener.Addr().String()
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
-	grants := access.NewService(accessRepo)
+	grants := access.NewService(accessRepo, nil)
 	apiResource := createResource(t, grants, "api", server.Listener.Addr().String(), "/api")
 	grantResource(t, grants, apiResource, access.UserSubject(owner.id))
 	router, err := NewRouter(

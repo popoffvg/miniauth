@@ -123,13 +123,15 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
-	grants, err := postgres.NewAccessRepository(pool)
+	grantRepo, err := postgres.NewAccessRepository(pool)
 	if err != nil {
 		return err
 	}
+	userService := users.NewService(accounts)
+	grants := access.NewService(grantRepo, userService)
 
 	handler, err := api.NewRouter(
-		users.NewService(accounts),
+		userService,
 		sessions.NewService(postgres.NewSessionRepository(pool)),
 		groups,
 		cfg.Cookie,
@@ -139,7 +141,8 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		logger,
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
 		api.WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
-		api.WithURLGrants(access.NewService(grants)),
+		api.WithURLGrants(grants),
+		api.WithAccessAdmin(grants),
 	)
 	if err != nil {
 		return err

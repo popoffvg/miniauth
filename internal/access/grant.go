@@ -112,6 +112,28 @@ func (e Expiry) Time() (time.Time, bool) {
 	return e.at, !e.at.IsZero()
 }
 
+// MarshalText encodes the expiry as an RFC 3339 time. The zero value is empty.
+func (e Expiry) MarshalText() ([]byte, error) {
+	if e.at.IsZero() {
+		return nil, nil
+	}
+	return []byte(e.at.Format(time.RFC3339Nano)), nil
+}
+
+// UnmarshalText reads an RFC 3339 time.
+// The zero time is refused with ErrExpiry: as an Expiry it would mean "never".
+func (e *Expiry) UnmarshalText(text []byte) error {
+	at, err := time.Parse(time.RFC3339Nano, string(text))
+	if err != nil {
+		return ErrExpiryTime
+	}
+	if at.IsZero() {
+		return ErrExpiry
+	}
+	*e = ExpiresAt(at)
+	return nil
+}
+
 // ActiveAt reports whether a grant with this expiry counts at now.
 // A grant stops counting at its expiry time.
 func (e Expiry) ActiveAt(now time.Time) bool {

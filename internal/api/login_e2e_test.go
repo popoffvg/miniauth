@@ -52,7 +52,7 @@ func TestLoginPageEndToEnd(t *testing.T) {
 	base := "https://" + server.Listener.Addr().String()
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
-	grants := access.NewService(accessRepo)
+	grants := access.NewService(accessRepo, nil)
 	app := createResource(t, grants, "app", server.Listener.Addr().String(), "/app")
 	grantResource(t, grants, app, access.UserSubject(account.ID))
 	router, err := NewRouter(

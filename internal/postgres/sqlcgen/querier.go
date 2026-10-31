@@ -48,7 +48,9 @@ type Querier interface {
 	InsertResource(ctx context.Context, arg InsertResourceParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
+	ListAccessGrantEntries(ctx context.Context, arg ListAccessGrantEntriesParams) ([]ListAccessGrantEntriesRow, error)
 	ListAccessGrants(ctx context.Context, resourceName string) ([]AccessGrant, error)
+	ListAllResources(ctx context.Context) ([]Resource, error)
 	ListDevices(ctx context.Context, userID pgtype.UUID) ([]ListDevicesRow, error)
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)

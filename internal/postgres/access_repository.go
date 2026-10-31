@@ -135,6 +135,73 @@ func (r *AccessRepository) ListGrants(ctx context.Context, resource access.Resou
 	return grants, nil
 }
 
+// ListAllResources returns every resource in name order.
+func (r *AccessRepository) ListAllResources(ctx context.Context) ([]access.Resource, error) {
+	rows, err := r.q.ListAllResources(ctx)
+	if err != nil {
+		return nil, accessError("list all resources", err)
+	}
+	resources := make([]access.Resource, 0, len(rows))
+	for _, row := range rows {
+		resource, err := resourceFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		resources = append(resources, resource)
+	}
+	return resources, nil
+}
+
+// ListGrantEntries returns the grants that match filter, in resource name order and then oldest first.
+func (r *AccessRepository) ListGrantEntries(ctx context.Context, filter access.GrantFilter) ([]access.GrantEntry, error) {
+	var params sqlcgen.ListAccessGrantEntriesParams
+	if filter.User != (users.Login{}) {
+		params.Login = pgtype.Text{String: filter.User.String(), Valid: true}
+	}
+	if filter.Resource != (access.ResourceName{}) {
+		params.ResourceName = pgtype.Text{String: filter.Resource.String(), Valid: true}
+	}
+	rows, err := r.q.ListAccessGrantEntries(ctx, params)
+	if err != nil {
+		return nil, accessError("list grant entries", err)
+	}
+	entries := make([]access.GrantEntry, 0, len(rows))
+	for _, row := range rows {
+		entry, err := grantEntryFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
+func grantEntryFromRow(row sqlcgen.ListAccessGrantEntriesRow) (access.GrantEntry, error) {
+	grant, err := grantFromRow(sqlcgen.AccessGrant{
+		ID:           row.ID,
+		ResourceName: row.ResourceName,
+		UserID:       row.UserID,
+		GroupName:    row.GroupName,
+		ExpiresAt:    row.ExpiresAt,
+		CreatedAt:    row.CreatedAt,
+	})
+	if err != nil {
+		return access.GrantEntry{}, err
+	}
+	resource, err := resourceFromRow(sqlcgen.Resource{Name: row.ResourceName, Host: row.Host, PathPrefix: row.PathPrefix})
+	if err != nil {
+		return access.GrantEntry{}, err
+	}
+	var login users.Login
+	if row.UserLogin.Valid {
+		login, err = users.ParseLogin(row.UserLogin.String)
+		if err != nil {
+			return access.GrantEntry{}, fmt.Errorf("postgres: grant row: %w", err)
+		}
+	}
+	return access.GrantEntry{Grant: grant, URL: resource.URL, UserLogin: login}, nil
+}
+
 func resourceFromRow(row sqlcgen.Resource) (access.Resource, error) {
 	name, err := access.ParseResourceName(row.Name)
 	if err != nil {

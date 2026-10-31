@@ -38,3 +38,27 @@ SELECT id, resource_name, user_id, group_name, expires_at, created_at
 FROM access_grants
 WHERE resource_name = $1
 ORDER BY created_at, id;
+
+-- name: ListAllResources :many
+SELECT name, host, path_prefix
+FROM resources
+ORDER BY name;
+
+-- name: ListAccessGrantEntries :many
+SELECT
+    access_grants.id,
+    access_grants.resource_name,
+    access_grants.user_id,
+    access_grants.group_name,
+    access_grants.expires_at,
+    access_grants.created_at,
+    resources.host,
+    resources.path_prefix,
+    users.login AS user_login
+FROM access_grants
+JOIN resources ON resources.name = access_grants.resource_name
+LEFT JOIN users ON users.id = access_grants.user_id
+WHERE
+    (sqlc.narg(login)::text IS NULL OR users.login = sqlc.narg(login))
+    AND (sqlc.narg(resource_name)::text IS NULL OR access_grants.resource_name = sqlc.narg(resource_name))
+ORDER BY access_grants.resource_name, access_grants.created_at, access_grants.id;

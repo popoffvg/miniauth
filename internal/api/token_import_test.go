@@ -43,7 +43,7 @@ func TestImportedTokenPassesTheAuthCheck(t *testing.T) {
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
-	grants := access.NewService(accessRepo)
+	grants := access.NewService(accessRepo, nil)
 	// Both hosts are granted, so a 403 on the other host comes from the token scope.
 	for _, host := range []string{"mcp.example.test", "other.example.test"} {
 		resource := createResource(t, grants, strings.Split(host, ".")[0], host, "/")

@@ -4,17 +4,64 @@ package accesstest
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 // Repository keeps resources and grants in memory. It is safe for concurrent use.
-// It does not know users, so CreateGrant never returns access.ErrUnknownUser.
+// CreateGrant never returns access.ErrUnknownUser.
 type Repository struct {
 	mu        sync.Mutex
 	resources []access.Resource
 	grants    []access.Grant
+	logins    map[users.ID]users.Login
+}
+
+// AddUser stores the login that ListGrantEntries shows for a user grant.
+func (r *Repository) AddUser(id users.ID, login users.Login) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.logins == nil {
+		r.logins = map[users.ID]users.Login{}
+	}
+	r.logins[id] = login
+}
+
+// ListAllResources returns every resource in name order.
+func (r *Repository) ListAllResources(_ context.Context) ([]access.Resource, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	found := slices.Clone(r.resources)
+	slices.SortFunc(found, func(a, b access.Resource) int { return strings.Compare(a.Name.String(), b.Name.String()) })
+	return found, nil
+}
+
+// ListGrantEntries returns the grants that match filter, in resource name order and then in the order they were stored.
+func (r *Repository) ListGrantEntries(_ context.Context, filter access.GrantFilter) ([]access.GrantEntry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var found []access.GrantEntry
+	for _, grant := range r.grants {
+		var login users.Login
+		if id, ok := grant.Subject.User(); ok {
+			login = r.logins[id]
+		}
+		if filter.User != (users.Login{}) && filter.User != login {
+			continue
+		}
+		if filter.Resource != (access.ResourceName{}) && filter.Resource != grant.Resource {
+			continue
+		}
+		index := slices.IndexFunc(r.resources, func(stored access.Resource) bool { return stored.Name == grant.Resource })
+		found = append(found, access.GrantEntry{Grant: grant, URL: r.resources[index].URL, UserLogin: login})
+	}
+	slices.SortStableFunc(found, func(a, b access.GrantEntry) int {
+		return strings.Compare(a.Grant.Resource.String(), b.Grant.Resource.String())
+	})
+	return found, nil
 }
 
 // NewRepository returns an empty repository.
