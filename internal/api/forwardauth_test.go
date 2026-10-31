@@ -469,7 +469,7 @@ func TestForwardedHostname(t *testing.T) {
 
 func forwardRouter(t *testing.T, accounts users.Repository, browser *sessions.Service, members groups.Repository, domain sessions.Domain, public PublicURL) http.Handler {
 	t.Helper()
-	router, err := NewRouter(users.NewService(accounts), browser, members, domain, public, hashToken(t, "bootstrap-token-for-tests"), slog.New(slog.DiscardHandler))
+	router, err := NewRouter(users.NewService(accounts), browser, members, domain, public, hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	return router
 }

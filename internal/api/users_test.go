@@ -109,9 +109,22 @@ func post(t *testing.T, router http.Handler, token, body, contentType string) *h
 	return rec
 }
 
+type readyState struct {
+	ok bool
+}
+
+func (s *readyState) Ready() bool {
+	return s.ok
+}
+
 func mustRouter(t *testing.T, repo users.Repository, token string) http.Handler {
 	t.Helper()
-	router, err := NewRouter(users.NewService(repo), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, token), slog.New(slog.DiscardHandler))
+	return mustRouterReady(t, repo, token, &readyState{ok: true})
+}
+
+func mustRouterReady(t *testing.T, repo users.Repository, token string, ready Readiness) http.Handler {
+	t.Helper()
+	router, err := NewRouter(users.NewService(repo), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, token), ready, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	return router
 }
@@ -119,7 +132,7 @@ func mustRouter(t *testing.T, repo users.Repository, token string) http.Handler 
 func loggedRouter(t *testing.T, repo users.Repository, token string) (http.Handler, *strings.Builder) {
 	t.Helper()
 	logs := &strings.Builder{}
-	router, err := NewRouter(users.NewService(repo), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, token), slog.New(slog.NewTextHandler(logs, nil)))
+	router, err := NewRouter(users.NewService(repo), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, token), &readyState{ok: true}, slog.New(slog.NewTextHandler(logs, nil)))
 	require.NoError(t, err)
 	return router, logs
 }

@@ -19,6 +19,8 @@ func TestParseAdminTokenHash(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, hash.Matches(BearerToken{raw: "bootstrap-token"}))
 	assert.False(t, hash.Matches(BearerToken{raw: "other-token"}))
+	assert.Equal(t, "redacted", fmt.Sprint(hash))
+	assert.NotContains(t, fmt.Sprintf("%#v", hash), encoded)
 	for _, bad := range []string{"", "abcd", encoded + "aa", "zz" + encoded[2:]} {
 		_, err := ParseAdminTokenHash(bad)
 		assert.Error(t, err)

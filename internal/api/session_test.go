@@ -146,7 +146,7 @@ func TestLogoutDoesNotNeedTheAdminToken(t *testing.T) {
 
 func sessionRouter(t *testing.T, browser *sessions.Service, domain sessions.Domain) http.Handler {
 	t.Helper()
-	router, err := NewRouter(users.NewService(&memRepo{}), browser, nil, domain, PublicURL{}, hashToken(t, "bootstrap-token-for-tests"), slog.New(slog.DiscardHandler))
+	router, err := NewRouter(users.NewService(&memRepo{}), browser, nil, domain, PublicURL{}, hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	return router
 }
