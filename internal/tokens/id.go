@@ -1,6 +1,9 @@
 package tokens
 
-import "uuid"
+import (
+	"fmt"
+	"uuid"
+)
 
 // ID identifies one token. It is not a secret.
 type ID uuid.UUID
@@ -22,4 +25,23 @@ func (id ID) String() string {
 // Bytes returns the 16-byte UUID form.
 func (id ID) Bytes() [16]byte {
 	return uuid.UUID(id)
+}
+
+// MarshalText encodes the UUID text form.
+func (id ID) MarshalText() ([]byte, error) {
+	text, err := uuid.UUID(id).MarshalText()
+	if err != nil {
+		return nil, fmt.Errorf("tokens: id: %w", err)
+	}
+	return text, nil
+}
+
+// UnmarshalText reads the UUID text form.
+func (id *ID) UnmarshalText(text []byte) error {
+	parsed, err := uuid.Parse(string(text))
+	if err != nil {
+		return fmt.Errorf("tokens: id: %w", err)
+	}
+	*id = ID(parsed)
+	return nil
 }

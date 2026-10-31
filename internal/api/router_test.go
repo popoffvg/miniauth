@@ -80,6 +80,7 @@ func TestOpenAPIIsGeneratedFromTheRoutes(t *testing.T) {
 	assert.Contains(t, body, "/healthz")
 	assert.Contains(t, body, "/readyz")
 	assert.Contains(t, body, "/api/v1/users")
+	assert.Contains(t, body, "/api/v1/tokens/import")
 	assert.Contains(t, body, "/auth/check")
 	assert.Contains(t, body, "/logout")
 	assert.Contains(t, body, "/logout/everywhere")

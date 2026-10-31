@@ -30,3 +30,18 @@ func ParseName(raw string) (Name, error) {
 func (n Name) String() string {
 	return n.value
 }
+
+// MarshalText encodes the name.
+func (n Name) MarshalText() ([]byte, error) {
+	return []byte(n.value), nil
+}
+
+// UnmarshalText parses text with ParseName.
+func (n *Name) UnmarshalText(text []byte) error {
+	parsed, err := ParseName(string(text))
+	if err != nil {
+		return err
+	}
+	*n = parsed
+	return nil
+}

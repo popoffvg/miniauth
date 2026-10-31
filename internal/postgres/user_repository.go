@@ -64,7 +64,16 @@ func (r *UserRepository) Create(ctx context.Context, account users.User, identit
 // Find returns the user with id.
 // A missing id is users.ErrNotFound.
 func (r *UserRepository) Find(ctx context.Context, id users.ID) (users.User, error) {
-	stored, err := r.q.GetUserByID(ctx, pgUUIDBytes(id.Bytes()))
+	return userFromRow(r.q.GetUserByID(ctx, pgUUIDBytes(id.Bytes())))
+}
+
+// FindByLogin returns the user with login, a disabled user included.
+// A missing login is users.ErrNotFound.
+func (r *UserRepository) FindByLogin(ctx context.Context, login users.Login) (users.User, error) {
+	return userFromRow(r.q.GetUserByLogin(ctx, login.String()))
+}
+
+func userFromRow(stored sqlcgen.User, err error) (users.User, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return users.User{}, users.ErrNotFound
 	}

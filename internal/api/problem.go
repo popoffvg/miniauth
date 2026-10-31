@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -100,7 +101,10 @@ func writeDecodeError(w http.ResponseWriter, err error) {
 func domainError(err error) bool {
 	return errors.Is(err, users.ErrInvalidLogin) ||
 		errors.Is(err, users.ErrEmptyPassword) ||
-		errors.Is(err, users.ErrPasswordTooLong)
+		errors.Is(err, users.ErrPasswordTooLong) ||
+		errors.Is(err, tokens.ErrInvalid) ||
+		errors.Is(err, tokens.ErrName) ||
+		errors.Is(err, tokens.ErrScope)
 }
 
 func jsonContentType(header string) bool {

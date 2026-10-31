@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 	"unicode"
 	"uuid"
@@ -18,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/popoffvg/miniauth/internal/sessions"
+	"github.com/popoffvg/miniauth/internal/tokens"
 )
 
 const httpTracerName = "github.com/popoffvg/miniauth/internal/api"
@@ -105,9 +107,13 @@ func requestID(r *http.Request) string {
 	return uuid.New().String()
 }
 
-// echoesCredential reports whether id is the bearer token, a secret cookie, or a query value.
+// echoesCredential reports whether id is the bearer token, a secret cookie, a query value, or has the access token marker.
 // A client can put a secret in X-Request-ID. That value MUST NOT be logged.
+// The body is not read here, so an id with the marker is refused: it can be the token of an import body.
 func echoesCredential(r *http.Request, id string) bool {
+	if strings.HasPrefix(id, tokens.SecretMarker) {
+		return true
+	}
 	if token, ok := bearerToken(r); ok && secretEqual(token.raw, id) {
 		return true
 	}

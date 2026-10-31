@@ -3,7 +3,7 @@ package users
 import "errors"
 
 var (
-	// ErrNotFound means no user has this id.
+	// ErrNotFound means no user has this id or login.
 	ErrNotFound = errors.New("users: user is not found")
 	// ErrLoginTaken means a user with this login is already stored.
 	ErrLoginTaken = errors.New("users: login already exists")

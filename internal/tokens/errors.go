@@ -8,6 +8,7 @@ var (
 	// ErrNotFound means the user has no token with this id.
 	ErrNotFound = errors.New("tokens: token is not found")
 	// ErrDuplicate means a token with the same secret is already stored.
+	// Import returns it only when another user has the token.
 	ErrDuplicate = errors.New("tokens: token already exists")
 	// ErrUnknownUser means the user id is empty or not stored.
 	ErrUnknownUser = errors.New("tokens: user is not known")
