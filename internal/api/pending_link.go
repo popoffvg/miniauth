@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/popoffvg/miniauth/internal/googlestep"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -17,16 +16,16 @@ const pendingLinkCookieName = "__Host-id_pending_link"
 // linkingFactor is the factor a completed login MUST hold before a pending link becomes an identity of its user.
 const linkingFactor = loginflow.FactorPassword
 
-// rememberPendingLink stores the unknown account and asks for a password login in this browser.
-func (s *service) rememberPendingLink(w http.ResponseWriter, r *http.Request, outcome googlestep.Outcome, collected loginflow.Factors) {
-	secret, err := s.links.Remember(r.Context(), outcome.Unlinked)
+// rememberPendingLink stores the unknown account and asks, with message, for a password login in this browser.
+func (s *service) rememberPendingLink(w http.ResponseWriter, r *http.Request, account users.ExternalAccount, collected loginflow.Factors, message pageMessage) {
+	secret, err := s.links.Remember(r.Context(), account)
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: remember pending link", "err", err)
 		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
 		return
 	}
 	http.SetCookie(w, hostCookie(pendingLinkCookieName, secret.CookieValue(), identitylink.LinkTTL, time.Now()))
-	s.renderSteps(w, r, http.StatusOK, collected, msgLinkGoogle)
+	s.renderSteps(w, r, http.StatusOK, collected, message)
 }
 
 // linkPendingIdentity makes the pending link of this browser an identity of userID.

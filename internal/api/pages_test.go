@@ -33,6 +33,8 @@ func TestRenderStepsShowsTheOneOpenForm(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `name="password"`)
 	assert.Contains(t, rec.Body.String(), string(msgWrongCredentials))
 	assert.NotContains(t, rec.Body.String(), googleLoginPath, "Google is not offered without the step")
+	assert.NotContains(t, rec.Body.String(), "telegram.org", "Telegram is not offered without the step")
+	assert.Equal(t, pageCSP, rec.Header().Get("Content-Security-Policy"))
 }
 
 func TestRenderStepsListsTheOpenSteps(t *testing.T) {

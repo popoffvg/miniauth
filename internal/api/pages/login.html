@@ -10,4 +10,4 @@
 </form>
 {{range .Buttons}}<form method="post" action="{{.Path}}"><button type="submit">{{.Label}}</button></form>
 {{end}}{{if .Recovery}}<p><a href="/recover">Forgot password?</a></p>{{end}}
-{{template "foot"}}
+{{if .Telegram.AuthURL}}{{template "telegram" .Telegram}}{{end}}{{template "foot"}}

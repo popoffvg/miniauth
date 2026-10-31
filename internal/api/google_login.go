@@ -135,7 +135,7 @@ func (s *service) googleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !outcome.Linked() {
-		s.rememberPendingLink(w, r, outcome, machine.Get().Factors)
+		s.rememberPendingLink(w, r, outcome.Unlinked, machine.Get().Factors, msgLinkGoogle)
 		return
 	}
 	s.finishStep(w, r, outcome.UserID, machine.Get())

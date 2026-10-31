@@ -12,17 +12,20 @@ import (
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/googlestep"
 	"github.com/popoffvg/miniauth/internal/sessions"
+	"github.com/popoffvg/miniauth/internal/telegramstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
 const (
-	envListen       = "MINIAUTH_LISTEN"
-	envDatabase     = "MINIAUTH_DATABASE_URL"
-	envAdmin        = "MINIAUTH_ADMIN_TOKEN_SHA256"
-	envCookie       = "MINIAUTH_COOKIE_DOMAIN"
-	envPublic       = "MINIAUTH_PUBLIC_URL"
-	envGoogleID     = "MINIAUTH_GOOGLE_CLIENT_ID"
-	envGoogleSecret = "MINIAUTH_GOOGLE_CLIENT_SECRET" // #nosec G101 -- the name of the variable, not a secret.
+	envListen        = "MINIAUTH_LISTEN"
+	envDatabase      = "MINIAUTH_DATABASE_URL"
+	envAdmin         = "MINIAUTH_ADMIN_TOKEN_SHA256"
+	envCookie        = "MINIAUTH_COOKIE_DOMAIN"
+	envPublic        = "MINIAUTH_PUBLIC_URL"
+	envGoogleID      = "MINIAUTH_GOOGLE_CLIENT_ID"
+	envGoogleSecret  = "MINIAUTH_GOOGLE_CLIENT_SECRET" // #nosec G101 -- the name of the variable, not a secret.
+	envTelegramBot   = "MINIAUTH_TELEGRAM_BOT_NAME"
+	envTelegramToken = "MINIAUTH_TELEGRAM_BOT_TOKEN" // #nosec G101 -- the name of the variable, not a secret.
 
 	defaultListen = "127.0.0.1:8080"
 )
@@ -35,6 +38,7 @@ var (
 	errCookie          = errors.New("miniauth: MINIAUTH_COOKIE_DOMAIN is not a valid cookie domain")
 	errPublic          = errors.New("miniauth: MINIAUTH_PUBLIC_URL is not an http or https origin")
 	errGoogle          = errors.New("miniauth: MINIAUTH_GOOGLE_CLIENT_ID and MINIAUTH_GOOGLE_CLIENT_SECRET must be set together, with MINIAUTH_PUBLIC_URL")
+	errTelegram        = errors.New("miniauth: MINIAUTH_TELEGRAM_BOT_NAME and MINIAUTH_TELEGRAM_BOT_TOKEN must be set together, with MINIAUTH_PUBLIC_URL; the bot name is 5 to 32 letters, digits, or underscores")
 )
 
 // Config is the process configuration.
@@ -47,6 +51,7 @@ type Config struct {
 	PublicURL  api.PublicURL
 	Mail       Mail
 	Google     GoogleClient
+	Telegram   TelegramBot
 }
 
 // GoogleClient is the OAuth client of the Google step. The zero value turns the step off.
@@ -60,6 +65,17 @@ func (g GoogleClient) Enabled() bool {
 	return g.ID != (googlestep.ClientID{})
 }
 
+// TelegramBot is the bot of the Telegram step. The zero value turns the step off.
+type TelegramBot struct {
+	Name  telegramstep.BotName
+	Token telegramstep.BotToken
+}
+
+// Enabled reports whether the Telegram step is configured.
+func (t TelegramBot) Enabled() bool {
+	return t.Name != (telegramstep.BotName{})
+}
+
 // LogValue keeps the database URL and the admin token hash out of a log.
 func (c Config) LogValue() slog.Value {
 	return slog.GroupValue(
@@ -71,6 +87,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("mail", string(c.Mail.Kind)),
 		slog.String("smtp_host", c.Mail.SMTP.Host.String()),
 		slog.Bool("google", c.Google.Enabled()),
+		slog.Bool("telegram", c.Telegram.Enabled()),
 	)
 }
 
@@ -111,7 +128,8 @@ func Load(getenv func(string) string) (Config, error) {
 	public, publicErr := parsePublic(getenv(envPublic))
 	mail, mailErr := parseMail(getenv)
 	google, googleErr := parseGoogle(getenv(envGoogleID), getenv(envGoogleSecret), public)
-	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr, googleErr); err != nil {
+	telegram, telegramErr := parseTelegram(getenv(envTelegramBot), getenv(envTelegramToken), public)
+	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr, googleErr, telegramErr); err != nil {
 		return Config{}, err
 	}
 	return Config{
@@ -122,6 +140,7 @@ func Load(getenv func(string) string) (Config, error) {
 		PublicURL:  public,
 		Mail:       mail,
 		Google:     google,
+		Telegram:   telegram,
 	}, nil
 }
 
@@ -189,4 +208,20 @@ func parseGoogle(rawID, rawSecret string, public api.PublicURL) (GoogleClient, e
 		return GoogleClient{}, errGoogle
 	}
 	return GoogleClient{ID: id, Secret: secret}, nil
+}
+
+// parseTelegram accepts both values or neither. The widget callback URL is built from the public URL.
+func parseTelegram(rawName, rawToken string, public api.PublicURL) (TelegramBot, error) {
+	name, nameErr := telegramstep.ParseBotName(rawName)
+	token := telegramstep.ParseBotToken(rawToken)
+	if nameErr != nil {
+		return TelegramBot{}, errTelegram
+	}
+	if name == (telegramstep.BotName{}) && token.Empty() {
+		return TelegramBot{}, nil
+	}
+	if name == (telegramstep.BotName{}) || token.Empty() || public.Origin() == "" {
+		return TelegramBot{}, errTelegram
+	}
+	return TelegramBot{Name: name, Token: token}, nil
 }
