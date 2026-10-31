@@ -13,4 +13,6 @@ var (
 	ErrEmptyPassword = errors.New("users: password is empty")
 	// ErrPasswordTooLong means the password is longer than MaxPasswordBytes.
 	ErrPasswordTooLong = errors.New("users: password is too long")
+	// ErrInvalidSubject means the outside account id is empty, too long, or has outer spaces.
+	ErrInvalidSubject = errors.New("users: subject is not valid")
 )

@@ -10,16 +10,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/popoffvg/miniauth/internal/api"
+	"github.com/popoffvg/miniauth/internal/googlestep"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
 const (
-	envListen   = "MINIAUTH_LISTEN"
-	envDatabase = "MINIAUTH_DATABASE_URL"
-	envAdmin    = "MINIAUTH_ADMIN_TOKEN_SHA256"
-	envCookie   = "MINIAUTH_COOKIE_DOMAIN"
-	envPublic   = "MINIAUTH_PUBLIC_URL"
+	envListen       = "MINIAUTH_LISTEN"
+	envDatabase     = "MINIAUTH_DATABASE_URL"
+	envAdmin        = "MINIAUTH_ADMIN_TOKEN_SHA256"
+	envCookie       = "MINIAUTH_COOKIE_DOMAIN"
+	envPublic       = "MINIAUTH_PUBLIC_URL"
+	envGoogleID     = "MINIAUTH_GOOGLE_CLIENT_ID"
+	envGoogleSecret = "MINIAUTH_GOOGLE_CLIENT_SECRET" // #nosec G101 -- the name of the variable, not a secret.
 
 	defaultListen = "127.0.0.1:8080"
 )
@@ -31,6 +34,7 @@ var (
 	errAdmin           = errors.New("miniauth: MINIAUTH_ADMIN_TOKEN_SHA256 must be the hex SHA-256 of the admin token")
 	errCookie          = errors.New("miniauth: MINIAUTH_COOKIE_DOMAIN is not a valid cookie domain")
 	errPublic          = errors.New("miniauth: MINIAUTH_PUBLIC_URL is not an http or https origin")
+	errGoogle          = errors.New("miniauth: MINIAUTH_GOOGLE_CLIENT_ID and MINIAUTH_GOOGLE_CLIENT_SECRET must be set together, with MINIAUTH_PUBLIC_URL")
 )
 
 // Config is the process configuration.
@@ -42,6 +46,18 @@ type Config struct {
 	Cookie     sessions.Domain
 	PublicURL  api.PublicURL
 	Mail       Mail
+	Google     GoogleClient
+}
+
+// GoogleClient is the OAuth client of the Google step. The zero value turns the step off.
+type GoogleClient struct {
+	ID     googlestep.ClientID
+	Secret googlestep.ClientSecret
+}
+
+// Enabled reports whether the Google step is configured.
+func (g GoogleClient) Enabled() bool {
+	return g.ID != (googlestep.ClientID{})
 }
 
 // LogValue keeps the database URL and the admin token hash out of a log.
@@ -54,6 +70,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("public_host", c.PublicURL.Host()),
 		slog.String("mail", string(c.Mail.Kind)),
 		slog.String("smtp_host", c.Mail.SMTP.Host.String()),
+		slog.Bool("google", c.Google.Enabled()),
 	)
 }
 
@@ -93,7 +110,8 @@ func Load(getenv func(string) string) (Config, error) {
 	cookie, cookieErr := parseCookie(getenv(envCookie))
 	public, publicErr := parsePublic(getenv(envPublic))
 	mail, mailErr := parseMail(getenv)
-	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr); err != nil {
+	google, googleErr := parseGoogle(getenv(envGoogleID), getenv(envGoogleSecret), public)
+	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr, googleErr); err != nil {
 		return Config{}, err
 	}
 	return Config{
@@ -103,6 +121,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Cookie:     cookie,
 		PublicURL:  public,
 		Mail:       mail,
+		Google:     google,
 	}, nil
 }
 
@@ -157,4 +176,17 @@ func parsePublic(raw string) (api.PublicURL, error) {
 		return api.PublicURL{}, errPublic
 	}
 	return public, nil
+}
+
+// parseGoogle accepts both values or neither. The Google redirect URL is built from the public URL.
+func parseGoogle(rawID, rawSecret string, public api.PublicURL) (GoogleClient, error) {
+	id := googlestep.ParseClientID(rawID)
+	secret := googlestep.ParseClientSecret(rawSecret)
+	if id == (googlestep.ClientID{}) && secret.Empty() {
+		return GoogleClient{}, nil
+	}
+	if id == (googlestep.ClientID{}) || secret.Empty() || public.Origin() == "" {
+		return GoogleClient{}, errGoogle
+	}
+	return GoogleClient{ID: id, Secret: secret}, nil
 }

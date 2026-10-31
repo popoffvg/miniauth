@@ -128,7 +128,7 @@ func (q *Queries) MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordRes
 
 const setPasswordHash = `-- name: SetPasswordHash :execrows
 UPDATE identities
-SET password_hash = $1
+SET password_hash = $1::text
 WHERE user_id = $2 AND kind = 'password'
 `
 

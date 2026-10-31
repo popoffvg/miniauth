@@ -16,6 +16,8 @@ import (
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/config"
+	"github.com/popoffvg/miniauth/internal/googlestep"
+	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
 	"github.com/popoffvg/miniauth/internal/loginflow"
@@ -120,6 +122,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		return err
 	}
 	accounts := postgres.NewUserRepository(pool)
+	flowStore := postgres.NewFlowStore(pool)
 	passwords, err := passwordstep.NewService(accounts, postgres.NewAttemptRepository(pool))
 	if err != nil {
 		return err
@@ -145,6 +148,23 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		return err
 	}
 
+	options := []api.RouterOption{
+		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
+		api.WithLogin(loginflow.NewLoginFlows(flowStore), passwords),
+		api.WithURLGrants(grants),
+		api.WithAccessAdmin(grants),
+		withRecovery,
+		api.WithInvites(inviteService),
+	}
+	if cfg.Google.Enabled() {
+		google, googleErr := startGoogle(ctx, logger, cfg, accounts, flowStore)
+		if googleErr != nil {
+			return googleErr
+		}
+		defer func() { _ = google.Close() }()
+		options = append(options, api.WithGoogle(google, identitylink.NewService(postgres.NewIdentityLinkRepository(pool))))
+	}
+
 	handler, err := api.NewRouter(
 		userService,
 		sessions.NewService(postgres.NewSessionRepository(pool)),
@@ -154,12 +174,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		cfg.AdminToken,
 		machine,
 		logger,
-		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
-		api.WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
-		api.WithURLGrants(grants),
-		api.WithAccessAdmin(grants),
-		withRecovery,
-		api.WithInvites(inviteService),
+		options...,
 	)
 	if err != nil {
 		return err
@@ -215,4 +230,20 @@ func stopServing(ctx context.Context, machine *lifecycle.Machine, server *http.S
 		return fmt.Errorf("miniauth: serve: %w", err)
 	}
 	return nil
+}
+
+// startGoogle builds the Google step and runs its discovery in the background.
+// The step is offered only after the first discovery succeeds. Close stops the discovery.
+func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, identities googlestep.IdentityStore, challenges loginflow.ChallengeStore) (*googlestep.Step, error) {
+	step, err := googlestep.NewStep(googlestep.Config{
+		Issuer:       googlestep.GoogleIssuer,
+		ClientID:     cfg.Google.ID,
+		ClientSecret: cfg.Google.Secret,
+		RedirectURL:  googlestep.RedirectURL(cfg.PublicURL.Origin() + api.GoogleCallbackPath),
+	}, identities, challenges, logger)
+	if err != nil {
+		return nil, err
+	}
+	go step.Watch(ctx, googlestep.DiscoveryInterval)
+	return step, nil
 }
