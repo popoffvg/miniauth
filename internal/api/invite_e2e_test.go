@@ -170,3 +170,65 @@ func (b *lockedBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+func TestInviteWithoutAPublicURLOrASession(t *testing.T) {
+	const adminToken = "bootstrap-token-for-tests"
+	ctx := t.Context()
+	pool, err := postgres.Open(ctx, postgrestest.NewDatabase(t))
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	require.NoError(t, postgres.Migrate(ctx, pool))
+	inviteRepo, err := postgres.NewInviteRepository(pool)
+	require.NoError(t, err)
+	invitations, err := invites.NewService(inviteRepo, time.Now)
+	require.NoError(t, err)
+	accessRepo, err := postgres.NewAccessRepository(pool)
+	require.NoError(t, err)
+	accounts := users.NewService(postgres.NewUserRepository(pool))
+	grants := access.NewService(accessRepo, accounts)
+	createResource(t, grants, "app", "app.example.test", "/")
+	const base = "https://id.example.test"
+	newRouter := func(publicURL PublicURL) http.Handler {
+		// The session store has no device store, so every session start fails.
+		router, routerErr := NewRouter(accounts, sessions.NewService(newMemSessions()), nil, sessions.Domain{}, publicURL,
+			hashToken(t, adminToken), &readyState{ok: true}, slog.New(slog.DiscardHandler),
+			WithAccessAdmin(grants), WithInvites(invitations))
+		require.NoError(t, routerErr)
+		return router
+	}
+	createInvite := func(router http.Handler) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/invites", strings.NewReader(`{"resource":"app"}`))
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("no public URL answers 503", func(t *testing.T) {
+		rec := createInvite(newRouter(PublicURL{}))
+		assert.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+		assert.Contains(t, rec.Header().Get("Content-Type"), "application/problem+json")
+	})
+
+	t.Run("a failed session start says the account exists", func(t *testing.T) {
+		router := newRouter(mustPublicURL(t, base))
+		created := createInvite(router)
+		require.Equal(t, http.StatusCreated, created.Code, created.Body.String())
+		link := decodeReply[struct {
+			Link string `json:"link"`
+		}](t, created.Body).Link
+		token, ok := strings.CutPrefix(link, base+"/invite/")
+		require.True(t, ok, link)
+		form := url.Values{"token": {token}, "login": {"invitee"}, "password": {"invited-password-1"}}
+		req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/invite/accept", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", base)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
+		assert.Contains(t, rec.Body.String(), string(msgInviteSignInFailed))
+		assert.NotContains(t, rec.Body.String(), string(msgInviteFailed))
+		assert.Contains(t, rec.Body.String(), `href="/login"`)
+	})
+}
