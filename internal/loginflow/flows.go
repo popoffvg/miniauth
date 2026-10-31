@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/popoffvg/sfsm"
+
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 // Store is the persistence port for login flows.
@@ -33,13 +35,25 @@ func NewLoginFlows(store Store) *LoginFlows {
 	return &LoginFlows{store: store, now: time.Now}
 }
 
-// Start creates a flow in StateAwaiting and returns its id and secret.
+// Start creates a KindLogin flow in StateAwaiting and returns its id and secret.
 // The secret is returned once. Only its hash is stored.
 func (s *LoginFlows) Start(ctx context.Context, returnURL ReturnURL) (FlowID, FlowSecret, error) {
+	return s.start(ctx, LoginFlow{ReturnURL: returnURL, Kind: KindLogin})
+}
+
+// StartStepUp creates a KindStepUp flow that only a factor of userID completes.
+func (s *LoginFlows) StartStepUp(ctx context.Context, userID users.ID, returnURL ReturnURL) (FlowID, FlowSecret, error) {
+	if userID == (users.ID{}) {
+		return "", FlowSecret{}, errors.New("loginflow: step-up user is empty")
+	}
+	return s.start(ctx, LoginFlow{ReturnURL: returnURL, Kind: KindStepUp, UserID: userID})
+}
+
+func (s *LoginFlows) start(ctx context.Context, flow LoginFlow) (FlowID, FlowSecret, error) {
 	if err := s.store.Cleanup(ctx); err != nil {
 		return "", FlowSecret{}, err
 	}
-	if returnURL == "" {
+	if flow.ReturnURL == "" {
 		return "", FlowSecret{}, ErrReturnURL
 	}
 	id, err := NewFlowID()
@@ -50,12 +64,9 @@ func (s *LoginFlows) Start(ctx context.Context, returnURL ReturnURL) (FlowID, Fl
 	if err != nil {
 		return "", FlowSecret{}, err
 	}
-	flow := LoginFlow{
-		ID:        id,
-		ReturnURL: returnURL,
-		ExpiresAt: s.now().UTC().Add(FlowTTL),
-		State:     StateAwaiting,
-	}
+	flow.ID = id
+	flow.ExpiresAt = s.now().UTC().Add(FlowTTL)
+	flow.State = StateAwaiting
 	hash, err := secret.Hash()
 	if err != nil {
 		return "", FlowSecret{}, err

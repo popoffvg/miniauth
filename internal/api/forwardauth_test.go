@@ -558,6 +558,10 @@ func (failSessions) Extend(context.Context, sessions.Hash, time.Time, time.Time)
 	return false, errors.New("sessions are down")
 }
 
+func (failSessions) ConfirmAuth(context.Context, sessions.Hash, users.ID, time.Time) (bool, error) {
+	return false, errors.New("sessions are down")
+}
+
 func (failSessions) Delete(context.Context, sessions.Hash) error {
 	return errors.New("sessions are down")
 }

@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -23,6 +24,10 @@ const (
 	pageSteps    pageName = "steps.html"
 	pageDenied   pageName = "denied.html"
 	pageSignedIn pageName = "signed_in.html"
+	pageStepUp   pageName = "step_up.html"
+	pageTokens   pageName = "tokens.html"
+	// pageTokenCreated shows the clear token. The handler MUST set Cache-Control: no-store.
+	pageTokenCreated pageName = "token_created.html"
 )
 
 // pageMessage is a sentence a page shows to the user. It MUST NOT tell which logins exist.
@@ -43,6 +48,9 @@ type pageView struct {
 	Message pageMessage
 	Steps   []loginStep
 	Login   users.Login
+	Tokens  []tokens.Token
+	// NewToken is set only on pageTokenCreated.
+	NewToken *tokens.Secret
 }
 
 // pageCSP allows inline style and nothing else. form-action is not set:

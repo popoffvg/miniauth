@@ -1,0 +1,31 @@
+{{template "head" "Personal access tokens"}}
+<style>main{max-width:640px}textarea{width:100%;box-sizing:border-box;font-family:monospace}li{margin:12px 0}dl{margin:0}dt{font-weight:600}dd{margin:0 0 4px}</style>
+<h1>Personal access tokens</h1>
+{{with .Message}}<p class="message" role="alert">{{.}}</p>{{end}}
+<p>Signed in as {{.Login}}.</p>
+<ul>
+{{range .Tokens}}<li>
+<dl>
+<dt>{{.Name}}</dt>
+<dd>Prefix: <code>{{.Prefix}}</code></dd>
+<dd>Scopes: {{range .Scopes}}<code>{{.}}</code> {{else}}every URL{{end}}</dd>
+<dd>Created: {{.CreatedAt.Format "2006-01-02 15:04 UTC"}}</dd>
+<dd>Last use: {{if .LastUsedAt.IsZero}}never{{else}}{{.LastUsedAt.Format "2006-01-02 15:04 UTC"}}{{end}}</dd>
+<dd>Expires: {{if .ExpiresAt.IsZero}}never{{else}}{{.ExpiresAt.Format "2006-01-02 15:04 UTC"}}{{end}}</dd>
+<dd>Revoked: {{if .Revoked}}{{.RevokedAt.Format "2006-01-02 15:04 UTC"}}{{else}}no{{end}}</dd>
+</dl>
+{{if not .Revoked}}<form method="post" action="/tokens/{{.ID}}/revoke"><button type="submit">Revoke {{.Name}}</button></form>{{end}}
+</li>
+{{else}}<li>No tokens.</li>
+{{end}}</ul>
+<h2>Make a token</h2>
+<form method="post" action="/tokens">
+<label for="name">Name</label>
+<input id="name" name="name" maxlength="64" required>
+<label for="scopes">Scopes, one URL prefix per line. Empty reaches every URL.</label>
+<textarea id="scopes" name="scopes" rows="4"></textarea>
+<label for="expires">Expires after (optional)</label>
+<input id="expires" name="expires" type="date">
+<button type="submit">Make token</button>
+</form>
+{{template "foot"}}

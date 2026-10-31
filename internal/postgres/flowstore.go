@@ -12,6 +12,7 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 // FlowStore is the PostgreSQL adapter for login flows.
@@ -35,6 +36,9 @@ func (s *FlowStore) Create(ctx context.Context, flow loginflow.LoginFlow, hash l
 	if err != nil {
 		return err
 	}
+	if _, err = loginflow.ParseFlowKind(string(flow.Kind)); err != nil {
+		return err
+	}
 	err = s.q.CreateLoginFlow(ctx, sqlcgen.CreateLoginFlowParams{
 		ID:            id,
 		SecretHash:    hash.Digest[:],
@@ -46,6 +50,8 @@ func (s *FlowStore) Create(ctx context.Context, flow loginflow.LoginFlow, hash l
 		NeedsSecond:   flow.NeedsSecond,
 		PendingFactor: int32(flow.PendingFactor),
 		ExpiresAt:     pgTime(flow.ExpiresAt),
+		Kind:          string(flow.Kind),
+		UserID:        flowUserID(flow.UserID),
 	})
 	if err != nil {
 		return fmt.Errorf("postgres: create login flow: %w", err)
@@ -156,6 +162,14 @@ func toFlow(row sqlcgen.GetLoginFlowRow) (loginflow.LoginFlow, error) {
 	if err != nil {
 		return loginflow.LoginFlow{}, err
 	}
+	kind, err := loginflow.ParseFlowKind(row.Kind)
+	if err != nil {
+		return loginflow.LoginFlow{}, err
+	}
+	var userID users.ID
+	if row.UserID.Valid {
+		userID = users.IDFromBytes(row.UserID.Bytes)
+	}
 	return loginflow.LoginFlow{
 		ID:            loginflow.FlowIDFromBytes(row.ID.Bytes),
 		ReturnURL:     loginflow.ReturnURL(row.ReturnUrl),
@@ -165,6 +179,8 @@ func toFlow(row sqlcgen.GetLoginFlowRow) (loginflow.LoginFlow, error) {
 		PendingFactor: pending,
 		Version:       loginflow.FlowVersion(row.Version),
 		NeedsSecond:   row.NeedsSecond,
+		Kind:          kind,
+		UserID:        userID,
 	}, nil
 }
 
@@ -193,6 +209,14 @@ func factorFrom(n int32) (loginflow.Factor, error) {
 		return 0, fmt.Errorf("postgres: pending factor %d", n)
 	}
 	return loginflow.Factor(n), nil
+}
+
+// flowUserID is NULL for the zero id, so a login flow stores no user.
+func flowUserID(id users.ID) pgtype.UUID {
+	if id == (users.ID{}) {
+		return pgtype.UUID{}
+	}
+	return pgUUIDBytes(id.Bytes())
 }
 
 func pgUUID(id loginflow.FlowID) (pgtype.UUID, error) {

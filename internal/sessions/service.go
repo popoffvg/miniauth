@@ -12,10 +12,12 @@ import (
 // Repository stores sessions.
 // Create stores the hash, never the session id.
 // Extend writes expires_at only when the stored expiry is at or before extendBefore.
+// ConfirmAuth writes auth_at only when the session belongs to userID.
 type Repository interface {
 	Create(ctx context.Context, session Session, hash Hash) error
 	Find(ctx context.Context, hash Hash) (Session, Hash, error)
 	Extend(ctx context.Context, hash Hash, expiresAt, extendBefore time.Time) (bool, error)
+	ConfirmAuth(ctx context.Context, hash Hash, userID users.ID, authAt time.Time) (bool, error)
 	Delete(ctx context.Context, hash Hash) error
 	DeleteUser(ctx context.Context, userID users.ID) error
 }

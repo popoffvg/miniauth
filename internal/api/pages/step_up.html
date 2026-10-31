@@ -1,0 +1,10 @@
+{{template "head" "Confirm your password"}}
+<h1>Confirm your password</h1>
+{{with .Message}}<p class="message" role="alert">{{.}}</p>{{end}}
+<p>You are signed in as {{.Login}}.</p>
+<form method="post" action="/login">
+<label for="password">Password</label>
+<input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+<button type="submit">Confirm</button>
+</form>
+{{template "foot"}}

@@ -33,9 +33,11 @@ INSERT INTO login_flows (
     return_url,
     needs_second,
     pending_factor,
-    expires_at
+    expires_at,
+    kind,
+    user_id
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 )
 `
 
@@ -50,6 +52,8 @@ type CreateLoginFlowParams struct {
 	NeedsSecond   bool
 	PendingFactor int32
 	ExpiresAt     pgtype.Timestamptz
+	Kind          string
+	UserID        pgtype.UUID
 }
 
 func (q *Queries) CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error {
@@ -64,6 +68,8 @@ func (q *Queries) CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams
 		arg.NeedsSecond,
 		arg.PendingFactor,
 		arg.ExpiresAt,
+		arg.Kind,
+		arg.UserID,
 	)
 	return err
 }
@@ -118,6 +124,8 @@ SELECT
     needs_second,
     pending_factor,
     expires_at,
+    kind,
+    user_id,
     (expires_at <= now())::boolean AS expired
 FROM login_flows
 WHERE id = $1
@@ -134,6 +142,8 @@ type GetLoginFlowRow struct {
 	NeedsSecond   bool
 	PendingFactor int32
 	ExpiresAt     pgtype.Timestamptz
+	Kind          string
+	UserID        pgtype.UUID
 	Expired       bool
 }
 
@@ -151,6 +161,8 @@ func (q *Queries) GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlo
 		&i.NeedsSecond,
 		&i.PendingFactor,
 		&i.ExpiresAt,
+		&i.Kind,
+		&i.UserID,
 		&i.Expired,
 	)
 	return i, err

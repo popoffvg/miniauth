@@ -116,6 +116,7 @@ func TestLoginFlowEngine(t *testing.T) {
 			ReturnURL: returnURL,
 			ExpiresAt: time.Now().Add(-time.Minute).UTC(),
 			State:     loginflow.StateAwaiting,
+			Kind:      loginflow.KindLogin,
 		}, expiredHash)
 		if err != nil {
 			t.Fatal(err)

@@ -103,6 +103,7 @@ func (s *Service) Verify(ctx context.Context, flow Flow, login users.Login, pass
 	event := loginflow.Event{Kind: loginflow.EventStepFailed, Factor: loginflow.FactorPassword}
 	if passed {
 		event.Kind = loginflow.EventStepPassed
+		event.UserID = identity.UserID
 	}
 	if err := flow.Apply(ctx, event); err != nil {
 		return users.ID{}, fmt.Errorf("passwordstep: apply %s: %w", event.Kind, err)

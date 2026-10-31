@@ -135,7 +135,7 @@ func TestVerifyRightPassword(t *testing.T) {
 	if id != f.user.UserID {
 		t.Fatalf("Verify() = %s, want %s", id, f.user.UserID)
 	}
-	want := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPassword}
+	want := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPassword, UserID: f.user.UserID}
 	assertEvents(t, flow, want)
 	assertVerifies(t, f, 1)
 	assertLastAttempt(t, f, Attempt{Login: f.login, IP: ip, Succeeded: true, AttemptedAt: f.now})

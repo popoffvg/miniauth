@@ -97,6 +97,19 @@ func (r *SessionRepository) Extend(ctx context.Context, hash sessions.Hash, expi
 	return true, nil
 }
 
+// ConfirmAuth writes auth_at when the session belongs to userID.
+func (r *SessionRepository) ConfirmAuth(ctx context.Context, hash sessions.Hash, userID users.ID, authAt time.Time) (bool, error) {
+	n, err := r.q.ConfirmSessionAuth(ctx, sqlcgen.ConfirmSessionAuthParams{
+		AuthAt:     pgTime(authAt),
+		SecretHash: hash[:],
+		UserID:     pgUUIDBytes(userID.Bytes()),
+	})
+	if err != nil {
+		return false, sessionError("confirm session auth", err)
+	}
+	return n > 0, nil
+}
+
 // Delete removes one session. A missing row is success.
 func (r *SessionRepository) Delete(ctx context.Context, hash sessions.Hash) error {
 	if err := r.q.DeleteSession(ctx, hash[:]); err != nil {
