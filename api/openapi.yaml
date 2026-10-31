@@ -863,6 +863,90 @@ paths:
               schema:
                 type: string
           description: Service Unavailable
+  /link:
+    get:
+      description: Names the Google or Telegram account of the pending link cookie
+        and asks the session user to link it or not. A password login in a browser
+        with a pending link redirects here; it never links by itself. With no live
+        pending link, or a session without a password, it redirects with 302 to the
+        return URL. With no session it redirects to the login page.
+      operationId: linkPage
+      parameters:
+      - description: The page to open after the choice. An https URL under the cookie
+          domain. Any other value opens the default page.
+        in: query
+        name: return
+        schema:
+          description: The page to open after the choice. An https URL under the cookie
+            domain. Any other value opens the default page.
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "302":
+          description: Found
+        "303":
+          description: See Other
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+    post:
+      description: Links (action=link) or deletes (action=skip) the pending link of
+        this browser, then redirects to the return URL. Origin MUST be the public
+        origin, else 403. An account linked to another user is 409. A store error
+        is 500 and keeps the pending link cookie, so the form can be sent again.
+      operationId: confirmLink
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiLinkForm'
+      responses:
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
   /login:
     get:
       description: Starts a login flow and shows the login form. The flow id and secret
@@ -2317,6 +2401,21 @@ components:
       - token
       - login
       - password
+      type: object
+    FormDataApiLinkForm:
+      properties:
+        action:
+          description: link makes the outside account an identity of the session user.
+            skip deletes the pending link.
+          enum:
+          - link
+          - skip
+          type: string
+        return:
+          description: The page to open after the choice, as in GET /link.
+          type: string
+      required:
+      - action
       type: object
     FormDataApiLoginFormRequest:
       properties:

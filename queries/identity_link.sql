@@ -32,6 +32,11 @@ SELECT sqlc.arg(identity_id), sqlc.arg(user_id), taken.provider, taken.subject, 
 FROM taken
 RETURNING kind, subject::text AS subject;
 
+-- name: GetPendingIdentityLink :one
+SELECT provider, subject, created_at, expires_at
+FROM pending_identity_links
+WHERE secret_hash = sqlc.arg(secret_hash) AND expires_at > sqlc.arg(now);
+
 -- name: DeletePendingIdentityLink :exec
 DELETE FROM pending_identity_links
 WHERE secret_hash = $1;

@@ -22,10 +22,13 @@ type PendingLink struct {
 // Link MUST, in one transaction, delete the live row of hash and insert an identity of userID
 // for its account. A row whose expires_at is at or before now is not live: Link returns ErrNotFound.
 // Link MUST return ErrAccountTaken on a unique violation and then delete the row.
+// Find returns the live row of hash, else ErrNotFound. Delete deletes the row of hash; a missing row is no error.
 // Cleanup deletes the rows that expired at or before now.
 type Store interface {
 	Insert(ctx context.Context, hash SecretHash, link PendingLink) error
+	Find(ctx context.Context, hash SecretHash, now time.Time) (PendingLink, error)
 	Link(ctx context.Context, hash SecretHash, userID users.ID, identityID users.IdentityID, now time.Time) (users.ExternalAccount, error)
+	Delete(ctx context.Context, hash SecretHash) error
 	Cleanup(ctx context.Context, now time.Time) error
 }
 
@@ -68,4 +71,14 @@ func (s *Service) Complete(ctx context.Context, secret LinkSecret, userID users.
 		return users.ExternalAccount{}, errors.New("identitylink: user id is empty")
 	}
 	return s.store.Link(ctx, secret.Hash(), userID, users.NewIdentityID(), s.now().UTC())
+}
+
+// Pending returns the live pending link of secret. An expired or used link is ErrNotFound.
+func (s *Service) Pending(ctx context.Context, secret LinkSecret) (PendingLink, error) {
+	return s.store.Find(ctx, secret.Hash(), s.now().UTC())
+}
+
+// Discard deletes the pending link of secret, so it never becomes an identity.
+func (s *Service) Discard(ctx context.Context, secret LinkSecret) error {
+	return s.store.Delete(ctx, secret.Hash())
 }

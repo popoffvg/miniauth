@@ -82,6 +82,36 @@ func (q *Queries) GetExternalIdentity(ctx context.Context, arg GetExternalIdenti
 	return i, err
 }
 
+const getPendingIdentityLink = `-- name: GetPendingIdentityLink :one
+SELECT provider, subject, created_at, expires_at
+FROM pending_identity_links
+WHERE secret_hash = $1 AND expires_at > $2
+`
+
+type GetPendingIdentityLinkParams struct {
+	SecretHash []byte
+	Now        pgtype.Timestamptz
+}
+
+type GetPendingIdentityLinkRow struct {
+	Provider  string
+	Subject   string
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetPendingIdentityLink(ctx context.Context, arg GetPendingIdentityLinkParams) (GetPendingIdentityLinkRow, error) {
+	row := q.db.QueryRow(ctx, getPendingIdentityLink, arg.SecretHash, arg.Now)
+	var i GetPendingIdentityLinkRow
+	err := row.Scan(
+		&i.Provider,
+		&i.Subject,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+	)
+	return i, err
+}
+
 const insertPendingIdentityLink = `-- name: InsertPendingIdentityLink :exec
 INSERT INTO pending_identity_links (secret_hash, provider, subject, created_at, expires_at)
 VALUES (

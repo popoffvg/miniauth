@@ -168,7 +168,10 @@ func (s *service) finishStep(w http.ResponseWriter, r *http.Request, userID user
 		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
 		return
 	}
-	s.linkPendingIdentity(w, r, userID, flow.Factors)
+	if confirm := s.linkConfirmURL(r, flow.Factors, flow.ReturnURL); confirm != "" {
+		http.Redirect(w, r, confirm, http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, flow.ReturnURL.String(), http.StatusSeeOther)
 }
 
