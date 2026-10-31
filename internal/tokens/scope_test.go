@@ -89,3 +89,24 @@ func TestParseTargetRefusesAPathTheBackendCanReadOtherwise(t *testing.T) {
 		})
 	}
 }
+
+func TestScopeKeepsItsMeaningAfterStore(t *testing.T) {
+	for _, raw := range []string{"https://app.example.test/%2541", "https://app.example.test/a%20b", "https://app.example.test/%C3%A9"} {
+		t.Run(raw, func(t *testing.T) {
+			scope, err := ParseScope(raw)
+			require.NoError(t, err)
+			var stored Scope
+			require.NoError(t, stored.UnmarshalText([]byte(scope.String())))
+			assert.Equal(t, scope, stored)
+			assert.Equal(t, scope.String(), stored.String())
+		})
+	}
+
+	scope, err := ParseScope("https://app.example.test/%2541")
+	require.NoError(t, err)
+	var stored Scope
+	require.NoError(t, stored.UnmarshalText([]byte(scope.String())))
+	upper, err := ParseTarget("https://app.example.test/A")
+	require.NoError(t, err)
+	assert.False(t, stored.Covers(upper), "a stored scope MUST NOT cover another path than the one given")
+}
