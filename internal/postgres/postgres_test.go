@@ -24,7 +24,7 @@ func TestMigrateAppliesEveryMigrationOnce(t *testing.T) {
 
 	var version int64
 	require.NoError(t, pool.QueryRow(ctx, "SELECT max(version_id) FROM goose_db_version").Scan(&version))
-	assert.Equal(t, int64(6), version)
+	assert.Equal(t, int64(7), version)
 
 	ok, err := sqlcgen.New(pool).Ping(ctx)
 	require.NoError(t, err)

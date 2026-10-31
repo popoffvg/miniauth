@@ -176,6 +176,10 @@ func (m *Machine) Close() error {
 }
 
 func (m *Machine) apply(ctx context.Context, event Event) error {
+	// sfsm.Apply can still send the event when ctx is done: its select picks a ready case at random.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("lifecycle: apply: %w", err)
+	}
 	if err := m.fsm.Apply(ctx, event); err != nil {
 		return fmt.Errorf("lifecycle: apply: %w", err)
 	}

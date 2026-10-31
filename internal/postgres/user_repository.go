@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -27,7 +28,10 @@ func NewUserRepository(db sqlcgen.DBTX) *UserRepository {
 	return &UserRepository{q: sqlcgen.New(db)}
 }
 
-var _ users.Repository = (*UserRepository)(nil)
+var (
+	_ users.Repository           = (*UserRepository)(nil)
+	_ passwordstep.IdentityStore = (*UserRepository)(nil)
+)
 
 // Create inserts the user and the password identity in one statement.
 // A login that is already stored returns users.ErrLoginTaken.
@@ -77,6 +81,33 @@ func (r *UserRepository) Find(ctx context.Context, id users.ID) (users.User, err
 		ID:        users.IDFromBytes(stored.ID.Bytes),
 		Login:     login,
 		CreatedAt: stored.CreatedAt.Time.UTC(),
+	}, nil
+}
+
+// FindPasswordIdentity returns the password identity of login.
+// A login that is not stored is users.ErrNotFound.
+func (r *UserRepository) FindPasswordIdentity(ctx context.Context, login users.Login) (users.Identity, error) {
+	stored, err := r.q.GetIdentityByLogin(ctx, login.String())
+	if errors.Is(err, pgx.ErrNoRows) {
+		return users.Identity{}, users.ErrNotFound
+	}
+	if err != nil {
+		return users.Identity{}, fmt.Errorf("postgres: load identity: %w", err)
+	}
+	if !stored.UserID.Valid || !stored.IdentityID.Valid || !stored.IdentityCreatedAt.Valid {
+		return users.Identity{}, errors.New("postgres: stored identity is incomplete")
+	}
+	// The parse error does not wrap the PHC string, so it is safe to return.
+	hash, err := users.ParsePasswordHash(stored.PasswordHash)
+	if err != nil {
+		return users.Identity{}, fmt.Errorf("postgres: load identity: %w", err)
+	}
+	return users.Identity{
+		ID:        users.IdentityIDFromBytes(stored.IdentityID.Bytes),
+		UserID:    users.IDFromBytes(stored.UserID.Bytes),
+		Kind:      users.Kind(stored.Kind),
+		Secret:    hash,
+		CreatedAt: stored.IdentityCreatedAt.Time.UTC(),
 	}, nil
 }
 
