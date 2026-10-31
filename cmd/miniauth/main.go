@@ -16,6 +16,8 @@ import (
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/config"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
+	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/telemetry"
@@ -115,9 +117,14 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
+	accounts := postgres.NewUserRepository(pool)
+	passwords, err := passwordstep.NewService(accounts, postgres.NewAttemptRepository(pool))
+	if err != nil {
+		return err
+	}
 
 	handler, err := api.NewRouter(
-		users.NewService(postgres.NewUserRepository(pool)),
+		users.NewService(accounts),
 		sessions.NewService(postgres.NewSessionRepository(pool)),
 		groups,
 		cfg.Cookie,
@@ -126,6 +133,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		machine,
 		logger,
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
+		api.WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
 	)
 	if err != nil {
 		return err

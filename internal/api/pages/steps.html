@@ -1,0 +1,7 @@
+{{template "head" "Choose a sign-in method"}}
+<h1>Choose a sign-in method</h1>
+{{with .Message}}<p class="message" role="alert">{{.}}</p>{{end}}
+<ul>
+{{range .Steps}}<li><a href="{{.Path}}">{{.Label}}</a></li>
+{{end}}</ul>
+{{template "foot"}}

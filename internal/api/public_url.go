@@ -39,6 +39,16 @@ func (u PublicURL) Login(returnTo string) string {
 	return loginURL + "?return=" + url.QueryEscape(returnTo)
 }
 
+// Origin is the scheme and host. The zero value is empty.
+func (u PublicURL) Origin() string {
+	return u.origin
+}
+
+// Root is the default page after a login. The zero value is "/".
+func (u PublicURL) Root() string {
+	return u.origin + "/"
+}
+
 // Host is compared with X-Forwarded-Host when the cookie domain is empty.
 func (u PublicURL) Host() string {
 	if u.origin == "" {

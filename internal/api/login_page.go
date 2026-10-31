@@ -1,0 +1,195 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/popoffvg/sfsm"
+
+	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/passwordstep"
+	"github.com/popoffvg/miniauth/internal/sessions"
+	"github.com/popoffvg/miniauth/internal/users"
+)
+
+// maxLoginFormBody is large enough for the longest login and password, form-encoded.
+const maxLoginFormBody = 16 << 10
+
+// loginPageRequest documents the query of GET /login.
+type loginPageRequest struct {
+	Return string `query:"return" description:"The page to open after the login. An https URL under the cookie domain. Any other value opens the default page."`
+}
+
+// loginFormRequest documents the form of POST /login.
+type loginFormRequest struct {
+	Login    string `formData:"login" required:"true" minLength:"1" maxLength:"64"`
+	Password string `formData:"password" required:"true" minLength:"1" maxLength:"1024" format:"password"`
+}
+
+// htmlPage documents an HTML body.
+type htmlPage string
+
+// loginPage starts a login flow and shows the form of its first step.
+func (s *service) loginPage(w http.ResponseWriter, r *http.Request) {
+	if s.flows == nil || s.passwords == nil {
+		renderDenied(w, r, http.StatusServiceUnavailable, msgLoginUnavailable)
+		return
+	}
+	returnURL := ParseReturnURL(r.URL.Query().Get("return"), s.domain, s.publicURL)
+	id, secret, err := s.flows.Start(r.Context(), returnURL)
+	if err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: start login", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+		return
+	}
+	setFlowCookie(w, id, secret, time.Now())
+	renderSteps(w, r, http.StatusOK, 0, "")
+}
+
+// login runs the password step of the flow in the flow cookie.
+// A complete flow starts a session and redirects to the return URL of the flow.
+func (s *service) login(w http.ResponseWriter, r *http.Request) {
+	if !s.sameOrigin(r) {
+		renderDenied(w, r, http.StatusForbidden, msgCrossOrigin)
+		return
+	}
+	if s.flows == nil || s.passwords == nil {
+		renderDenied(w, r, http.StatusServiceUnavailable, msgLoginUnavailable)
+		return
+	}
+	id, secret, err := flowFromRequest(r)
+	if err != nil {
+		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginFormBody)
+	if r.ParseForm() != nil {
+		renderDenied(w, r, http.StatusBadRequest, msgBadForm)
+		return
+	}
+	ip, err := clientIP(r)
+	if err != nil {
+		renderDenied(w, r, http.StatusBadRequest, msgBadForm)
+		return
+	}
+	machine, err := s.flows.Open(r.Context(), id, secret)
+	if errors.Is(err, loginflow.ErrFlowNotFound) {
+		clearFlowCookie(w)
+		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
+		return
+	}
+	if err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: open login", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+		return
+	}
+	defer func() { _ = machine.Close() }()
+
+	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
+	password, passwordErr := users.NewPassword(r.PostForm.Get("password"))
+	if loginErr != nil || passwordErr != nil {
+		renderSteps(w, r, http.StatusOK, machine.Get().Factors, msgWrongCredentials)
+		return
+	}
+	userID, err := s.passwords.Verify(r.Context(), machine, login, password, ip)
+	var tooSoon *passwordstep.TooSoonError
+	switch {
+	case errors.Is(err, passwordstep.ErrWrongCredentials):
+		renderSteps(w, r, http.StatusOK, machine.Get().Factors, msgWrongCredentials)
+		return
+	case errors.As(err, &tooSoon):
+		w.Header().Set("Retry-After", retryAfter(tooSoon.RetryAt))
+		renderSteps(w, r, http.StatusTooManyRequests, machine.Get().Factors, msgTooSoon)
+		return
+	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
+		clearFlowCookie(w)
+		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
+		return
+	case err != nil:
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: password step", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+		return
+	}
+	s.finishStep(w, r, userID, machine.Get())
+}
+
+// finishStep shows the open steps until the flow is complete.
+func (s *service) finishStep(w http.ResponseWriter, r *http.Request, userID users.ID, flow loginflow.LoginFlow) {
+	if !flow.State.Final() {
+		renderSteps(w, r, http.StatusOK, flow.Factors, "")
+		return
+	}
+	clearFlowCookie(w)
+	if flow.State != loginflow.StateComplete {
+		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
+		return
+	}
+	if err := s.startBrowserSession(r.Context(), w, userID, flow.Factors); err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: start session", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+		return
+	}
+	http.Redirect(w, r, flow.ReturnURL.String(), http.StatusSeeOther)
+}
+
+// startBrowserSession is the one place a login starts a session and sets its cookie.
+func (s *service) startBrowserSession(ctx context.Context, w http.ResponseWriter, userID users.ID, factors loginflow.Factors) error {
+	id, session, err := s.browser.Start(ctx, userID, factors)
+	if err != nil {
+		return err
+	}
+	sessions.SetCookie(w, id, s.domain, session.AuthAt)
+	return nil
+}
+
+// sameOrigin is the CSRF check of a form POST. Origin MUST be the public origin.
+// A missing Origin fails, and so does every POST when the public URL is not configured.
+func (s *service) sameOrigin(r *http.Request) bool {
+	origin := s.publicURL.Origin()
+	return origin != "" && strings.EqualFold(r.Header.Get("Origin"), origin)
+}
+
+// home is the default page after a login.
+func (s *service) home(w http.ResponseWriter, r *http.Request) {
+	session, err := s.openBrowserSession(r)
+	if errors.Is(err, sessions.ErrNotFound) {
+		http.Redirect(w, r, s.publicURL.Login(""), http.StatusFound)
+		return
+	}
+	if err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: home", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+		return
+	}
+	user, err := s.accounts.Find(r.Context(), session.UserID)
+	if errors.Is(err, users.ErrNotFound) {
+		http.Redirect(w, r, s.publicURL.Login(""), http.StatusFound)
+		return
+	}
+	if err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: home", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+		return
+	}
+	renderPage(w, r, http.StatusOK, pageSignedIn, pageView{Login: user.Login})
+}
+
+// renderSteps shows the form of the one open step, or the chooser when more steps are open.
+func renderSteps(w http.ResponseWriter, r *http.Request, status int, collected loginflow.Factors, message pageMessage) {
+	steps := openSteps(collected)
+	if len(steps) == 1 {
+		renderPage(w, r, status, steps[0].Page, pageView{Message: message})
+		return
+	}
+	renderPage(w, r, status, pageSteps, pageView{Message: message, Steps: steps})
+}
+
+// retryAfter is the Retry-After value in whole seconds, at least 1.
+func retryAfter(at time.Time) string {
+	seconds := int(time.Until(at).Seconds()) + 1
+	return strconv.Itoa(max(seconds, 1))
+}

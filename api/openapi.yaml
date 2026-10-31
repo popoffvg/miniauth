@@ -3,6 +3,20 @@ info:
   title: miniauth
   version: 0.0.0
 paths:
+  /:
+    get:
+      description: The default page after a login. It shows the login of the session.
+        With no session it redirects to the login page.
+      operationId: home
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "302":
+          description: Found
   /api/v1/users:
     post:
       operationId: createUser
@@ -84,6 +98,89 @@ paths:
       responses:
         "204":
           description: No Content
+  /login:
+    get:
+      description: Starts a login flow and shows the login form. The flow id and secret
+        go to the HttpOnly cookie __Host-id_login_flow.
+      operationId: loginPage
+      parameters:
+      - description: The page to open after the login. An https URL under the cookie
+          domain. Any other value opens the default page.
+        in: query
+        name: return
+        schema:
+          description: The page to open after the login. An https URL under the cookie
+            domain. Any other value opens the default page.
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+    post:
+      description: Checks the password for the flow in the login flow cookie. Origin
+        MUST be the public origin, else 403. A complete flow sets the session cookie
+        and redirects to the return URL. A wrong login or password shows the form
+        again with 200. A backoff is 429.
+      operationId: login
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiLoginFormRequest'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "429":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Too Many Requests
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
   /logout:
     post:
       operationId: logout
@@ -156,6 +253,21 @@ components:
           type: string
         type:
           type: string
+      type: object
+    FormDataApiLoginFormRequest:
+      properties:
+        login:
+          maxLength: 64
+          minLength: 1
+          type: string
+        password:
+          format: password
+          maxLength: 1024
+          minLength: 1
+          type: string
+      required:
+      - login
+      - password
       type: object
   securitySchemes:
     bearerAuth:
