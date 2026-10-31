@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
@@ -42,13 +43,18 @@ func TestLoginPageEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	password, err := users.NewPassword(rawPassword)
 	require.NoError(t, err)
-	_, err = accounts.Create(ctx, login, password)
+	account, err := accounts.Create(ctx, login, password)
 	require.NoError(t, err)
 	passwords, err := passwordstep.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 
 	server := httptest.NewUnstartedServer(nil)
 	base := "https://" + server.Listener.Addr().String()
+	accessRepo, err := postgres.NewAccessRepository(pool)
+	require.NoError(t, err)
+	grants := access.NewService(accessRepo)
+	app := createResource(t, grants, "app", server.Listener.Addr().String(), "/app")
+	grantResource(t, grants, app, access.UserSubject(account.ID))
 	router, err := NewRouter(
 		accounts,
 		sessions.NewService(postgres.NewSessionRepository(pool)),
@@ -59,6 +65,7 @@ func TestLoginPageEndToEnd(t *testing.T) {
 		&readyState{ok: true},
 		slog.New(slog.DiscardHandler),
 		WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
+		WithURLGrants(grants),
 	)
 	require.NoError(t, err)
 	server.Config.Handler = router
@@ -109,7 +116,7 @@ func TestLoginPageEndToEnd(t *testing.T) {
 		assert.NotContains(t, resp.header.Get("Location"), flowCookie.Value)
 		assert.Equal(t, int64(1), countSessions())
 
-		check := get(t, browser, base+"/auth/check")
+		check := forwardedCheck(t, browser, base, server.Listener.Addr().String(), "/app/dash?tab=1")
 		require.Equal(t, http.StatusOK, check.status)
 		assert.Equal(t, rawLogin, check.header.Get(headerAuthUser))
 		assert.Equal(t, "password", check.header.Get(headerAuthMethod))
@@ -241,4 +248,16 @@ func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
 		}
 	}
 	return nil
+}
+
+// forwardedCheck calls /auth/check with the headers Traefik sends for host and uri.
+func forwardedCheck(t *testing.T, browser *http.Client, base, host, uri string) reply {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+"/auth/check", nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", "text/html")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", host)
+	req.Header.Set("X-Forwarded-Uri", uri)
+	return do(t, browser, req)
 }

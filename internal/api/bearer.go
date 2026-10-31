@@ -33,7 +33,7 @@ func accessTokenBearer(r *http.Request) (BearerToken, bool) {
 }
 
 // forwardAuthToken checks a personal access token.
-// A bad token or a disabled owner is 401. A URL under no scope is 403.
+// A bad token or a disabled owner is 401. A URL under no scope, or with no grant for the owner, is 403.
 func (s *service) forwardAuthToken(w http.ResponseWriter, r *http.Request, need []groups.Name, bearer BearerToken) {
 	if s.tokens == nil {
 		invalidToken(w)
@@ -63,7 +63,7 @@ func (s *service) forwardAuthToken(w http.ResponseWriter, r *http.Request, need 
 		return
 	}
 	if !token.Scopes.Unlimited() {
-		target, ok := forwardedTarget(r)
+		target, ok := s.forwardedTarget(r)
 		if !ok || !token.Scopes.Covers(target) {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -78,6 +78,9 @@ func (s *service) forwardAuthToken(w http.ResponseWriter, r *http.Request, need 
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
+	if !s.urlGranted(w, r, user, have) {
+		return
+	}
 	if !writeAuthHeaders(w, user.Login, have, sessions.MethodAccessToken()) {
 		authCheckFailed(w, r, errors.New("api: auth header is not safe"))
 		return
@@ -85,24 +88,13 @@ func (s *service) forwardAuthToken(w http.ResponseWriter, r *http.Request, need 
 	w.WriteHeader(http.StatusOK)
 }
 
-// forwardedTarget is the URL from X-Forwarded-Proto, X-Forwarded-Host, and X-Forwarded-Uri.
-func forwardedTarget(r *http.Request) (tokens.Target, bool) {
-	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host == "" || strings.ContainsAny(host, "\r\n/\\@ ?#") {
+// forwardedTarget is the forwarded URL as a token scope target.
+func (s *service) forwardedTarget(r *http.Request) (tokens.Target, bool) {
+	forwarded, ok := forwardedURL(r, s.domain, s.publicURL)
+	if !ok {
 		return tokens.Target{}, false
 	}
-	if _, ok := forwardedHostname(host); !ok {
-		return tokens.Target{}, false
-	}
-	uri := r.Header.Get("X-Forwarded-Uri")
-	if uri == "" {
-		uri = "/"
-	}
-	if !safeForwardedURI(uri) {
-		return tokens.Target{}, false
-	}
-	target, err := tokens.ParseTarget(proto + "://" + host + uri)
+	target, err := tokens.ParseTarget(forwarded.String())
 	if err != nil {
 		return tokens.Target{}, false
 	}

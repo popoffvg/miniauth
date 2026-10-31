@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/postgres"
@@ -69,6 +70,22 @@ func TestTraefikProtectsThePage(t *testing.T) {
 	secret := id.CookieValue()
 	cookie := sessions.CookieName + "=" + secret
 
+	grants, err := postgres.NewAccessRepository(pool)
+	require.NoError(t, err)
+	resources := access.NewService(grants)
+	// Traefik forwards the Host header the client sent: 127.0.0.1:8088.
+	appResource := createResource(t, resources, "app", "127.0.0.1:8088", "/app")
+	editorsResource := createResource(t, resources, "editors", "127.0.0.1:8088", "/editors")
+	name, err := groups.ParseName("editors")
+	require.NoError(t, err)
+	grantResource(t, resources, editorsResource, access.GroupSubject(name))
+
+	noGrant := request(t, http.MethodGet, base+"/app/", "text/html", cookie)
+	require.Equal(t, http.StatusForbidden, noGrant.status, redact(noGrant.body, secret))
+	require.Contains(t, noGrant.body, "http://127.0.0.1:8088/app/")
+	require.NotContains(t, noGrant.body, "Hostname")
+	appGrant := grantResource(t, resources, appResource, access.UserSubject(user.ID))
+
 	editors := request(t, http.MethodGet, base+"/editors/", "text/html", cookie)
 	require.Equal(t, http.StatusForbidden, editors.status, redact(editors.body, secret))
 	require.NotContains(t, editors.body, "Hostname")
@@ -78,14 +95,16 @@ func TestTraefikProtectsThePage(t *testing.T) {
 	require.Contains(t, page.body, "X-Auth-User: ada")
 	require.Contains(t, page.body, "X-Auth-Method: password")
 
-	name, err := groups.ParseName("editors")
-	require.NoError(t, err)
 	memberships, err := postgres.NewGroupRepository(pool)
 	require.NoError(t, err)
 	require.NoError(t, memberships.Add(ctx, user.ID, name))
 	allowed := request(t, http.MethodGet, base+"/editors/", "text/html", cookie)
 	require.Equal(t, http.StatusOK, allowed.status, redact(allowed.body, secret))
 	require.Contains(t, allowed.body, "X-Auth-Groups: editors")
+
+	require.NoError(t, resources.Revoke(ctx, appGrant))
+	revoked := request(t, http.MethodGet, base+"/app/", "application/json", cookie)
+	require.Equal(t, http.StatusForbidden, revoked.status, redact(revoked.body, secret))
 }
 
 func redact(body, secret string) string {

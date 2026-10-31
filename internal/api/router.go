@@ -55,6 +55,7 @@ type service struct {
 	accounts  *users.Service
 	browser   *sessions.Service
 	groups    groupList
+	grants    urlAccess
 	domain    sessions.Domain
 	publicURL PublicURL
 	admin     AdminTokenHash
@@ -106,6 +107,9 @@ func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupL
 	}
 	for _, option := range options {
 		option(apiService)
+	}
+	if apiService.grants == nil {
+		apiService.grants = noGrants{}
 	}
 	mux := http.NewServeMux()
 	reflector := openapi3.NewReflector()
@@ -185,7 +189,7 @@ func (s *service) routes() []route {
 			request:  new(forwardAuthRequest),
 			status:   http.StatusOK,
 			empty:    []int{http.StatusFound, http.StatusUnauthorized, http.StatusForbidden},
-			doc:      "Traefik forwardAuth. A valid session or a valid Authorization: Bearer idp_ token answers 200 and sets X-Auth-User, X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session is redirected to the login page. Any other request with no session is 401. An invalid, revoked, or expired token, or a token of a disabled user, is 401 with error=\"invalid_token\". A URL under no scope of the token is 403. A user outside group is 403. The scope query does not limit a session.",
+			doc:      "Traefik forwardAuth. A valid session or a valid Authorization: Bearer idp_ token answers 200 and sets X-Auth-User, X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session is redirected to the login page. Any other request with no session is 401. An invalid, revoked, or expired token, or a token of a disabled user, is 401 with error=\"invalid_token\". A URL under no scope of the token is 403. A user outside group is 403. The URL in X-Forwarded-Proto, X-Forwarded-Host, and X-Forwarded-Uri needs a resource and an active grant for the user or one of the user's groups, for a session and for a token; else 403. The scope query does not limit a session.",
 			isPublic: true,
 		},
 		{

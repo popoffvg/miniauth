@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/access/accesstest"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/sessions"
@@ -59,26 +61,32 @@ func TestForwardAuth(t *testing.T) {
 		clearsCookie     bool
 	}{
 		{
-			name:      "valid session",
-			login:     "ada",
-			groups:    []string{"editors", "admins"},
-			factors:   loginflow.Factors(loginflow.FactorPassword),
-			query:     "?scope=",
-			hasCookie: true,
-			want:      http.StatusOK,
-			user:      "ada",
-			groupList: "admins,editors",
-			method:    "password",
+			name:        "valid session",
+			login:       "ada",
+			groups:      []string{"editors", "admins"},
+			factors:     loginflow.Factors(loginflow.FactorPassword),
+			query:       "?scope=",
+			hasCookie:   true,
+			isForwarded: true,
+			host:        "app.example.test",
+			uri:         "/dash",
+			want:        http.StatusOK,
+			user:        "ada",
+			groupList:   "admins,editors",
+			method:      "password",
 		},
 		{
-			name:      "valid session with an email login",
-			login:     "ada@example.test",
-			factors:   loginflow.Factors(loginflow.FactorPassword | loginflow.FactorTOTP),
-			hasCookie: true,
-			want:      http.StatusOK,
-			user:      "ada@example.test",
-			email:     "ada@example.test",
-			method:    "password,totp",
+			name:        "valid session with an email login",
+			login:       "ada@example.test",
+			factors:     loginflow.Factors(loginflow.FactorPassword | loginflow.FactorTOTP),
+			hasCookie:   true,
+			isForwarded: true,
+			host:        "app.example.test",
+			uri:         "/dash",
+			want:        http.StatusOK,
+			user:        "ada@example.test",
+			email:       "ada@example.test",
+			method:      "password,totp",
 		},
 		{
 			name:      "user not in group",
@@ -90,16 +98,19 @@ func TestForwardAuth(t *testing.T) {
 			want:      http.StatusForbidden,
 		},
 		{
-			name:      "user in group",
-			login:     "ada",
-			groups:    []string{"editors"},
-			factors:   loginflow.Factors(loginflow.FactorPassword),
-			query:     "?scope=openid&group=editors",
-			hasCookie: true,
-			want:      http.StatusOK,
-			user:      "ada",
-			groupList: "editors",
-			method:    "password",
+			name:        "user in group",
+			login:       "ada",
+			groups:      []string{"editors"},
+			factors:     loginflow.Factors(loginflow.FactorPassword),
+			query:       "?scope=openid&group=editors",
+			hasCookie:   true,
+			isForwarded: true,
+			host:        "app.example.test",
+			uri:         "/dash",
+			want:        http.StatusOK,
+			user:        "ada",
+			groupList:   "editors",
+			method:      "password",
 		},
 		{
 			name:        "browser request without a session",
@@ -186,16 +197,19 @@ func TestForwardAuth(t *testing.T) {
 			want:      http.StatusForbidden,
 		},
 		{
-			name:      "user in every requested group",
-			login:     "ada",
-			groups:    []string{"editors", "admins"},
-			factors:   loginflow.Factors(loginflow.FactorPassword),
-			query:     "?group=editors&group=admins",
-			hasCookie: true,
-			want:      http.StatusOK,
-			user:      "ada",
-			groupList: "admins,editors",
-			method:    "password",
+			name:        "user in every requested group",
+			login:       "ada",
+			groups:      []string{"editors", "admins"},
+			factors:     loginflow.Factors(loginflow.FactorPassword),
+			query:       "?group=editors&group=admins",
+			hasCookie:   true,
+			isForwarded: true,
+			host:        "app.example.test",
+			uri:         "/dash",
+			want:        http.StatusOK,
+			user:        "ada",
+			groupList:   "admins,editors",
+			method:      "password",
 		},
 		{
 			name:        "question mark in forwarded host has no return query",
@@ -332,6 +346,9 @@ func TestForwardAuth(t *testing.T) {
 			factors:     loginflow.Factors(loginflow.FactorPassword),
 			hasCookie:   true,
 			staleCookie: true,
+			isForwarded: true,
+			host:        "app.example.test",
+			uri:         "/dash",
 			want:        http.StatusOK,
 			user:        "ada",
 			method:      "password",
@@ -355,6 +372,8 @@ func TestForwardAuth(t *testing.T) {
 			if tt.groupsFail {
 				groupList = failGroups{}
 			}
+			grants := access.NewService(accesstest.NewRepository())
+			app := createResource(t, grants, "app", "app.example.test", "/")
 			browser := sessions.NewService(newMemSessions())
 			var cookieValue string
 			if tt.missingUser {
@@ -369,6 +388,7 @@ func TestForwardAuth(t *testing.T) {
 					user.DisabledAt = time.Now().UTC()
 				}
 				stored.put(user)
+				grantResource(t, grants, app, access.UserSubject(user.ID))
 				for _, raw := range tt.groups {
 					name, err := groups.ParseName(raw)
 					require.NoError(t, err)
@@ -390,7 +410,7 @@ func TestForwardAuth(t *testing.T) {
 				cookieValue = id.CookieValue()
 				browser = sessions.NewService(failSessions{})
 			}
-			router := forwardRouter(t, accounts, browser, groupList, checkDomain, public)
+			router := forwardRouter(t, accounts, browser, groupList, checkDomain, public, WithURLGrants(grants))
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/check", nil)
 			req.URL.RawQuery = strings.TrimPrefix(tt.query, "?")
 			if tt.staleCookie {
@@ -484,9 +504,9 @@ func TestForwardedHostname(t *testing.T) {
 	}
 }
 
-func forwardRouter(t *testing.T, accounts users.Repository, browser *sessions.Service, members groups.Repository, domain sessions.Domain, public PublicURL) http.Handler {
+func forwardRouter(t *testing.T, accounts users.Repository, browser *sessions.Service, members groups.Repository, domain sessions.Domain, public PublicURL, options ...RouterOption) http.Handler {
 	t.Helper()
-	router, err := NewRouter(users.NewService(accounts), browser, members, domain, public, hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler))
+	router, err := NewRouter(users.NewService(accounts), browser, members, domain, public, hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler), options...)
 	require.NoError(t, err)
 	return router
 }
@@ -547,3 +567,23 @@ func (failSessions) DeleteUser(context.Context, users.ID) error {
 }
 
 var _ groups.Repository = (*memGroups)(nil)
+
+func createResource(t *testing.T, grants *access.Service, rawName, rawHost, rawPrefix string) access.ResourceName {
+	t.Helper()
+	name, err := access.ParseResourceName(rawName)
+	require.NoError(t, err)
+	host, err := access.ParseHost(rawHost)
+	require.NoError(t, err)
+	prefix, err := access.ParsePathPrefix(rawPrefix)
+	require.NoError(t, err)
+	_, err = grants.CreateResource(t.Context(), name, access.ResourceURL{Host: host, Prefix: prefix})
+	require.NoError(t, err)
+	return name
+}
+
+func grantResource(t *testing.T, grants *access.Service, resource access.ResourceName, subject access.Subject) access.GrantID {
+	t.Helper()
+	grant, err := grants.Grant(t.Context(), resource, subject, access.Expiry{})
+	require.NoError(t, err)
+	return grant.ID
+}
