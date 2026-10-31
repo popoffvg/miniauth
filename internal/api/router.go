@@ -50,7 +50,14 @@ type service struct {
 	domain    sessions.Domain
 	publicURL PublicURL
 	admin     AdminTokenHash
+	ready     Readiness
 	spec      []byte
+}
+
+// Readiness reports whether the process can take traffic.
+// GET /readyz returns 200 only when Ready returns true.
+type Readiness interface {
+	Ready() bool
 }
 
 // NewRouter serves the HTTP API.
@@ -58,7 +65,8 @@ type service struct {
 // domain is the Domain attribute of the session cookie. The zero value is a host-only cookie.
 // publicURL is the origin of the login page. The zero value redirects to a path.
 // A nil group list means the user has no groups.
-func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupList, domain sessions.Domain, publicURL PublicURL, admin AdminTokenHash, logger *slog.Logger) (http.Handler, error) {
+// ready decides GET /readyz. A nil ready value fails closed: /readyz returns 503.
+func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupList, domain sessions.Domain, publicURL PublicURL, admin AdminTokenHash, ready Readiness, logger *slog.Logger) (http.Handler, error) {
 	if accounts == nil || browser == nil {
 		return nil, errors.New("api: user service or session service is missing")
 	}
@@ -75,6 +83,7 @@ func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupL
 		domain:    domain,
 		publicURL: publicURL,
 		admin:     admin,
+		ready:     ready,
 	}
 	mux := http.NewServeMux()
 	reflector := openapi3.NewReflector()
@@ -110,6 +119,15 @@ func (s *service) routes() []route {
 			id:       "getHealth",
 			handler:  healthz,
 			status:   http.StatusNoContent,
+			isPublic: true,
+		},
+		{
+			method:   http.MethodGet,
+			path:     "/readyz",
+			id:       "getReady",
+			handler:  s.readyz,
+			status:   http.StatusOK,
+			empty:    []int{http.StatusServiceUnavailable},
 			isPublic: true,
 		},
 		{
@@ -200,6 +218,16 @@ func addOperation(reflector *openapi3.Reflector, rt route) error {
 
 func healthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// readyz is the readiness probe.
+// It returns 200 only when the process is in the Ready state.
+func (s *service) readyz(w http.ResponseWriter, _ *http.Request) {
+	if s.ready != nil && s.ready.Ready() {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	w.WriteHeader(http.StatusServiceUnavailable)
 }
 
 func (s *service) openAPI(w http.ResponseWriter, _ *http.Request) {

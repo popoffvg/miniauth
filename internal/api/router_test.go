@@ -34,6 +34,35 @@ func TestHealthz(t *testing.T) {
 	assert.NotEmpty(t, rec.Header().Get("X-Request-ID"))
 }
 
+func TestReadyz(t *testing.T) {
+	ready := &readyState{ok: true}
+	router := mustRouterReady(t, nil, "bootstrap-token-for-tests", ready)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Body.String())
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+
+	ready.ok = false
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.Empty(t, rec.Body.String())
+
+	closed := mustRouterReady(t, nil, "bootstrap-token-for-tests", nil)
+	rec = httptest.NewRecorder()
+	closed.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+}
+
+func TestReadyzRejectsPost(t *testing.T) {
+	router := mustRouter(t, nil, "bootstrap-token-for-tests")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/readyz", nil))
+	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+}
+
 func TestHealthzRejectsPost(t *testing.T) {
 	router := mustRouter(t, nil, "bootstrap-token-for-tests")
 	rec := httptest.NewRecorder()
@@ -49,6 +78,7 @@ func TestOpenAPIIsGeneratedFromTheRoutes(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("Content-Type"), "yaml")
 	body := rec.Body.String()
 	assert.Contains(t, body, "/healthz")
+	assert.Contains(t, body, "/readyz")
 	assert.Contains(t, body, "/api/v1/users")
 	assert.Contains(t, body, "/auth/check")
 	assert.Contains(t, body, "/logout")
@@ -175,7 +205,7 @@ func spanText(spans []sdktrace.ReadOnlySpan) string {
 }
 
 func TestAuthFailsClosed(t *testing.T) {
-	router, err := NewRouter(users.NewService(&memRepo{}), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, "bootstrap-token-for-tests"), slog.New(slog.DiscardHandler))
+	router, err := NewRouter(users.NewService(&memRepo{}), sessions.NewService(newMemSessions()), nil, sessions.Domain{}, PublicURL{}, hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	const adminRefusal = "The bearer token is missing or wrong."
 	for _, rt := range (&service{}).routes() {
