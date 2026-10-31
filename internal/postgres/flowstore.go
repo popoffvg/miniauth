@@ -29,7 +29,7 @@ var (
 	_ sfsm.Store[loginflow.FlowID, loginflow.LoginFlow] = (*FlowStore)(nil)
 )
 
-// Create inserts flow and its secret hash.
+// Create inserts flow and its secret hash with the salt.
 func (s *FlowStore) Create(ctx context.Context, flow loginflow.LoginFlow, hash loginflow.SecretHash) error {
 	id, err := pgUUID(flow.ID)
 	if err != nil {
@@ -37,7 +37,8 @@ func (s *FlowStore) Create(ctx context.Context, flow loginflow.LoginFlow, hash l
 	}
 	err = s.q.CreateLoginFlow(ctx, sqlcgen.CreateLoginFlowParams{
 		ID:            id,
-		SecretHash:    hash[:],
+		SecretHash:    hash.Digest[:],
+		SecretSalt:    hash.Salt[:],
 		State:         string(flow.State),
 		Factors:       int32(flow.Factors),
 		Version:       int64(flow.Version),
@@ -67,7 +68,7 @@ func (s *FlowStore) SecretHash(ctx context.Context, id loginflow.FlowID) (loginf
 	if err != nil {
 		return loginflow.SecretHash{}, err
 	}
-	return hashOf(row.SecretHash)
+	return hashOf(row.SecretHash, row.SecretSalt)
 }
 
 // Write updates the row when its version is still prev.Version.
@@ -167,12 +168,16 @@ func toFlow(row sqlcgen.GetLoginFlowRow) (loginflow.LoginFlow, error) {
 	}, nil
 }
 
-func hashOf(raw []byte) (loginflow.SecretHash, error) {
+func hashOf(digest, salt []byte) (loginflow.SecretHash, error) {
 	var hash loginflow.SecretHash
-	if len(raw) != len(hash) {
-		return loginflow.SecretHash{}, fmt.Errorf("postgres: secret hash length %d", len(raw))
+	if len(digest) != len(hash.Digest) {
+		return loginflow.SecretHash{}, fmt.Errorf("postgres: secret hash length %d", len(digest))
 	}
-	copy(hash[:], raw)
+	if len(salt) != len(hash.Salt) {
+		return loginflow.SecretHash{}, fmt.Errorf("postgres: secret salt length %d", len(salt))
+	}
+	copy(hash.Digest[:], digest)
+	copy(hash.Salt[:], salt)
 	return hash, nil
 }
 

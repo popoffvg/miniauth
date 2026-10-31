@@ -31,6 +31,7 @@ type LoginFlow struct {
 	NeedsSecond   bool
 	PendingFactor int32
 	ExpiresAt     pgtype.Timestamptz
+	SecretSalt    []byte
 }
 
 type Session struct {

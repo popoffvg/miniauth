@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"testing"
 	"time"
@@ -106,12 +107,16 @@ func TestLoginFlowEngine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		expiredHash, err := expiredSecret.Hash()
+		if err != nil {
+			t.Fatal(err)
+		}
 		err = store.Create(ctx, loginflow.LoginFlow{
 			ID:        expiredID,
 			ReturnURL: returnURL,
 			ExpiresAt: time.Now().Add(-time.Minute).UTC(),
 			State:     loginflow.StateAwaiting,
-		}, expiredSecret.Hash())
+		}, expiredHash)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -169,8 +174,15 @@ func assertHashIsNotSecret(ctx context.Context, t *testing.T, store *postgres.Fl
 		t.Fatal(err)
 	}
 	raw := secret.Bytes()
-	if bytes.Equal(hash[:], raw[:]) {
+	if bytes.Equal(hash.Digest[:], raw[:]) {
 		t.Fatal("database holds the flow secret")
+	}
+	unsalted := sha256.Sum256(raw[:])
+	if bytes.Equal(hash.Digest[:], unsalted[:]) {
+		t.Fatal("database holds the unsalted SHA-256 of the flow secret")
+	}
+	if hash.Salt == (loginflow.SecretSalt{}) {
+		t.Fatal("database holds an empty salt")
 	}
 	if !secret.Matches(hash) {
 		t.Fatal("stored hash does not match the secret")

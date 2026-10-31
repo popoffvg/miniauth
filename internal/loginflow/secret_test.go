@@ -1,6 +1,8 @@
 package loginflow
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -40,20 +42,55 @@ func TestFlowSecretMatchesItsHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !secret.Matches(secret.Hash()) {
+	hash, err := secret.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !secret.Matches(hash) {
 		t.Fatal("secret does not match its hash")
 	}
 	other, err := NewFlowSecret()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if secret.Matches(other.Hash()) {
-		t.Fatal("secret matched another hash")
+	if other.Matches(hash) {
+		t.Fatal("another secret matched the hash")
 	}
-	sum := secret.Hash()
 	body := secret.Bytes()
-	if hex.EncodeToString(sum[:]) == hex.EncodeToString(body[:]) {
+	if bytes.Equal(hash.Digest[:], body[:]) {
 		t.Fatal("hash equals the secret")
+	}
+	unsalted := sha256.Sum256(body[:])
+	if bytes.Equal(hash.Digest[:], unsalted[:]) {
+		t.Fatal("hash equals the unsalted SHA-256 of the secret")
+	}
+}
+
+func TestFlowSecretSaltChangesHash(t *testing.T) {
+	secret, err := NewFlowSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := secret.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := secret.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Salt == second.Salt {
+		t.Fatal("two hashes share one salt")
+	}
+	if first.Digest == second.Digest {
+		t.Fatal("two salts gave one digest")
+	}
+	if !secret.Matches(first) || !secret.Matches(second) {
+		t.Fatal("secret does not match a salted hash")
+	}
+	swapped := SecretHash{Salt: second.Salt, Digest: first.Digest}
+	if secret.Matches(swapped) {
+		t.Fatal("digest matched under another salt")
 	}
 }
 
