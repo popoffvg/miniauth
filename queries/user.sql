@@ -47,3 +47,23 @@ SELECT count(*)::bigint AS n FROM users;
 UPDATE users
 SET disabled_at = COALESCE(disabled_at, sqlc.arg(disabled_at))
 WHERE id = sqlc.arg(id);
+
+-- name: ListUserAccounts :many
+SELECT
+    users.id,
+    users.login,
+    users.created_at,
+    users.disabled_at,
+    COALESCE(
+        (SELECT array_agg(gm.name ORDER BY gm.name) FROM group_memberships gm WHERE gm.user_id = users.id),
+        '{}'
+    )::text[] AS group_names,
+    (SELECT count(*) FROM devices d WHERE d.user_id = users.id)::bigint AS device_count,
+    (SELECT max(d.last_seen) FROM devices d WHERE d.user_id = users.id)::timestamptz AS last_seen
+FROM users
+ORDER BY users.login;
+
+-- name: EnableUser :execrows
+UPDATE users
+SET disabled_at = NULL
+WHERE id = $1;

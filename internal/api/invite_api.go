@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -76,16 +77,12 @@ func (s *service) createInvite(w http.ResponseWriter, r *http.Request) {
 		writeAccessError(w, r, err)
 		return
 	}
-	token, invite, err := s.invites.Create(r.Context(), body.Resource)
+	invite, err := s.makeInvite(r.Context(), body.Resource)
 	if err != nil {
 		writeAccessError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, inviteBody{
-		Link:      inviteLink(s.publicURL.Origin() + invitePathPrefix + token.Reveal()),
-		Resource:  invite.Resource,
-		ExpiresAt: invite.ExpiresAt,
-	})
+	writeJSON(w, http.StatusCreated, invite)
 }
 
 // invitePage shows the account form of an open invite.
@@ -173,4 +170,17 @@ func (s *service) openInvite(w http.ResponseWriter, r *http.Request, raw string)
 func setInviteHeaders(w http.ResponseWriter) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
+}
+
+// makeInvite stores an invite and returns its link. The link holds the token, so the caller shows it once.
+func (s *service) makeInvite(ctx context.Context, resource access.ResourceName) (inviteBody, error) {
+	token, invite, err := s.invites.Create(ctx, resource)
+	if err != nil {
+		return inviteBody{}, err
+	}
+	return inviteBody{
+		Link:      inviteLink(s.publicURL.Origin() + invitePathPrefix + token.Reveal()),
+		Resource:  invite.Resource,
+		ExpiresAt: invite.ExpiresAt,
+	}, nil
 }

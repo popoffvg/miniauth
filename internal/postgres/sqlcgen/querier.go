@@ -35,6 +35,7 @@ type Querier interface {
 	DeleteExpiredLoginFlows(ctx context.Context) error
 	DeleteExpiredPendingIdentityLinks(ctx context.Context, now pgtype.Timestamptz) error
 	DeleteExpiredTelegramLoginProofs(ctx context.Context, now pgtype.Timestamptz) error
+	DeleteGroupMembership(ctx context.Context, arg DeleteGroupMembershipParams) (int64, error)
 	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
 	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
@@ -51,6 +52,8 @@ type Querier interface {
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
 	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)
 	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
+	EnableUser(ctx context.Context, id pgtype.UUID) (int64, error)
+	EnsureGroupMembership(ctx context.Context, arg EnsureGroupMembershipParams) error
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
 	GetActivePasskeyByCredential(ctx context.Context, credentialID []byte) (Passkey, error)
@@ -88,6 +91,7 @@ type Querier interface {
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
+	ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, error)
 	ListUserPasskeys(ctx context.Context, userID pgtype.UUID) ([]Passkey, error)
 	LockOpenPasswordReset(ctx context.Context, arg LockOpenPasswordResetParams) (pgtype.UUID, error)
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error

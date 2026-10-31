@@ -464,6 +464,95 @@ paths:
           description: Service Unavailable
       security:
       - bearerAuth: []
+  /api/v1/groups/{group}/members/{login}:
+    delete:
+      description: Removes the user from the group. A user who is not in the group
+        is 404.
+      operationId: removeGroupMember
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+    put:
+      description: 'Adds the user to the group. A member stays a member: the request
+        is idempotent.'
+      operationId: addGroupMember
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
   /api/v1/invites:
     post:
       description: 'Creates an invite for one resource. The reply holds the one-time
@@ -699,6 +788,31 @@ paths:
       security:
       - bearerAuth: []
   /api/v1/users:
+    get:
+      description: Lists every user in login order, with the groups, the state, the
+        device count, and the last time a device was seen.
+      operationId: listUsers
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiUserListBody'
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
     post:
       operationId: createUser
       requestBody:
@@ -743,6 +857,86 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Unsupported Media Type
+      security:
+      - bearerAuth: []
+  /api/v1/users/{login}/disable:
+    post:
+      description: Disables the user and deletes every session of the user in one
+        transaction. The next /auth/check of the user is refused. A disabled user
+        stays disabled.
+      operationId: disableUser
+      parameters:
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+  /api/v1/users/{login}/enable:
+    post:
+      description: Enables the user. The user signs in again; no session comes back.
+      operationId: enableUser
+      parameters:
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
       security:
       - bearerAuth: []
   /assets/app.css:
@@ -2208,6 +2402,364 @@ paths:
               schema:
                 type: string
           description: Service Unavailable
+  /users:
+    get:
+      description: Lists the users with their groups and state, with the forms to
+        change them and to make an invite link. Only a member of the group admin opens
+        it; any other user is 403. With no session it redirects to the login page,
+        which returns here.
+      operationId: usersPage
+      parameters:
+      - description: Shows only the users whose login or group contains this text.
+        in: query
+        name: q
+        schema:
+          description: Shows only the users whose login or group contains this text.
+          type: string
+      - description: Shows only the users in this state. Any other value shows every
+          user.
+        in: query
+        name: status
+        schema:
+          description: Shows only the users in this state. Any other value shows every
+            user.
+          enum:
+          - active
+          - disabled
+          type: string
+      - description: The result of the last change. The page shows a fixed message
+          for a known value and ignores any other value.
+        in: query
+        name: done
+        schema:
+          description: The result of the last change. The page shows a fixed message
+            for a known value and ignores any other value.
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /users/{login}/disable:
+    post:
+      description: 'Disables the user, deletes every session of the user, and redirects
+        to GET /users?done=user-disabled. An admin cannot disable itself: 409. Only
+        a member of the group admin can send it; any other user is 403. Origin MUST
+        be the public origin, else 403. A login older than 10 minutes starts a step-up
+        instead: the page asks for the password of the session user and returns to
+        GET /users. A refused change shows the page with a message and 400, 404, or
+        409.'
+      operationId: disableUserForm
+      parameters:
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /users/{login}/enable:
+    post:
+      description: 'Enables the user and redirects to GET /users?done=user-enabled.
+        Only a member of the group admin can send it; any other user is 403. Origin
+        MUST be the public origin, else 403. A login older than 10 minutes starts
+        a step-up instead: the page asks for the password of the session user and
+        returns to GET /users. A refused change shows the page with a message and
+        400, 404, or 409.'
+      operationId: enableUserForm
+      parameters:
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /users/{login}/groups:
+    post:
+      description: 'Adds the user to the group of the form and redirects to GET /users?done=member-added.
+        Only a member of the group admin can send it; any other user is 403. Origin
+        MUST be the public origin, else 403. A login older than 10 minutes starts
+        a step-up instead: the page asks for the password of the session user and
+        returns to GET /users. A refused change shows the page with a message and
+        400, 404, or 409.'
+      operationId: addMemberForm
+      parameters:
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiUserGroupForm'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /users/{login}/groups/{group}/remove:
+    post:
+      description: 'Removes the user from the group and redirects to GET /users?done=member-removed.
+        An admin cannot leave the group admin: 409. Only a member of the group admin
+        can send it; any other user is 403. Origin MUST be the public origin, else
+        403. A login older than 10 minutes starts a step-up instead: the page asks
+        for the password of the session user and returns to GET /users. A refused
+        change shows the page with a message and 400, 404, or 409.'
+      operationId: removeMemberForm
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /users/invites:
+    post:
+      description: 'Makes an invite link for the resource of the form and shows it
+        once, with Cache-Control: no-store. Only a member of the group admin can send
+        it; any other user is 403. Origin MUST be the public origin, else 403. A login
+        older than 10 minutes starts a step-up instead: the page asks for the password
+        of the session user and returns to GET /users. A refused change shows the
+        page with a message and 400, 404, or 409.'
+      operationId: makeInviteForm
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiUserInviteForm'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
 components:
   schemas:
     ApiCreateGrantRequest:
@@ -2415,6 +2967,39 @@ components:
       required:
       - resources
       type: object
+    ApiUserAccountBody:
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        devices:
+          type: integer
+        disabled:
+          type: boolean
+        disabled_at:
+          format: date-time
+          type: string
+        groups:
+          items:
+            type: string
+          type: array
+        last_seen:
+          format: date-time
+          type: string
+        login:
+          type: string
+      required:
+      - groups
+      type: object
+    ApiUserListBody:
+      properties:
+        users:
+          items:
+            $ref: '#/components/schemas/ApiUserAccountBody'
+          type: array
+      required:
+      - users
+      type: object
     FormDataApiAccessGrantForm:
       properties:
         expires:
@@ -2555,6 +3140,22 @@ components:
           type: string
       required:
       - name
+      type: object
+    FormDataApiUserGroupForm:
+      properties:
+        group:
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+      - group
+      type: object
+    FormDataApiUserInviteForm:
+      properties:
+        resource:
+          type: string
+      required:
+      - resource
       type: object
   securitySchemes:
     bearerAuth:
