@@ -45,6 +45,7 @@ func TestForwardAuth(t *testing.T) {
 		xhr              bool
 		hostOnly         bool
 		missingUser      bool
+		isDisabled       bool
 		groupsFail       bool
 		userFail         bool
 		staleCookie      bool
@@ -126,7 +127,7 @@ func TestForwardAuth(t *testing.T) {
 		{
 			name:          "bearer client is not sent to the login page",
 			accept:        "text/html",
-			authorization: "Bearer idp_test",
+			authorization: "Bearer opaque-test-token",
 			isForwarded:   true,
 			host:          "app.example.test",
 			uri:           "/dash?x=1",
@@ -242,6 +243,19 @@ func TestForwardAuth(t *testing.T) {
 			want:        http.StatusUnauthorized,
 		},
 		{
+			name:        "disabled user",
+			login:       "ada",
+			factors:     loginflow.Factors(loginflow.FactorPassword),
+			hasCookie:   true,
+			isDisabled:  true,
+			accept:      "text/html",
+			isForwarded: true,
+			host:        "app.example.test",
+			uri:         "/dash?x=1",
+			want:        http.StatusFound,
+			location:    loginWithReturn,
+		},
+		{
 			name:         "deleted user",
 			factors:      loginflow.Factors(loginflow.FactorPassword),
 			accept:       "text/html",
@@ -351,6 +365,9 @@ func TestForwardAuth(t *testing.T) {
 			if tt.login != "" {
 				login := mustLogin(t, tt.login)
 				user := users.User{ID: users.NewID(), Login: login, CreatedAt: time.Now().UTC()}
+				if tt.isDisabled {
+					user.DisabledAt = time.Now().UTC()
+				}
 				stored.put(user)
 				for _, raw := range tt.groups {
 					name, err := groups.ParseName(raw)
@@ -434,7 +451,7 @@ func TestForwardAuth(t *testing.T) {
 				assert.NotContains(t, rec.Body.String(), cookieValue)
 				assert.NotContains(t, rec.Header().Get("Location"), cookieValue)
 			}
-			assert.NotContains(t, rec.Body.String(), "idp_test")
+			assert.NotContains(t, rec.Body.String(), "opaque-test-token")
 			if tt.location != "" {
 				parsed, err := url.Parse(rec.Header().Get("Location"))
 				require.NoError(t, err)

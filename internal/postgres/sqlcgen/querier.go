@@ -24,17 +24,23 @@ type Querier interface {
 	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
+	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)
+	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
 	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
 	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
+	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	Ping(ctx context.Context) (int32, error)
+	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)
+	TouchAccessToken(ctx context.Context, arg TouchAccessTokenParams) error
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
 }
 

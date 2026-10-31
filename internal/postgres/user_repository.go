@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -78,9 +79,10 @@ func (r *UserRepository) Find(ctx context.Context, id users.ID) (users.User, err
 		return users.User{}, fmt.Errorf("postgres: load user: %w", err)
 	}
 	return users.User{
-		ID:        users.IDFromBytes(stored.ID.Bytes),
-		Login:     login,
-		CreatedAt: stored.CreatedAt.Time.UTC(),
+		ID:         users.IDFromBytes(stored.ID.Bytes),
+		Login:      login,
+		CreatedAt:  stored.CreatedAt.Time.UTC(),
+		DisabledAt: optionalTime(stored.DisabledAt),
 	}, nil
 }
 
@@ -109,6 +111,22 @@ func (r *UserRepository) FindPasswordIdentity(ctx context.Context, login users.L
 		Secret:    hash,
 		CreatedAt: stored.IdentityCreatedAt.Time.UTC(),
 	}, nil
+}
+
+// Disable sets disabled_at once. A later call keeps the first time.
+// A missing id is users.ErrNotFound.
+func (r *UserRepository) Disable(ctx context.Context, id users.ID, at time.Time) error {
+	n, err := r.q.DisableUser(ctx, sqlcgen.DisableUserParams{
+		DisabledAt: pgTime(at),
+		ID:         pgUUIDBytes(id.Bytes()),
+	})
+	if err != nil {
+		return fmt.Errorf("postgres: disable user: %w", err)
+	}
+	if n == 0 {
+		return users.ErrNotFound
+	}
+	return nil
 }
 
 func createUserError(err error) error {

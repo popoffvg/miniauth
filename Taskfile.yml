@@ -54,7 +54,7 @@ tasks:
   sec:
     desc: gosec with its own report
     cmds:
-      - "{{.TOOL}} gosec -quiet ./..."
+      - "{{.TOOL}} gosec -quiet -exclude-generated ./..."
 
   generate:
     desc: Generate Go code from queries/*.sql with sqlc

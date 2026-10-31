@@ -12,6 +12,7 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/sessions"
+	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -50,6 +51,7 @@ type service struct {
 	domain    sessions.Domain
 	publicURL PublicURL
 	admin     AdminTokenHash
+	tokens    *tokens.Service
 	ready     Readiness
 	spec      []byte
 }
@@ -66,7 +68,7 @@ type Readiness interface {
 // publicURL is the origin of the login page. The zero value redirects to a path.
 // A nil group list means the user has no groups.
 // ready decides GET /readyz. A nil ready value fails closed: /readyz returns 503.
-func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupList, domain sessions.Domain, publicURL PublicURL, admin AdminTokenHash, ready Readiness, logger *slog.Logger) (http.Handler, error) {
+func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupList, domain sessions.Domain, publicURL PublicURL, admin AdminTokenHash, ready Readiness, logger *slog.Logger, options ...RouterOption) (http.Handler, error) {
 	if accounts == nil || browser == nil {
 		return nil, errors.New("api: user service or session service is missing")
 	}
@@ -84,6 +86,9 @@ func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupL
 		publicURL: publicURL,
 		admin:     admin,
 		ready:     ready,
+	}
+	for _, option := range options {
+		option(apiService)
 	}
 	mux := http.NewServeMux()
 	reflector := openapi3.NewReflector()
@@ -163,7 +168,7 @@ func (s *service) routes() []route {
 			request:  new(forwardAuthRequest),
 			status:   http.StatusOK,
 			empty:    []int{http.StatusFound, http.StatusUnauthorized, http.StatusForbidden},
-			doc:      "Traefik forwardAuth. A valid session answers 200 and sets X-Auth-User, X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session is redirected to the login page. Any other request with no session is 401. A user outside group is 403. scope does not limit a session.",
+			doc:      "Traefik forwardAuth. A valid session or a valid Authorization: Bearer idp_ token answers 200 and sets X-Auth-User, X-Auth-Email, X-Auth-Groups, and X-Auth-Method. A browser with no session is redirected to the login page. Any other request with no session is 401. An invalid, revoked, or expired token, or a token of a disabled user, is 401 with error=\"invalid_token\". A URL under no scope of the token is 403. A user outside group is 403. The scope query does not limit a session.",
 			isPublic: true,
 		},
 		{
