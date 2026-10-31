@@ -87,33 +87,47 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = machine.Close() }()
+	if machine.Get().Kind == loginflow.KindStepUp {
+		s.stepUp(w, r, machine, ip)
+		return
+	}
 
+	retry := func(status int, message pageMessage) {
+		renderSteps(w, r, status, machine.Get().Factors, message)
+	}
 	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
 	password, passwordErr := users.NewPassword(r.PostForm.Get("password"))
 	if loginErr != nil || passwordErr != nil {
-		renderSteps(w, r, http.StatusOK, machine.Get().Factors, msgWrongCredentials)
+		retry(http.StatusOK, msgWrongCredentials)
 		return
 	}
 	userID, err := s.passwords.Verify(r.Context(), machine, login, password, ip)
-	var tooSoon *passwordstep.TooSoonError
-	switch {
-	case errors.Is(err, passwordstep.ErrWrongCredentials):
-		renderSteps(w, r, http.StatusOK, machine.Get().Factors, msgWrongCredentials)
-		return
-	case errors.As(err, &tooSoon):
-		w.Header().Set("Retry-After", retryAfter(tooSoon.RetryAt))
-		renderSteps(w, r, http.StatusTooManyRequests, machine.Get().Factors, msgTooSoon)
-		return
-	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
-		clearFlowCookie(w)
-		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
-		return
-	case err != nil:
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: password step", "err", err)
-		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+	if passwordStepFailed(w, r, err, retry) {
 		return
 	}
 	s.finishStep(w, r, userID, machine.Get())
+}
+
+// passwordStepFailed answers the error of a password step and reports whether it wrote a reply.
+// retry shows the form of the step again with a message.
+func passwordStepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(status int, message pageMessage)) bool {
+	var tooSoon *passwordstep.TooSoonError
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, passwordstep.ErrWrongCredentials):
+		retry(http.StatusOK, msgWrongCredentials)
+	case errors.As(err, &tooSoon):
+		w.Header().Set("Retry-After", retryAfter(tooSoon.RetryAt))
+		retry(http.StatusTooManyRequests, msgTooSoon)
+	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
+		clearFlowCookie(w)
+		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
+	default:
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: password step", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
+	}
+	return true
 }
 
 // finishStep shows the open steps until the flow is complete.

@@ -1,6 +1,10 @@
 package loginflow
 
-import "time"
+import (
+	"time"
+
+	"github.com/popoffvg/miniauth/internal/users"
+)
 
 // FlowVersion is the optimistic-lock counter of one flow.
 // A write stores the next version only when the row still has the previous one.
@@ -21,6 +25,9 @@ type LoginFlow struct {
 	PendingFactor Factor
 	Version       FlowVersion
 	NeedsSecond   bool
+	Kind          FlowKind
+	// UserID is the user a KindStepUp flow verifies. It is zero for KindLogin.
+	UserID users.ID
 }
 
 // EventKind is what a step reports to the flow.
@@ -38,11 +45,13 @@ const (
 // Event is one input to the policy.
 // NeedsSecond is set when the identified user has TOTP enrolled.
 // UnknownAccount is set when an external account is not linked to a user.
+// UserID is the user the factor belongs to. A KindStepUp flow refuses a pass for another user.
 type Event struct {
 	Kind           EventKind
 	Factor         Factor
 	NeedsSecond    bool
 	UnknownAccount bool
+	UserID         users.ID
 }
 
 // Next is the login policy. It is a pure function of the flow and the event.
@@ -73,7 +82,7 @@ func (f LoginFlow) Next(event Event) (LoginFlow, error) {
 }
 
 func (f LoginFlow) pass(event Event) (LoginFlow, error) {
-	if event.Factor == 0 {
+	if event.Factor == 0 || f.Kind == KindStepUp && event.UserID != f.UserID {
 		return f, ErrNoTransition
 	}
 	next := f

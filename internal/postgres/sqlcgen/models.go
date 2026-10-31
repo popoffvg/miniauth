@@ -72,6 +72,8 @@ type LoginFlow struct {
 	PendingFactor int32
 	ExpiresAt     pgtype.Timestamptz
 	SecretSalt    []byte
+	Kind          string
+	UserID        pgtype.UUID
 }
 
 type Resource struct {

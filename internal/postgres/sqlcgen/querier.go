@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error)
 	CountDevices(ctx context.Context) (int64, error)
 	CountIPFailures(ctx context.Context, arg CountIPFailuresParams) (CountIPFailuresRow, error)
 	// A success resets the count for its login. It does not reset the count for its IP.

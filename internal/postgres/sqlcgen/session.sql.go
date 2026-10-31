@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const confirmSessionAuth = `-- name: ConfirmSessionAuth :execrows
+UPDATE sessions
+SET auth_at = $1
+WHERE secret_hash = $2
+  AND user_id = $3
+`
+
+type ConfirmSessionAuthParams struct {
+	AuthAt     pgtype.Timestamptz
+	SecretHash []byte
+	UserID     pgtype.UUID
+}
+
+func (q *Queries) ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error) {
+	result, err := q.db.Exec(ctx, confirmSessionAuth, arg.AuthAt, arg.SecretHash, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countSessions = `-- name: CountSessions :one
 SELECT count(*)::bigint AS n FROM sessions
 `

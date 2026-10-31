@@ -200,7 +200,9 @@ paths:
       description: Checks the password for the flow in the login flow cookie. Origin
         MUST be the public origin, else 403. A complete flow sets the session cookie
         and redirects to the return URL. A wrong login or password shows the form
-        again with 200. A backoff is 429.
+        again with 200. A backoff is 429. A step-up flow reads only the password,
+        checks it for the user of the flow, renews the auth time of the session, and
+        redirects to the return URL.
       operationId: login
       requestBody:
         content:
@@ -370,6 +372,116 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Not Found
+  /tokens:
+    get:
+      description: Lists the personal access tokens of the session user, with the
+        form to make one. With no session it redirects to the login page, which returns
+        here.
+      operationId: tokenPage
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+    post:
+      description: 'Makes a personal access token and shows it once, with Cache-Control:
+        no-store. Origin MUST be the public origin, else 403. A login older than 10
+        minutes starts a step-up instead: the page asks for the password of the session
+        user and returns to GET /tokens.'
+      operationId: createToken
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiTokenFormRequest'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /tokens/{id}/revoke:
+    post:
+      description: Revokes one token of the session user and redirects to GET /tokens.
+        Origin MUST be the public origin, else 403. A token of another user is 404.
+      operationId: revokeToken
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        "303":
+          description: See Other
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
 components:
   schemas:
     ApiCreateUserRequest:
@@ -460,6 +572,23 @@ components:
       required:
       - login
       - password
+      type: object
+    FormDataApiTokenFormRequest:
+      properties:
+        expires:
+          description: The token works until the end of this UTC day. Empty never
+            expires.
+          format: date
+          type: string
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+        scopes:
+          description: One URL prefix per line. No line reaches every URL.
+          type: string
+      required:
+      - name
       type: object
   securitySchemes:
     bearerAuth:

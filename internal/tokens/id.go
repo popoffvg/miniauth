@@ -45,3 +45,12 @@ func (id *ID) UnmarshalText(text []byte) error {
 	*id = ID(parsed)
 	return nil
 }
+
+// ParseID reads the text form. A malformed id is ErrNotFound: no token has it.
+func ParseID(raw string) (ID, error) {
+	parsed, err := uuid.Parse(raw)
+	if err != nil {
+		return ID{}, ErrNotFound
+	}
+	return ID(parsed), nil
+}

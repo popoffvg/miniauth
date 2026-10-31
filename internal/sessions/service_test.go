@@ -247,6 +247,18 @@ func (m *memRepo) Extend(_ context.Context, hash Hash, expiresAt, extendBefore t
 	return true, nil
 }
 
+func (m *memRepo) ConfirmAuth(_ context.Context, hash Hash, userID users.ID, authAt time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	session, ok := m.rows[hash]
+	if !ok || session.UserID != userID {
+		return false, nil
+	}
+	session.AuthAt = authAt
+	m.rows[hash] = session
+	return true, nil
+}
+
 func (m *memRepo) Delete(_ context.Context, hash Hash) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

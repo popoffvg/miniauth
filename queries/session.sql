@@ -36,3 +36,9 @@ WHERE user_id = $1;
 
 -- name: CountSessions :one
 SELECT count(*)::bigint AS n FROM sessions;
+
+-- name: ConfirmSessionAuth :execrows
+UPDATE sessions
+SET auth_at = sqlc.arg(auth_at)
+WHERE secret_hash = sqlc.arg(secret_hash)
+  AND user_id = sqlc.arg(user_id);

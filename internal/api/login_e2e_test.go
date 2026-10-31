@@ -179,7 +179,9 @@ func newBrowser(t *testing.T, server *httptest.Server) *http.Client {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
-	client := server.Client()
+	// A copy, so two browsers of one server do not share a cookie jar.
+	client := new(http.Client)
+	*client = *server.Client()
 	client.Jar = jar
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
