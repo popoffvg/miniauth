@@ -2,11 +2,8 @@ package api
 
 import (
 	"context"
-	_ "embed"
 	"errors"
-	"html/template"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/devices"
@@ -18,20 +15,22 @@ import (
 const sessionsPagePath = "/sessions"
 
 // sessionsPageCSP allows no script. The forms post to this origin only, and no page may frame this one.
-const sessionsPageCSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
-
-//go:embed sessions_page.html
-var sessionsPageHTML string
-
-var sessionsPageTemplate = template.Must(template.New("sessions").Parse(sessionsPageHTML))
+const sessionsPageCSP = "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 // deviceRequest documents the path parameter. The value is the device id, never the cookie.
 type deviceRequest struct {
 	Device string `path:"device" format:"uuid"`
 }
 
+// sessionsPageRequest documents the query of GET /sessions.
+type sessionsPageRequest struct {
+	Done string `query:"done" description:"The result of the last change. The page shows a fixed message for a known value and ignores any other value."`
+}
+
 // ShowPasskeys is false when the router has no passkey service.
 type sessionsPageView struct {
+	Shell        shellView
+	Notice       pageMessage
 	Devices      []deviceView
 	Passkeys     []passkeystep.Passkey
 	ShowPasskeys bool
@@ -41,6 +40,7 @@ type sessionsPageView struct {
 type deviceView struct {
 	ID        devices.ID
 	Name      devices.Name
+	FirstSeen time.Time
 	LastSeen  time.Time
 	IsCurrent bool
 }
@@ -68,11 +68,27 @@ func (s *service) sessionsPage(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "The devices were not loaded.")
 		return
 	}
-	view := sessionsPageView{Devices: make([]deviceView, 0, len(list)), TwoStep: twoStep}
+	user, err := s.accounts.Find(r.Context(), session.UserID)
+	if errors.Is(err, users.ErrNotFound) {
+		s.sessionsPageLogin(w, r)
+		return
+	}
+	if err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: sessions page", "err", err)
+		writeProblem(w, http.StatusInternalServerError, "The devices were not loaded.")
+		return
+	}
+	view := sessionsPageView{
+		Shell:   s.shellFor(r, user, sessionsPagePath),
+		Notice:  doneNotice(r),
+		Devices: make([]deviceView, 0, len(list)),
+		TwoStep: twoStep,
+	}
 	for _, device := range list {
 		view.Devices = append(view.Devices, deviceView{
 			ID:        device.ID,
 			Name:      device.Name,
+			FirstSeen: device.FirstSeen.UTC(),
 			LastSeen:  device.LastSeen.UTC(),
 			IsCurrent: session.DeviceID != (devices.ID{}) && device.ID == session.DeviceID,
 		})
@@ -85,18 +101,8 @@ func (s *service) sessionsPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var page strings.Builder
-	if err = sessionsPageTemplate.Execute(&page, view); err != nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: sessions page", "err", err)
-		writeProblem(w, http.StatusInternalServerError, "The devices were not loaded.")
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", sessionsPageCSP)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(page.String()))
+	writePage(w, r, http.StatusOK, securityPage(view), sessionsPageCSP)
 }
 
 // sessionsPageLogin sends a browser to the login page with this page as the return URL.
@@ -117,16 +123,16 @@ func (s *service) sessionsPageLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *service) signOutDevice(w http.ResponseWriter, r *http.Request) {
-	s.changeDevice(w, r, s.browser.SignOutDevice)
+	s.changeDevice(w, r, s.browser.SignOutDevice, doneSignedOut)
 }
 
 func (s *service) forgetDevice(w http.ResponseWriter, r *http.Request) {
-	s.changeDevice(w, r, s.browser.ForgetDevice)
+	s.changeDevice(w, r, s.browser.ForgetDevice, doneForgotten)
 }
 
 // changeDevice runs change for a device of the session user and redirects to the sessions page.
 // The Origin check comes first, so a cross-site form learns nothing about the session.
-func (s *service) changeDevice(w http.ResponseWriter, r *http.Request, change func(context.Context, users.ID, devices.ID) error) {
+func (s *service) changeDevice(w http.ResponseWriter, r *http.Request, change func(context.Context, users.ID, devices.ID) error, done doneFlag) {
 	if !s.sameOrigin(r) {
 		writeProblem(w, http.StatusForbidden, "The request origin is not allowed.")
 		return
@@ -157,6 +163,6 @@ func (s *service) changeDevice(w http.ResponseWriter, r *http.Request, change fu
 	if deviceID == session.DeviceID {
 		sessions.ClearCookie(w, s.domain)
 	}
-	w.Header().Set("Location", sessionsPagePath)
+	w.Header().Set("Location", withDone(sessionsPagePath, done))
 	w.WriteHeader(http.StatusSeeOther)
 }

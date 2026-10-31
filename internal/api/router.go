@@ -471,6 +471,17 @@ func (s *service) routes() []route {
 			isPublic:    true,
 		},
 		{
+			method:      http.MethodGet,
+			path:        appCSSPath,
+			id:          "appStylesheet",
+			handler:     serveAppCSS,
+			response:    new(string),
+			status:      http.StatusOK,
+			contentType: "text/css",
+			doc:         "The one stylesheet of every page.",
+			isPublic:    true,
+		},
+		{
 			method:   http.MethodPost,
 			path:     passkeyLoginPath + "/options",
 			id:       "passkeyLoginOptions",
@@ -537,7 +548,7 @@ func (s *service) routes() []route {
 			request:  new(passkeyDeleteRequest),
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusOK, http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:      "Deletes one passkey of the session user and redirects to the sessions page. Origin MUST be the public origin, else 403. A login older than 10 minutes shows the step-up password form instead, which returns to the sessions page. A passkey of another user is 404.",
+			doc:      "Deletes one passkey of the session user and redirects to GET /sessions?done=passkey-deleted. Origin MUST be the public origin, else 403. A login older than 10 minutes shows the step-up password form instead, which returns to the sessions page. A passkey of another user is 404.",
 			isPublic: true,
 		},
 		{
@@ -595,7 +606,7 @@ func (s *service) routes() []route {
 			status:      http.StatusOK,
 			contentType: "text/html",
 			empty:       []int{http.StatusFound},
-			doc:         "The default page after a login. It shows the login of the session. With no session it redirects to the login page.",
+			doc:         "The overview page, the default page after a login: the login, the groups, the two-step login state, and the counts of active tokens, devices, and passkeys. With no session it redirects to the login page.",
 			isPublic:    true,
 		},
 		{
@@ -603,6 +614,7 @@ func (s *service) routes() []route {
 			path:        tokensPath,
 			id:          "tokenPage",
 			handler:     s.tokenPage,
+			request:     new(tokenPageRequest),
 			response:    new(htmlPage),
 			status:      http.StatusOK,
 			contentType: "text/html",
@@ -633,7 +645,7 @@ func (s *service) routes() []route {
 			request:  new(tokenRevokeRequest),
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:      "Revokes one token of the session user and redirects to GET /tokens. Origin MUST be the public origin, else 403. A token of another user is 404.",
+			doc:      "Revokes one token of the session user and redirects to GET /tokens?done=token-revoked. Origin MUST be the public origin, else 403. A token of another user is 404.",
 			isPublic: true,
 		},
 		{
@@ -725,6 +737,8 @@ func (s *service) routes() []route {
 			id:       "logout",
 			handler:  s.logout,
 			status:   http.StatusNoContent,
+			empty:    []int{http.StatusSeeOther},
+			doc:      "Deletes the sessions of the request. A browser form is redirected to the login page with 303; any other client gets 204.",
 			isPublic: true,
 		},
 		{
@@ -741,12 +755,13 @@ func (s *service) routes() []route {
 			path:        sessionsPagePath,
 			id:          "listDevices",
 			handler:     s.sessionsPage,
+			request:     new(sessionsPageRequest),
 			response:    new(string),
 			status:      http.StatusOK,
 			contentType: "text/html",
 			empty:       []int{http.StatusFound},
 			errors:      []int{http.StatusUnauthorized},
-			doc:         "HTML page with the devices of the session user. A browser with no session is redirected to the login page. Any other request with no session is 401.",
+			doc:         "The security page: the devices, the passkeys, and the two-step login state of the session user. A browser with no session is redirected to the login page. Any other request with no session is 401.",
 			isPublic:    true,
 		},
 		{
@@ -757,7 +772,7 @@ func (s *service) routes() []route {
 			request:  new(deviceRequest),
 			status:   http.StatusSeeOther,
 			errors:   []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
-			doc:      "Deletes the session of a device of the session user. The device stays. Origin MUST be the public URL origin, else 403. Redirects to the sessions page.",
+			doc:      "Deletes the session of a device of the session user. The device stays. Origin MUST be the public URL origin, else 403. Redirects to GET /sessions?done=signed-out.",
 			isPublic: true,
 		},
 		{
@@ -768,7 +783,7 @@ func (s *service) routes() []route {
 			request:  new(deviceRequest),
 			status:   http.StatusSeeOther,
 			errors:   []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
-			doc:      "Deletes a device of the session user and its session. Origin MUST be the public URL origin, else 403. Redirects to the sessions page.",
+			doc:      "Deletes a device of the session user and its session. Origin MUST be the public URL origin, else 403. Redirects to GET /sessions?done=forgotten.",
 			isPublic: true,
 		},
 		{
@@ -805,7 +820,7 @@ func (s *service) routes() []route {
 			handler:  s.disableTOTP,
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:      "Turns off two-step login and deletes the recovery codes, then redirects to GET /sessions. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up first.",
+			doc:      "Turns off two-step login and deletes the recovery codes, then redirects to GET /sessions?done=two-step-off. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up first.",
 			isPublic: true,
 		},
 	}

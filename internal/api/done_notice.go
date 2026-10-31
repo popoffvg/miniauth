@@ -1,0 +1,48 @@
+package api
+
+import "net/http"
+
+// doneFlag is the query flag of the redirect after a change. It carries no data.
+type doneFlag string
+
+const (
+	doneResourceAdded   doneFlag = "resource-added"
+	doneResourceDeleted doneFlag = "resource-deleted"
+	doneGranted         doneFlag = "granted"
+	doneGrantRevoked    doneFlag = "revoked"
+	doneTokenRevoked    doneFlag = "token-revoked"
+	doneSignedOut       doneFlag = "signed-out"
+	doneForgotten       doneFlag = "forgotten"
+	donePasskeyDeleted  doneFlag = "passkey-deleted"
+	doneTwoStepOff      doneFlag = "two-step-off"
+)
+
+// doneNotices is the fixed message of each flag. A page ignores a flag that is not in this list.
+var doneNotices = []struct {
+	flag    doneFlag
+	message pageMessage
+}{
+	{flag: doneResourceAdded, message: "The resource is added."},
+	{flag: doneResourceDeleted, message: "The resource and its grants are deleted."},
+	{flag: doneGranted, message: "The access is granted."},
+	{flag: doneGrantRevoked, message: "The access is revoked."},
+	{flag: doneTokenRevoked, message: "The token is revoked."},
+	{flag: doneSignedOut, message: "The device is signed out."},
+	{flag: doneForgotten, message: "The device is forgotten."},
+	{flag: donePasskeyDeleted, message: "The passkey is deleted."},
+	{flag: doneTwoStepOff, message: "Two-step login is off."},
+}
+
+func doneNotice(r *http.Request) pageMessage {
+	flag := doneFlag(r.URL.Query().Get("done"))
+	for _, notice := range doneNotices {
+		if notice.flag == flag {
+			return notice.message
+		}
+	}
+	return ""
+}
+
+func withDone(path string, flag doneFlag) string {
+	return path + "?done=" + string(flag)
+}

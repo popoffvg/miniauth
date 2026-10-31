@@ -11,17 +11,15 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/totpstep"
-	"github.com/popoffvg/miniauth/internal/users"
 )
 
 func TestRenderPageSetsHeaders(t *testing.T) {
-	login, err := users.ParseLogin("ada")
-	require.NoError(t, err)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
-	renderPage(rec, req, http.StatusOK, pageSignedIn, pageView{Login: login})
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "You are signed in as ada.")
+	renderDenied(rec, req, http.StatusForbidden, msgCrossOrigin)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), string(msgCrossOrigin))
+	assert.Contains(t, rec.Body.String(), `<link rel="stylesheet" href="/assets/app.css">`)
 	assert.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
 	assert.Equal(t, pageCSP, rec.Header().Get("Content-Security-Policy"))
 	assert.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))

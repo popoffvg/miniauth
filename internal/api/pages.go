@@ -2,10 +2,10 @@ package api
 
 import (
 	"bytes"
-	"embed"
-	"html/template"
 	"net/http"
 	"strings"
+
+	"github.com/a-h/templ"
 
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/recovery"
@@ -14,38 +14,51 @@ import (
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
-//go:embed pages/*.html
-var pageFiles embed.FS
-
-// pageTemplates names each template by its file name. layout.html defines "head" and "foot".
-var pageTemplates = template.Must(template.ParseFS(pageFiles, "pages/*.html"))
-
-// pageName is the file name of one HTML page in pages/.
+// pageName names one page that reads a pageView.
 type pageName string
 
 const (
-	pageLogin       pageName = "login.html"
-	pageSteps       pageName = "steps.html"
-	pageDenied      pageName = "denied.html"
-	pageSignedIn    pageName = "signed_in.html"
-	pageStepUp      pageName = "step_up.html"
-	pageTokens      pageName = "tokens.html"
-	pageRecover     pageName = "recover.html"
-	pageRecoverSent pageName = "recover_sent.html"
-	pageReset       pageName = "reset.html"
-	pageResetDone   pageName = "reset_done.html"
-	pageInvite      pageName = "invite.html"
+	pageLogin       pageName = "login"
+	pageSteps       pageName = "steps"
+	pageDenied      pageName = "denied"
+	pageStepUp      pageName = "step-up"
+	pageTokens      pageName = "tokens"
+	pageRecover     pageName = "recover"
+	pageRecoverSent pageName = "recover-sent"
+	pageReset       pageName = "reset"
+	pageResetDone   pageName = "reset-done"
+	pageInvite      pageName = "invite"
 	// pageAddKey is the form that adds a passkey. It loads passkey.js. The handler MUST set Script in the view.
-	pageAddKey pageName = "passkey_new.html"
+	pageAddKey pageName = "passkey-new"
 	// pageTokenCreated shows the clear token. The handler MUST set Cache-Control: no-store.
-	pageTokenCreated pageName = "token_created.html"
-	pageTOTP         pageName = "totp.html"
-	pageRecoveryCode pageName = "recovery_code.html"
+	pageTokenCreated pageName = "token-created"
+	pageTOTP         pageName = "totp"
+	pageRecoveryCode pageName = "recovery-code"
 	// pageTOTPEnroll shows the TOTP secret. The handler MUST set Cache-Control: no-store.
-	pageTOTPEnroll pageName = "totp_enroll.html"
+	pageTOTPEnroll pageName = "totp-enroll"
 	// pageRecoveryCodes shows the clear recovery codes. The handler MUST set Cache-Control: no-store.
-	pageRecoveryCodes pageName = "recovery_codes.html"
+	pageRecoveryCodes pageName = "recovery-codes"
 )
+
+// pageComponents is the templ component of each pageName.
+var pageComponents = map[pageName]func(pageView) templ.Component{
+	pageLogin:         loginForm,
+	pageSteps:         stepChooser,
+	pageDenied:        deniedPage,
+	pageStepUp:        stepUpForm,
+	pageTokens:        tokensPage,
+	pageRecover:       recoverForm,
+	pageRecoverSent:   recoverSentPage,
+	pageReset:         resetForm,
+	pageResetDone:     resetDonePage,
+	pageInvite:        inviteForm,
+	pageAddKey:        passkeyNewPage,
+	pageTokenCreated:  tokenCreatedPage,
+	pageTOTP:          totpForm,
+	pageRecoveryCode:  recoveryCodeForm,
+	pageTOTPEnroll:    totpEnrollPage,
+	pageRecoveryCodes: recoveryCodesPage,
+}
 
 // pageMessage is a sentence a page shows to the user. It MUST NOT tell which logins exist,
 // except on the invite form, which needs an open invite.
@@ -74,14 +87,22 @@ const (
 
 // pageView is the data of every page. A page reads only the fields it needs.
 type pageView struct {
+	// Shell is the signed-in user and the menu. A page of the app shell MUST have it.
+	Shell   shellView
 	Message pageMessage
-	Steps   []loginStep
+	// Notice is the result of the last change, from the done query flag.
+	Notice pageMessage
+	// Prompt tells why the page asks for something. It is not an error.
+	Prompt pageMessage
+	Steps  []loginStep
 	// Links are the other open form steps next to the form of one step.
 	Links    []loginStep
 	Buttons  []loginStep
 	Login    users.Login
 	Telegram telegramWidget
-	Tokens   []tokens.Token
+	Tokens   tokenTable
+	// TokenForm is the form of a refused POST /tokens. It holds no secret.
+	TokenForm tokenForm
 	// NewToken is set only on pageTokenCreated.
 	NewToken *tokens.Secret
 	// Recovery shows the "Forgot password" link.
@@ -98,7 +119,7 @@ type pageView struct {
 	RecoveryCodes []totpstep.RecoveryCode
 }
 
-// pageCSP allows inline style and nothing else. form-action is not set:
+// pageCSP allows the stylesheet of this origin and nothing else. form-action is not set:
 // a browser applies it to the 303 after the form, and the return URL can be on another subdomain.
 var pageCSP = buildCSP()
 
@@ -145,36 +166,43 @@ func buildCSP(features ...[]cspSource) string {
 			parts = append(parts, directive+" "+strings.Join(sources, " "))
 		}
 	}
-	return strings.Join(append(parts, "style-src 'unsafe-inline'", "base-uri 'none'", "frame-ancestors 'none'"), "; ")
+	return strings.Join(append(parts, "style-src 'self'", "base-uri 'none'", "frame-ancestors 'none'"), "; ")
 }
 
-// pageCSPOf adds the sources of the passkey script and of the Telegram widget when a pageView shows them.
-func pageCSPOf(view any) string {
-	v, ok := view.(pageView)
-	if !ok {
-		return pageCSP
-	}
+// pageCSPOf adds the sources of the passkey script and of the Telegram widget when the view shows them.
+func pageCSPOf(view pageView) string {
 	var features [][]cspSource
-	if v.Script {
+	if view.Script {
 		features = append(features, passkeySources)
 	}
-	if v.Telegram != (telegramWidget{}) {
+	if view.Telegram != (telegramWidget{}) {
 		features = append(features, telegramSources)
 	}
 	return buildCSP(features...)
 }
 
-// view is a pageView, or the view type of a page that has its own.
-func renderPage(w http.ResponseWriter, r *http.Request, status int, page pageName, view any) {
+// renderPage writes the page of name with view.
+func renderPage(w http.ResponseWriter, r *http.Request, status int, name pageName, view pageView) {
+	component, ok := pageComponents[name]
+	if !ok {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: render page: no component", "page", string(name))
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	writePage(w, r, status, component(view), pageCSPOf(view))
+}
+
+// writePage renders page first, so a render error still answers 500 with no partial body.
+func writePage(w http.ResponseWriter, r *http.Request, status int, page templ.Component, csp string) {
 	var body bytes.Buffer
-	if err := pageTemplates.ExecuteTemplate(&body, string(page), view); err != nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: render page", "page", string(page), "err", err)
+	if err := page.Render(r.Context(), &body); err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: render page", "path", r.URL.Path, "err", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 	header := w.Header()
 	header.Set("Content-Type", "text/html; charset=utf-8")
-	header.Set("Content-Security-Policy", pageCSPOf(view))
+	header.Set("Content-Security-Policy", csp)
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("X-Frame-Options", "DENY")
 	if header.Get("Referrer-Policy") == "" {

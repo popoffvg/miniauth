@@ -135,7 +135,7 @@ func TestPasskeyEndToEnd(t *testing.T) {
 		list := get(t, ownerBrowser, base+sessionsPagePath)
 		require.Equal(t, http.StatusOK, list.status)
 		assert.Contains(t, list.body, "laptop")
-		assert.Contains(t, list.body, "never")
+		assert.Contains(t, list.body, `data-label="Last used"><span class="subtle">Never</span>`)
 		assert.NotContains(t, list.body, "<script")
 		assert.Regexp(t, passkeyDeletePattern, list.body)
 	})
@@ -248,7 +248,7 @@ func TestPasskeyEndToEnd(t *testing.T) {
 	t.Run("the owner deletes the passkey", func(t *testing.T) {
 		resp := postForm(t, ownerBrowser, base+passkeysPath+"/"+passkeyID+"/delete", base, url.Values{})
 		require.Equal(t, http.StatusSeeOther, resp.status)
-		assert.Equal(t, base+sessionsPagePath, resp.header.Get("Location"))
+		assert.Equal(t, base+withDone(sessionsPagePath, donePasskeyDeleted), resp.header.Get("Location"))
 		assert.Empty(t, listPasskeys(t, passkeys, owner.id))
 
 		browser := newPasskeyBrowser(t, server)

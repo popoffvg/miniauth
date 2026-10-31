@@ -1,5 +1,0 @@
-{{define "step buttons"}}{{range .Buttons}}{{if .Script}}<button type="button" data-passkey-login="{{.Path}}">{{.Label}}</button>
-{{else}}<form method="post" action="{{.Path}}"><button type="submit">{{.Label}}</button></form>
-{{end}}{{end}}{{if .Script}}<p class="message" role="alert" data-passkey-message hidden></p>
-<script src="/assets/passkey.js"></script>
-{{end}}{{end}}

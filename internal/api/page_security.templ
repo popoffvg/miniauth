@@ -1,0 +1,258 @@
+package api
+
+import "github.com/popoffvg/miniauth/internal/passkeystep"
+
+templ securityPage(view sessionsPageView) {
+	@shellLayout("Security", view.Shell) {
+		@pageHeader("Security", "The devices that signed in to your account, your passkeys, and two-step login.") {
+			if view.ShowPasskeys {
+				@primaryLink(passkeyNewPath, iconPlus, "Add a passkey")
+			}
+		}
+		@doneAlert(view.Notice, sessionsPagePath)
+		<div class="stack-lg">
+			if view.TwoStep.Shown {
+				@twoStepCard(view.TwoStep)
+			}
+			<section class="card" aria-labelledby="devices-title">
+				<div class="card-header">
+					<div>
+						<h2 id="devices-title">Devices</h2>
+						<p>Each browser that signed in. Sign out ends its session; forget also removes the device.</p>
+					</div>
+				</div>
+				if len(view.Devices) > 0 {
+					@deviceRows(view.Devices)
+				} else {
+					@emptyState(iconDevice, "No device is known.", "A device shows here after a sign-in.")
+				}
+			</section>
+			if view.ShowPasskeys {
+				<section class="card" aria-labelledby="passkeys-title">
+					<div class="card-header">
+						<div>
+							<h2 id="passkeys-title">Passkeys</h2>
+							<p>A passkey signs you in with the screen lock of your device, without a password.</p>
+						</div>
+					</div>
+					if len(view.Passkeys) > 0 {
+						@passkeyRows(view.Passkeys)
+					} else {
+						@emptyState(iconPasskey, "No passkey is stored.", "Add a passkey to sign in without a password.") {
+							@primaryLink(passkeyNewPath, iconPlus, "Add a passkey")
+						}
+					}
+				</section>
+			}
+		</div>
+	}
+}
+
+templ twoStepCard(state twoStepView) {
+	<section class="card" aria-labelledby="two-step-title">
+		<div
+			class="setting"
+			if state.On {
+				data-two-step="on"
+			} else {
+				data-two-step="off"
+			}
+		>
+			<div>
+				<h2 class="setting-title" id="two-step-title">
+					@icon(iconPhone)
+					Two-step login
+					if state.On {
+						@badge(toneOn, "On")
+					} else {
+						@badge(toneOff, "Off")
+					}
+				</h2>
+				if state.On {
+					<p>Each sign-in with a password also asks for a code from your authenticator app.</p>
+				} else {
+					<p>Add a code from an authenticator app to each sign-in with a password.</p>
+				}
+			</div>
+			if state.On {
+				@confirmButton(totpDisablePath, "Turn off", "Turn off two-step login? Your recovery codes stop working.", "Turn off two-step login")
+			} else if state.CanEnroll {
+				<form method="post" action={ templ.SafeURL(totpEnrollPath) }>
+					<button class="btn btn-primary" type="submit">Turn on two-step login</button>
+				</form>
+			}
+		</div>
+	</section>
+}
+
+templ deviceRows(rows []deviceView) {
+	<table class="table">
+		<thead>
+			<tr>
+				<th scope="col">Device</th>
+				<th scope="col">First seen</th>
+				<th scope="col">Last seen</th>
+				<th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, device := range rows {
+				<tr>
+					<td>
+						<div class="cell-main">
+							{ device.Name.String() }
+							if device.IsCurrent {
+								<span class="badge badge-current" data-current-device>This device</span>
+							}
+						</div>
+					</td>
+					<td class="num" data-label="First seen">
+						@timeCell(timeText(device.FirstSeen))
+					</td>
+					<td class="num" data-label="Last seen">
+						@timeCell(timeText(device.LastSeen))
+					</td>
+					<td class="actions">
+						@rowMenu(device.Name.String()) {
+							<form method="post" action={ templ.SafeURL("/sessions/" + device.ID.String() + "/signout") }>
+								<button class="menu-item" type="submit">
+									@icon(iconSignOut)
+									Sign out
+								</button>
+							</form>
+							@confirmPost("/sessions/"+device.ID.String()+"/forget", "Forget device",
+								"Forget “"+device.Name.String()+"”? It is signed out, and its next sign-in counts as a new device.", "Forget device")
+						}
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ passkeyRows(rows []passkeystep.Passkey) {
+	<table class="table">
+		<thead>
+			<tr>
+				<th scope="col">Name</th>
+				<th scope="col">Created</th>
+				<th scope="col">Last used</th>
+				<th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, key := range rows {
+				<tr>
+					<td><div class="cell-main">{ key.Name.String() }</div></td>
+					<td class="num" data-label="Created">
+						@timeCell(timeText(key.CreatedAt))
+					</td>
+					<td class="num" data-label="Last used">
+						@timeCell(timeText(key.LastUsedAt))
+					</td>
+					<td class="actions">
+						@rowMenu(key.Name.String()) {
+							@confirmPost(passkeysPath+"/"+key.ID.String()+"/delete", "Delete passkey",
+								"Delete passkey “"+key.Name.String()+"”? It cannot sign you in again. This cannot be undone.", "Delete passkey")
+						}
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ passkeyNewPage(view pageView) {
+	@shellLayout("Add a passkey", view.Shell) {
+		@breadcrumbs(sessionsPagePath, "Security", "Add a passkey")
+		@pageHeader("Add a passkey", "Your browser asks for the screen lock of this device or for a security key.")
+		@errorAlert(view.Message)
+		<p class="alert alert-error" role="alert" data-passkey-message hidden></p>
+		<section class="card">
+			<form data-passkey-add={ passkeysPath }>
+				<div class="card-body">
+					<div class="field">
+						<label for="name"><span>Name <span class="required" aria-hidden="true">*</span></span></label>
+						<input id="name" name="name" maxlength="64" required autofocus aria-describedby="name-help"/>
+						<p class="help" id="name-help">A name you know this passkey by, for example "Laptop".</p>
+					</div>
+				</div>
+				<div class="card-footer">
+					<a class="btn btn-secondary" href={ templ.SafeURL(sessionsPagePath) }>Cancel</a>
+					<button class="btn btn-primary" type="submit">Add a passkey</button>
+				</div>
+			</form>
+		</section>
+		<script src="/assets/passkey.js"></script>
+	}
+}
+
+templ totpEnrollPage(view pageView) {
+	@shellLayout("Turn on two-step login", view.Shell) {
+		@breadcrumbs(sessionsPagePath, "Security", "Two-step login")
+		@pageHeader("Turn on two-step login", "Connect an authenticator app, then type one code to confirm.")
+		@errorAlert(view.Message)
+		<section class="card">
+			if view.Enrollment != nil {
+				<div class="card-body">
+					<div class="enroll">
+						<svg class="qr" xmlns="http://www.w3.org/2000/svg" viewBox={ view.Enrollment.QR.viewBox() } width="200" height="200" role="img" aria-label="QR code with the key" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"></rect><path fill="#000" d={ string(view.Enrollment.QR.Path) }></path></svg>
+						<div class="stack">
+							<p><strong>1.</strong> Scan the QR code with your authenticator app.</p>
+							<div>
+								<p class="muted small">Or type this key:</p>
+								<code class="secret-value" id="totp-secret">{ view.Enrollment.Secret.Reveal() }</code>
+							</div>
+							<p><strong>2.</strong> Type the code the app shows.</p>
+						</div>
+					</div>
+				</div>
+			}
+			<form method="post" action={ templ.SafeURL(totpConfirmPath) }>
+				<div class="card-body">
+					<div class="field">
+						<label for="code">Code from the app</label>
+						<input
+							class="mono"
+							id="code"
+							name="code"
+							inputmode="numeric"
+							autocomplete="one-time-code"
+							maxlength="16"
+							required
+							autofocus
+							if view.Message != "" {
+								aria-invalid="true"
+							}
+						/>
+					</div>
+				</div>
+				<div class="card-footer">
+					<a class="btn btn-secondary" href={ templ.SafeURL(sessionsPagePath) }>Cancel</a>
+					<button class="btn btn-primary" type="submit">Turn on</button>
+				</div>
+			</form>
+		</section>
+	}
+}
+
+templ recoveryCodesPage(view pageView) {
+	@shellLayout("Recovery codes", view.Shell) {
+		@pageHeader("Two-step login is on", "Save your recovery codes now. Each code works one time, in place of a code from the app.")
+		<section class="card">
+			<div class="card-body">
+				@secretBox("You will not see these codes again.") {
+					<ol class="codes">
+						for _, code := range view.RecoveryCodes {
+							<li><code>{ code.Reveal() }</code></li>
+						}
+					</ol>
+					<p class="secret-help">Select the list to copy it. Keep it apart from your password.</p>
+				}
+			</div>
+			<div class="card-footer">
+				<a class="btn btn-primary" href={ templ.SafeURL(sessionsPagePath) }>Done</a>
+			</div>
+		</section>
+	}
+}

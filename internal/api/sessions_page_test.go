@@ -25,7 +25,7 @@ const (
 
 func TestSessionsPageListsTheDevices(t *testing.T) {
 	page := newDevicePage(t)
-	user := users.NewID()
+	user := page.account(t, "ada")
 	first := page.login(t, user, firefoxAgent, nil)
 	again := page.login(t, user, firefoxAgent, first.device)
 	page.login(t, user, chromeAgent, nil)
@@ -43,7 +43,7 @@ func TestSessionsPageListsTheDevices(t *testing.T) {
 	body := rec.Body.String()
 	assert.Contains(t, body, "Firefox on macOS")
 	assert.Contains(t, body, "Chrome on Windows")
-	assert.Equal(t, 1, strings.Count(body, "(this device)"))
+	assert.Equal(t, 1, strings.Count(body, "data-current-device"))
 	assert.Equal(t, 2, strings.Count(body, "/signout"))
 	assert.Contains(t, body, "/sessions/"+again.deviceID.String()+"/forget")
 	assert.NotContains(t, body, again.session.CookieValue())
@@ -76,7 +76,7 @@ func TestSignOutDeviceKeepsTheOtherDevice(t *testing.T) {
 
 	rec := page.post(t, "/sessions/"+phone.deviceID.String()+"/signout", laptop.session, publicOrigin)
 	require.Equal(t, http.StatusSeeOther, rec.Code)
-	assert.Equal(t, sessionsPagePath, rec.Header().Get("Location"))
+	assert.Equal(t, withDone(sessionsPagePath, doneSignedOut), rec.Header().Get("Location"))
 	assert.Empty(t, rec.Header().Values("Set-Cookie"))
 
 	_, _, err := page.browser.Open(t.Context(), phone.session)
@@ -147,6 +147,20 @@ func TestDeviceChangeRefusesABadOrigin(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestLogoutSendsABrowserFormToTheLoginPage(t *testing.T) {
+	page := newDevicePage(t)
+	laptop := page.login(t, users.NewID(), firefoxAgent, nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/logout", nil)
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.AddCookie(&http.Cookie{Name: sessions.CookieName, Value: laptop.session.CookieValue()})
+	rec := httptest.NewRecorder()
+	page.router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, publicOrigin+"/login", rec.Header().Get("Location"))
+	_, _, err := page.browser.Open(t.Context(), laptop.session)
+	require.ErrorIs(t, err, sessions.ErrNotFound)
+}
+
 func TestLogoutKeepsTheDeviceCookie(t *testing.T) {
 	page := newDevicePage(t)
 	laptop := page.login(t, users.NewID(), firefoxAgent, nil)
@@ -158,10 +172,11 @@ func TestLogoutKeepsTheDeviceCookie(t *testing.T) {
 }
 
 type devicePage struct {
-	repo    *memDeviceSessions
-	browser *sessions.Service
-	router  http.Handler
-	domain  sessions.Domain
+	accounts *memRepo
+	repo     *memDeviceSessions
+	browser  *sessions.Service
+	router   http.Handler
+	domain   sessions.Domain
 }
 
 type deviceLogin struct {
@@ -175,9 +190,20 @@ func newDevicePage(t *testing.T) *devicePage {
 	repo := newMemDeviceSessions()
 	browser := sessions.NewService(repo)
 	domain := mustDomain(t, ".example.test")
-	router, err := NewRouter(users.NewService(&memRepo{}), browser, nil, domain, mustPublicURL(t, publicOrigin), hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler))
+	accounts := &memRepo{}
+	router, err := NewRouter(users.NewService(accounts), browser, nil, domain, mustPublicURL(t, publicOrigin), hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	return &devicePage{repo: repo, browser: browser, router: router, domain: domain}
+	return &devicePage{accounts: accounts, repo: repo, browser: browser, router: router, domain: domain}
+}
+
+// account stores a user, so the page can show its login.
+func (p *devicePage) account(t *testing.T, raw string) users.ID {
+	t.Helper()
+	login, err := users.ParseLogin(raw)
+	require.NoError(t, err)
+	account := users.User{ID: users.NewID(), Login: login}
+	require.NoError(t, p.accounts.Create(t.Context(), account, users.Identity{}))
+	return account.ID
 }
 
 // login is what the login page does after a correct password.

@@ -19,6 +19,7 @@ const (
 // offered is nil for a step the login page always offers.
 // Second is true for a step that counts only after the first factor of a user with TOTP.
 // Fallback is true for a step that a page offers only as a link next to the form of another step.
+// Icon is the icon of the step button or link.
 type loginStep struct {
 	Factor   loginflow.Factor
 	Path     string
@@ -27,18 +28,19 @@ type loginStep struct {
 	Script   bool
 	Second   bool
 	Fallback bool
+	Icon     iconName
 	widget   func(*service, *pageView)
 	offered  func(*service) bool
 }
 
 // loginSteps is every step the login page offers, in the order the pages list them.
 var loginSteps = []loginStep{
-	{Factor: loginflow.FactorPassword, Path: "/login", Label: "Login and password", Page: pageLogin},
-	{Factor: loginflow.FactorGoogle, Path: googleLoginPath, Label: "Sign in with Google", offered: (*service).googleOffered},
+	{Factor: loginflow.FactorPassword, Path: "/login", Label: "Login and password", Icon: iconLock, Page: pageLogin},
+	{Factor: loginflow.FactorGoogle, Path: googleLoginPath, Label: "Sign in with Google", Icon: iconGoogle, offered: (*service).googleOffered},
 	{Factor: loginflow.FactorTelegram, Path: TelegramCallbackPath, Label: "Sign in with Telegram", widget: (*service).showTelegramWidget, offered: (*service).telegramOffered},
-	{Factor: loginflow.FactorPasskey, Path: passkeyLoginPath, Label: "Sign in with a passkey", Script: true, offered: (*service).passkeyOffered},
-	{Factor: loginflow.FactorTOTP, Path: loginTOTPPath, Label: "Code from the authenticator app", Page: pageTOTP, Second: true, offered: (*service).totpOffered},
-	{Factor: loginflow.FactorRecovery, Path: loginRecoveryCodePath, Label: "Use a recovery code", Page: pageRecoveryCode, Second: true, Fallback: true, offered: (*service).totpOffered},
+	{Factor: loginflow.FactorPasskey, Path: passkeyLoginPath, Label: "Sign in with a passkey", Icon: iconPasskey, Script: true, offered: (*service).passkeyOffered},
+	{Factor: loginflow.FactorTOTP, Path: loginTOTPPath, Label: "Code from the authenticator app", Icon: iconPhone, Page: pageTOTP, Second: true, offered: (*service).totpOffered},
+	{Factor: loginflow.FactorRecovery, Path: loginRecoveryCodePath, Label: "Use a recovery code", Icon: iconKey, Page: pageRecoveryCode, Second: true, Fallback: true, offered: (*service).totpOffered},
 }
 
 // openSteps is the offered steps of the stage of flow whose factor the flow has not collected yet.

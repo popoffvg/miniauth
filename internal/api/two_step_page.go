@@ -60,7 +60,7 @@ func (s *service) enrollTOTP(w http.ResponseWriter, r *http.Request) {
 		s.twoStepFailed(w, r, err)
 		return
 	}
-	s.renderEnrollment(w, r, enrollment, "")
+	s.renderEnrollment(w, r, user, enrollment, "")
 }
 
 // confirmTOTP turns on TOTP when the code matches, and shows the recovery codes once.
@@ -81,7 +81,7 @@ func (s *service) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 			s.twoStepFailed(w, r, pendingErr)
 			return
 		}
-		s.renderEnrollment(w, r, enrollment, msgWrongCode)
+		s.renderEnrollment(w, r, user, enrollment, msgWrongCode)
 		return
 	case err != nil:
 		s.twoStepFailed(w, r, err)
@@ -89,7 +89,7 @@ func (s *service) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The codes are in this body only. They MUST NOT reach a URL, a log, or a cache.
 	w.Header().Set("Cache-Control", "no-store")
-	renderPage(w, r, http.StatusOK, pageRecoveryCodes, pageView{RecoveryCodes: codes})
+	renderPage(w, r, http.StatusOK, pageRecoveryCodes, pageView{Shell: s.shellFor(r, user, sessionsPagePath), RecoveryCodes: codes})
 }
 
 // disableTOTP turns off TOTP and deletes the recovery codes.
@@ -102,7 +102,7 @@ func (s *service) disableTOTP(w http.ResponseWriter, r *http.Request) {
 		s.twoStepFailed(w, r, err)
 		return
 	}
-	http.Redirect(w, r, sessionsPagePath, http.StatusSeeOther)
+	http.Redirect(w, r, withDone(sessionsPagePath, doneTwoStepOff), http.StatusSeeOther)
 }
 
 // twoStepUser runs the checks of a two-step login form POST and returns the session user.
@@ -145,7 +145,7 @@ func (s *service) twoStepView(r *http.Request, userID users.ID) (twoStepView, er
 	return twoStepView{Shown: true, On: on, CanEnroll: !on && s.totp.EnrollmentOn()}, nil
 }
 
-func (s *service) renderEnrollment(w http.ResponseWriter, r *http.Request, enrollment totpstep.Enrollment, message pageMessage) {
+func (s *service) renderEnrollment(w http.ResponseWriter, r *http.Request, user users.User, enrollment totpstep.Enrollment, message pageMessage) {
 	image, err := newQRImage(enrollment.URI)
 	if err != nil {
 		s.twoStepFailed(w, r, err)
@@ -153,7 +153,7 @@ func (s *service) renderEnrollment(w http.ResponseWriter, r *http.Request, enrol
 	}
 	// The secret is in this body only. It MUST NOT reach a URL, a log, or a cache.
 	w.Header().Set("Cache-Control", "no-store")
-	renderPage(w, r, http.StatusOK, pageTOTPEnroll, pageView{Message: message, Enrollment: &enrollmentView{Secret: enrollment.Secret, QR: image}})
+	renderPage(w, r, http.StatusOK, pageTOTPEnroll, pageView{Shell: s.shellFor(r, user, sessionsPagePath), Message: message, Enrollment: &enrollmentView{Secret: enrollment.Secret, QR: image}})
 }
 
 // twoStepFailed answers an error of an enrollment step.

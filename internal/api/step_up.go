@@ -26,7 +26,7 @@ func (s *service) askStepUp(w http.ResponseWriter, r *http.Request, user users.U
 		return
 	}
 	setFlowCookie(w, id, secret, time.Now())
-	renderPage(w, r, http.StatusOK, pageStepUp, pageView{Login: user.Login, Message: message})
+	renderPage(w, r, http.StatusOK, pageStepUp, pageView{Login: user.Login, Prompt: message})
 }
 
 // stepUp checks the password of the flow user. The login in the form is not read,

@@ -21,8 +21,6 @@ const linkingFactor = loginflow.FactorPassword
 // in the pending link cookie, so a password login alone never links: the user confirms on this page.
 const linkPagePath = "/link"
 
-const pageLink pageName = "link.html"
-
 const (
 	msgLinkFailed pageMessage = "The account was not linked. Try again."
 	msgLinkTaken  pageMessage = "This account is linked to another user, or you already have an account of this provider. It was not linked."
@@ -56,7 +54,7 @@ type linkForm struct {
 	Return string `formData:"return" description:"The page to open after the choice, as in GET /link."`
 }
 
-// linkPageView is the data of link.html.
+// linkPageView is the data of the link confirm page.
 type linkPageView struct {
 	Login    users.Login
 	Provider string
@@ -128,12 +126,12 @@ func (s *service) linkPage(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusInternalServerError, msgLinkFailed)
 		return
 	}
-	renderPage(w, r, http.StatusOK, pageLink, linkPageView{
+	writePage(w, r, http.StatusOK, linkConfirmPage(linkPageView{
 		Login:    user.Login,
 		Provider: providerName(link.Account.Kind),
 		Subject:  link.Account.Subject,
 		Return:   returnURL,
-	})
+	}), pageCSP)
 }
 
 // confirmLink links or discards the pending link of this browser, then redirects to the return URL.
