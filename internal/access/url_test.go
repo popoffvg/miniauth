@@ -113,6 +113,14 @@ func TestParseRequestURL(t *testing.T) {
 		{name: "encoded slash", scheme: "https", host: "dash.example.test", uri: "/public%2F..%2Fadmin"},
 		{name: "encoded dot", scheme: "https", host: "dash.example.test", uri: "/public/%2e%2e/admin"},
 		{name: "backslash", scheme: "https", host: "dash.example.test", uri: "/public\\admin"},
+		{name: "encoded letter", scheme: "https", host: "dash.example.test", uri: "/%61dmin"},
+		{name: "encoded upper case letter", scheme: "https", host: "dash.example.test", uri: "/%41dmin"},
+		{name: "encoded digit", scheme: "https", host: "dash.example.test", uri: "/v%31"},
+		{name: "encoded tilde", scheme: "https", host: "dash.example.test", uri: "/%7Euser"},
+		{name: "encoded sub-delim", scheme: "https", host: "dash.example.test", uri: "/a%21b"},
+		{name: "encoded colon", scheme: "https", host: "dash.example.test", uri: "/a%3Ab"},
+		{name: "encoded space", scheme: "https", host: "dash.example.test", uri: "/a%20b", want: "https://dash.example.test/a%20b", ok: true},
+		{name: "encoded percent", scheme: "https", host: "dash.example.test", uri: "/a%25b", want: "https://dash.example.test/a%25b", ok: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
