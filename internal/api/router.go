@@ -11,6 +11,7 @@ import (
 	"github.com/swaggest/openapi-go"
 	"github.com/swaggest/openapi-go/openapi3"
 
+	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
@@ -54,18 +55,20 @@ func (noGroups) List(context.Context, users.ID) ([]groups.Name, error) {
 }
 
 type service struct {
-	accounts  *users.Service
-	browser   *sessions.Service
-	groups    groupList
-	grants    urlAccess
-	domain    sessions.Domain
-	publicURL PublicURL
-	admin     AdminTokenHash
-	tokens    *tokens.Service
-	ready     Readiness
-	flows     *loginflow.LoginFlows
-	passwords *passwordstep.Service
-	spec      []byte
+	accounts *users.Service
+	browser  *sessions.Service
+	groups   groupList
+	grants   urlAccess
+	// accessAdmin is nil unless WithAccessAdmin sets it.
+	accessAdmin *access.Service
+	domain      sessions.Domain
+	publicURL   PublicURL
+	admin       AdminTokenHash
+	tokens      *tokens.Service
+	ready       Readiness
+	flows       *loginflow.LoginFlows
+	passwords   *passwordstep.Service
+	spec        []byte
 }
 
 // WithLogin serves the login page. Without it, the login routes answer 503.
@@ -201,6 +204,84 @@ func (s *service) routes() []route {
 				http.StatusUnsupportedMediaType,
 			},
 			doc: "Stores the SHA-256 of a token made outside miniauth, so a client keeps its token. The token does not expire. 201 stores the token. 200 means the user already has the token: nothing changes. 409 means another user has the token. 404 means the login is not known.",
+		},
+		{
+			method:   http.MethodPost,
+			path:     "/api/v1/resources",
+			id:       "createResource",
+			handler:  s.createResource,
+			request:  new(createResourceRequest),
+			response: new(resourceBody),
+			status:   http.StatusCreated,
+			errors: []int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusConflict,
+				http.StatusRequestEntityTooLarge,
+				http.StatusUnsupportedMediaType,
+				http.StatusServiceUnavailable,
+			},
+			doc: "Creates a resource that /auth/check protects. url MUST be an absolute http or https URL with no query. Only the host and the path are stored, and a reply url is the host and the path with no scheme. A name, or a host and path, that is already stored is 409.",
+		},
+		{
+			method:   http.MethodGet,
+			path:     "/api/v1/resources",
+			id:       "listResources",
+			handler:  s.listResources,
+			response: new(resourceList),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
+			doc:      "Lists every resource in name order.",
+		},
+		{
+			method:  http.MethodDelete,
+			path:    "/api/v1/resources/{name}",
+			id:      "deleteResource",
+			handler: s.deleteResource,
+			request: new(resourcePath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:     "Deletes the resource and its grants.",
+		},
+		{
+			method:   http.MethodPost,
+			path:     "/api/v1/grants",
+			id:       "createGrant",
+			handler:  s.createGrant,
+			request:  new(createGrantRequest),
+			response: new(grantBody),
+			status:   http.StatusCreated,
+			errors: []int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusNotFound,
+				http.StatusConflict,
+				http.StatusRequestEntityTooLarge,
+				http.StatusUnsupportedMediaType,
+				http.StatusServiceUnavailable,
+			},
+			doc: "Gives one user or one group one resource. The body names exactly one of user (a login) and group. expires_at is RFC 3339 and MUST be in the future; with no expires_at the grant does not expire. An unknown user or resource is 404. A grant that already exists is 409.",
+		},
+		{
+			method:   http.MethodGet,
+			path:     "/api/v1/grants",
+			id:       "listGrants",
+			handler:  s.listGrants,
+			request:  new(listGrantsRequest),
+			response: new(grantList),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:      "Lists the grants, expired ones too, in resource name order. Each grant names its resource, its user or group, its expiry, and its creation time. user selects the grants to that user, not the grants to the user's groups. resource selects the grants of that resource. An unknown user or resource in the query is 404.",
+		},
+		{
+			method:  http.MethodDelete,
+			path:    "/api/v1/grants/{id}",
+			id:      "revokeGrant",
+			handler: s.revokeGrant,
+			request: new(grantPath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:     "Revokes the grant. The next /auth/check does not count it.",
 		},
 		{
 			method:   http.MethodGet,

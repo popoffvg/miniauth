@@ -171,3 +171,37 @@ func resource(t *testing.T, rawName, rawHost, rawPrefix string) Resource {
 	require.NoError(t, err)
 	return Resource{Name: name, URL: ResourceURL{Host: host, Prefix: prefix}}
 }
+
+func TestParseResourceURL(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want string
+		err  error
+	}{
+		{raw: "https://dash.example.test/", want: "dash.example.test/"},
+		{raw: "https://Dash.Example.Test", want: "dash.example.test/"},
+		{raw: "HTTPS://dash.example.test/mcp/", want: "dash.example.test/mcp"},
+		{raw: "http://127.0.0.1:8088/app", want: "127.0.0.1:8088/app"},
+		{raw: "ftp://dash.example.test/", err: ErrResourceURL},
+		{raw: "dash.example.test/mcp", err: ErrResourceURL},
+		{raw: "https://user@dash.example.test/", err: ErrResourceURL},
+		{raw: "https://dash.example.test/?x=1", err: ErrResourceURL},
+		{raw: "https://dash.example.test/?", err: ErrResourceURL},
+		{raw: "https://dash.example.test/#top", err: ErrResourceURL},
+		{raw: "https:dash.example.test", err: ErrResourceURL},
+		{raw: "https:///mcp", err: ErrHost},
+		{raw: "https://dash.example.test/a/../b", err: ErrPathPrefix},
+		{raw: "https://dash.example.test/a%2Fb", err: ErrPathPrefix},
+	}
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			got, err := ParseResourceURL(tt.raw)
+			if tt.err != nil {
+				require.ErrorIs(t, err, tt.err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.String())
+		})
+	}
+}

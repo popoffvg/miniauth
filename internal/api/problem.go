@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -104,7 +106,14 @@ func domainError(err error) bool {
 		errors.Is(err, users.ErrPasswordTooLong) ||
 		errors.Is(err, tokens.ErrInvalid) ||
 		errors.Is(err, tokens.ErrName) ||
-		errors.Is(err, tokens.ErrScope)
+		errors.Is(err, tokens.ErrScope) ||
+		errors.Is(err, groups.ErrName) ||
+		errors.Is(err, access.ErrResourceName) ||
+		errors.Is(err, access.ErrResourceURL) ||
+		errors.Is(err, access.ErrHost) ||
+		errors.Is(err, access.ErrPathPrefix) ||
+		errors.Is(err, access.ErrExpiryTime) ||
+		errors.Is(err, access.ErrExpiry)
 }
 
 func jsonContentType(header string) bool {

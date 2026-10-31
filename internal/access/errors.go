@@ -9,12 +9,16 @@ var (
 	ErrHost = errors.New("access: host is not valid")
 	// ErrPathPrefix is what ParsePathPrefix returns for a refused prefix.
 	ErrPathPrefix = errors.New("access: path prefix is not valid")
+	// ErrResourceURL is what ParseResourceURL returns for a URL that is not an absolute http or https URL.
+	ErrResourceURL = errors.New("access: resource URL is not valid")
 	// ErrRequestURL is what ParseRequestURL returns for a refused URL.
 	ErrRequestURL = errors.New("access: request URL is not valid")
 	// ErrSubject means a grant names no user and no group.
 	ErrSubject = errors.New("access: grant subject is not valid")
 	// ErrExpiry means the expiry of a new grant is not in the future.
 	ErrExpiry = errors.New("access: grant expiry is not in the future")
+	// ErrExpiryTime means the expiry text is not an RFC 3339 time.
+	ErrExpiryTime = errors.New("access: grant expiry is not an RFC 3339 time")
 	// ErrNoResource means no resource matches the URL.
 	ErrNoResource = errors.New("access: no resource matches the URL")
 	// ErrNoGrant means the user and the user's groups have no active grant for the resource.

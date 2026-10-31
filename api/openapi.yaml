@@ -17,6 +17,266 @@ paths:
           description: OK
         "302":
           description: Found
+  /api/v1/grants:
+    get:
+      description: Lists the grants, expired ones too, in resource name order. Each
+        grant names its resource, its user or group, its expiry, and its creation
+        time. user selects the grants to that user, not the grants to the user's groups.
+        resource selects the grants of that resource. An unknown user or resource
+        in the query is 404.
+      operationId: listGrants
+      parameters:
+      - in: query
+        name: user
+        schema:
+          type: string
+      - in: query
+        name: resource
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiGrantList'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+    post:
+      description: Gives one user or one group one resource. The body names exactly
+        one of user (a login) and group. expires_at is RFC 3339 and MUST be in the
+        future; with no expires_at the grant does not expire. An unknown user or resource
+        is 404. A grant that already exists is 409.
+      operationId: createGrant
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiCreateGrantRequest'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiGrantBody'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+  /api/v1/grants/{id}:
+    delete:
+      description: Revokes the grant. The next /auth/check does not count it.
+      operationId: revokeGrant
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+  /api/v1/resources:
+    get:
+      description: Lists every resource in name order.
+      operationId: listResources
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResourceList'
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+    post:
+      description: Creates a resource that /auth/check protects. url MUST be an absolute
+        http or https URL with no query. Only the host and the path are stored, and
+        a reply url is the host and the path with no scheme. A name, or a host and
+        path, that is already stored is 409.
+      operationId: createResource
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiCreateResourceRequest'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResourceBody'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+  /api/v1/resources/{name}:
+    delete:
+      description: Deletes the resource and its grants.
+      operationId: deleteResource
+      parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
   /api/v1/tokens/import:
     post:
       description: 'Stores the SHA-256 of a token made outside miniauth, so a client
@@ -484,6 +744,34 @@ paths:
           description: Service Unavailable
 components:
   schemas:
+    ApiCreateGrantRequest:
+      properties:
+        expires_at:
+          format: date-time
+          type: string
+        group:
+          type: string
+        resource:
+          type: string
+        user:
+          type: string
+      required:
+      - resource
+      type: object
+    ApiCreateResourceRequest:
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$
+          type: string
+        url:
+          format: uri
+          type: string
+      required:
+      - name
+      - url
+      type: object
     ApiCreateUserRequest:
       properties:
         login:
@@ -507,6 +795,33 @@ components:
           type: string
         login:
           type: string
+      type: object
+    ApiGrantBody:
+      properties:
+        created_at:
+          format: date-time
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        group:
+          type: string
+        id:
+          format: uuid
+          type: string
+        resource:
+          $ref: '#/components/schemas/ApiResourceBody'
+        user:
+          type: string
+      type: object
+    ApiGrantList:
+      properties:
+        grants:
+          items:
+            $ref: '#/components/schemas/ApiGrantBody'
+          type: array
+      required:
+      - grants
       type: object
     ApiImportTokenRequest:
       properties:
@@ -557,6 +872,22 @@ components:
           type: string
         type:
           type: string
+      type: object
+    ApiResourceBody:
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+      type: object
+    ApiResourceList:
+      properties:
+        resources:
+          items:
+            $ref: '#/components/schemas/ApiResourceBody'
+          type: array
+      required:
+      - resources
       type: object
     FormDataApiLoginFormRequest:
       properties:

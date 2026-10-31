@@ -191,7 +191,7 @@ func newGrantFixture(t *testing.T) grantFixture {
 	id, _, err := browser.Start(t.Context(), ada.ID, loginflow.Factors(loginflow.FactorPassword))
 	require.NoError(t, err)
 	repo := accesstest.NewRepository()
-	grants := access.NewService(repo)
+	grants := access.NewService(repo, nil)
 	createResource(t, grants, "root", "dash.example.test", "/")
 	createResource(t, grants, "mcp", "dash.example.test", "/mcp")
 	router := forwardRouter(t, accounts, browser, members, mustDomain(t, ".example.test"), mustPublicURL(t, "https://id.example.test"), WithURLGrants(grants))

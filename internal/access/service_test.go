@@ -1,6 +1,7 @@
 package access_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func TestServiceCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := accesstest.NewRepository()
-			service := access.NewService(repo)
+			service := access.NewService(repo, nil)
 			createResource(t, service, "root", "dash.example.test", "/")
 			createResource(t, service, "mcp", "dash.example.test", "/mcp")
 			for _, stored := range tt.grants {
@@ -78,7 +79,7 @@ func TestServiceCheck(t *testing.T) {
 }
 
 func TestServiceRevokeAppliesToTheNextCheck(t *testing.T) {
-	service := access.NewService(accesstest.NewRepository())
+	service := access.NewService(accesstest.NewRepository(), nil)
 	ada := users.NewID()
 	root := createResource(t, service, "root", "dash.example.test", "/")
 	target, err := access.ParseRequestURL("https", "dash.example.test", "/")
@@ -95,7 +96,7 @@ func TestServiceRevokeAppliesToTheNextCheck(t *testing.T) {
 
 func TestServiceWrites(t *testing.T) {
 	ctx := t.Context()
-	service := access.NewService(accesstest.NewRepository())
+	service := access.NewService(accesstest.NewRepository(), nil)
 	ada := users.NewID()
 	root := createResource(t, service, "root", "dash.example.test", "/")
 	host, err := access.ParseHost("dash.example.test")
@@ -125,15 +126,15 @@ func TestServiceWrites(t *testing.T) {
 	groupGrant, err := service.Grant(ctx, root, access.GroupSubject(mustGroup(t, "editors")), access.Expiry{})
 	require.NoError(t, err)
 
-	listed, err := service.ListGrants(ctx, root)
+	listed, err := service.ListGrants(ctx, access.GrantFilter{Resource: root})
 	require.NoError(t, err)
 	require.Len(t, listed, 2)
-	assert.Equal(t, userGrant.ID, listed[0].ID)
-	assert.Equal(t, groupGrant.ID, listed[1].ID)
-	at, ok := listed[0].Expiry.Time()
+	assert.Equal(t, userGrant.ID, listed[0].Grant.ID)
+	assert.Equal(t, groupGrant.ID, listed[1].Grant.ID)
+	at, ok := listed[0].Grant.Expiry.Time()
 	require.True(t, ok)
 	assert.True(t, at.Equal(later))
-	_, err = service.ListGrants(ctx, mustResourceName(t, "missing"))
+	_, err = service.ListGrants(ctx, access.GrantFilter{Resource: mustResourceName(t, "missing")})
 	require.ErrorIs(t, err, access.ErrResourceNotFound)
 
 	require.NoError(t, service.DeleteResource(ctx, root))
@@ -176,4 +177,89 @@ func mustGroup(t *testing.T, raw string) groups.Name {
 	name, err := groups.ParseName(raw)
 	require.NoError(t, err)
 	return name
+}
+
+func TestServiceGrantTo(t *testing.T) {
+	ctx := t.Context()
+	repo := accesstest.NewRepository()
+	ada := users.NewID()
+	adaLogin := mustLogin(t, "ada")
+	repo.AddUser(ada, adaLogin)
+	service := access.NewService(repo, userDirectory{adaLogin: ada})
+	root := createResource(t, service, "root", "dash.example.test", "/")
+	editors := mustGroup(t, "editors")
+
+	tests := []struct {
+		name     string
+		resource access.ResourceName
+		grantee  access.Grantee
+		expiry   access.Expiry
+		want     error
+	}{
+		{name: "no resource", grantee: access.Grantee{User: adaLogin}, want: access.ErrResourceName},
+		{name: "no subject", resource: root, want: access.ErrSubject},
+		{name: "user and group", resource: root, grantee: access.Grantee{User: adaLogin, Group: editors}, want: access.ErrSubject},
+		{name: "past expiry", resource: root, grantee: access.Grantee{User: adaLogin}, expiry: access.ExpiresAt(time.Now().Add(-time.Second)), want: access.ErrExpiry},
+		{name: "unknown user", resource: root, grantee: access.Grantee{User: mustLogin(t, "nobody")}, want: access.ErrUnknownUser},
+		{name: "unknown resource", resource: mustResourceName(t, "missing"), grantee: access.Grantee{User: adaLogin}, want: access.ErrResourceNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := service.GrantTo(ctx, tt.resource, tt.grantee, tt.expiry)
+			require.ErrorIs(t, err, tt.want)
+		})
+	}
+
+	entry, err := service.GrantTo(ctx, root, access.Grantee{User: adaLogin}, access.Expiry{})
+	require.NoError(t, err)
+	assert.Equal(t, access.UserSubject(ada), entry.Grant.Subject)
+	assert.Equal(t, adaLogin, entry.UserLogin)
+	assert.Equal(t, "dash.example.test/", entry.URL.String())
+	_, err = service.GrantTo(ctx, root, access.Grantee{User: adaLogin}, access.Expiry{})
+	require.ErrorIs(t, err, access.ErrDuplicateGrant)
+	group, err := service.GrantTo(ctx, root, access.Grantee{Group: editors}, access.Expiry{})
+	require.NoError(t, err)
+	assert.Equal(t, access.GroupSubject(editors), group.Grant.Subject)
+	assert.Equal(t, users.Login{}, group.UserLogin)
+
+	byUser, err := service.ListGrants(ctx, access.GrantFilter{User: adaLogin})
+	require.NoError(t, err)
+	require.Len(t, byUser, 1)
+	assert.Equal(t, entry.Grant.ID, byUser[0].Grant.ID)
+	_, err = service.ListGrants(ctx, access.GrantFilter{User: mustLogin(t, "nobody")})
+	require.ErrorIs(t, err, access.ErrUnknownUser)
+	every, err := service.ListGrants(ctx, access.GrantFilter{})
+	require.NoError(t, err)
+	assert.Len(t, every, 2)
+}
+
+func TestExpiryText(t *testing.T) {
+	var expiry access.Expiry
+	require.NoError(t, expiry.UnmarshalText([]byte("2030-01-02T03:04:05+02:00")))
+	at, ok := expiry.Time()
+	require.True(t, ok)
+	assert.True(t, at.Equal(time.Date(2030, 1, 2, 1, 4, 5, 0, time.UTC)))
+	text, err := expiry.MarshalText()
+	require.NoError(t, err)
+	assert.Equal(t, "2030-01-02T01:04:05Z", string(text))
+	require.ErrorIs(t, expiry.UnmarshalText([]byte("tomorrow")), access.ErrExpiryTime)
+	require.ErrorIs(t, expiry.UnmarshalText([]byte("0001-01-01T00:00:00Z")), access.ErrExpiry, "the zero time MUST NOT mean never")
+}
+
+func mustLogin(t *testing.T, raw string) users.Login {
+	t.Helper()
+	login, err := users.ParseLogin(raw)
+	require.NoError(t, err)
+	return login
+}
+
+// userDirectory maps a login to a user id.
+type userDirectory map[users.Login]users.ID
+
+func (d userDirectory) FindByLogin(_ context.Context, login users.Login) (users.User, error) {
+	id, ok := d[login]
+	if !ok {
+		return users.User{}, users.ErrNotFound
+	}
+	return users.User{ID: id, Login: login}, nil
 }

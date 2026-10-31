@@ -72,7 +72,7 @@ func TestTraefikProtectsThePage(t *testing.T) {
 
 	grants, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
-	resources := access.NewService(grants)
+	resources := access.NewService(grants, nil)
 	// Traefik forwards the Host header the client sent: 127.0.0.1:8088.
 	appResource := createResource(t, resources, "app", "127.0.0.1:8088", "/app")
 	editorsResource := createResource(t, resources, "editors", "127.0.0.1:8088", "/editors")
