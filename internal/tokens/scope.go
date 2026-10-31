@@ -67,6 +67,21 @@ func (s Scope) String() string {
 	return s.scheme + "://" + s.host + s.path
 }
 
+// MarshalText encodes the stored form.
+func (s Scope) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
+}
+
+// UnmarshalText parses text with ParseScope.
+func (s *Scope) UnmarshalText(text []byte) error {
+	parsed, err := ParseScope(string(text))
+	if err != nil {
+		return err
+	}
+	*s = parsed
+	return nil
+}
+
 // Scopes is the set of URL prefixes of one token. An empty set covers every URL.
 type Scopes []Scope
 

@@ -41,10 +41,11 @@ type Identity struct {
 // Create inserts the user and the identity together.
 // Create MUST return ErrLoginTaken when the login is already stored.
 // Create MUST NOT write the password. It writes the PHC string.
-// Find MUST return ErrNotFound when the id is not stored.
+// Find and FindByLogin MUST return ErrNotFound when no user matches.
 type Repository interface {
 	Create(ctx context.Context, account User, identity Identity) error
 	Find(ctx context.Context, id ID) (User, error)
+	FindByLogin(ctx context.Context, login Login) (User, error)
 }
 
 // Service creates accounts.
@@ -97,6 +98,18 @@ func (s *Service) Find(ctx context.Context, id ID) (User, error) {
 		return User{}, ErrNotFound
 	}
 	return s.repo.Find(ctx, id)
+}
+
+// FindByLogin returns ErrNotFound when no user has this login.
+// A disabled user is returned.
+func (s *Service) FindByLogin(ctx context.Context, login Login) (User, error) {
+	if s == nil || s.repo == nil {
+		return User{}, errors.New("users: repository is missing")
+	}
+	if login.value == "" {
+		return User{}, ErrInvalidLogin
+	}
+	return s.repo.FindByLogin(ctx, login)
 }
 
 // String returns the stored kind.

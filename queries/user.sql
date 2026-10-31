@@ -35,6 +35,11 @@ SELECT id, login, created_at, disabled_at
 FROM users
 WHERE id = $1;
 
+-- name: GetUserByLogin :one
+SELECT id, login, created_at, disabled_at
+FROM users
+WHERE login = $1;
+
 -- name: CountUsers :one
 SELECT count(*)::bigint AS n FROM users;
 

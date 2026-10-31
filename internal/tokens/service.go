@@ -50,11 +50,24 @@ func (s *Service) Issue(ctx context.Context, userID users.ID, name Name, scopes 
 
 // Import stores a clear token that was made outside this service.
 // The imported token does not expire.
-func (s *Service) Import(ctx context.Context, userID users.ID, name Name, scopes Scopes, secret Secret) (Token, error) {
-	if _, err := ParseSecret(secret.raw); err != nil {
-		return Token{}, err
+// When userID already has the token, Import returns the stored token, created is false, and nothing changes.
+// When another user has the token, Import returns ErrDuplicate.
+func (s *Service) Import(ctx context.Context, userID users.ID, name Name, scopes Scopes, secret Secret) (token Token, created bool, err error) {
+	if _, err = ParseSecret(secret.raw); err != nil {
+		return Token{}, false, err
 	}
-	return s.store(ctx, userID, name, scopes, time.Time{}, secret)
+	token, err = s.store(ctx, userID, name, scopes, time.Time{}, secret)
+	if !errors.Is(err, ErrDuplicate) {
+		return token, err == nil, err
+	}
+	stored, hash, err := s.repo.Find(ctx, secret.Hash())
+	if err != nil {
+		return Token{}, false, err
+	}
+	if !secret.Matches(hash) || stored.UserID != userID {
+		return Token{}, false, ErrDuplicate
+	}
+	return stored, false, nil
 }
 
 // List returns every token of the user, revoked and expired ones included.

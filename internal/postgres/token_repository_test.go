@@ -92,7 +92,7 @@ func TestTokenRepository(t *testing.T) {
 		t.Fatalf("revoked token: %v", err)
 	}
 
-	if _, err = svc.Import(ctx, bea.ID, name, nil, secret); !errors.Is(err, tokens.ErrDuplicate) {
+	if _, _, err = svc.Import(ctx, bea.ID, name, nil, secret); !errors.Is(err, tokens.ErrDuplicate) {
 		t.Fatalf("import of a stored token: %v", err)
 	}
 	if _, _, err = svc.Issue(ctx, users.NewID(), name, nil, time.Time{}); !errors.Is(err, tokens.ErrUnknownUser) {
@@ -102,7 +102,7 @@ func TestTokenRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	imported, err := svc.Import(ctx, bea.ID, name, nil, other)
+	imported, _, err := svc.Import(ctx, bea.ID, name, nil, other)
 	if err != nil {
 		t.Fatal(err)
 	}

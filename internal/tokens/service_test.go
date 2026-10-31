@@ -91,11 +91,12 @@ func TestIssueRefusesBadInput(t *testing.T) {
 func TestImport(t *testing.T) {
 	start := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	svc, _, _ := newTestService(start)
-	owner := users.NewID()
+	owner, other := users.NewID(), users.NewID()
 	secret, err := ParseSecret("idp_0123456789abcdefghijklmnopqrstuvwxyzABCDEFG")
 	require.NoError(t, err)
-	imported, err := svc.Import(t.Context(), owner, mustName(t), nil, secret)
+	imported, created, err := svc.Import(t.Context(), owner, mustName(t), nil, secret)
 	require.NoError(t, err)
+	assert.True(t, created)
 	assert.Equal(t, "idp_0123", imported.Prefix.String())
 	assert.True(t, imported.ExpiresAt.IsZero())
 
@@ -103,9 +104,18 @@ func TestImport(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, imported.ID, got.ID)
 
-	_, err = svc.Import(t.Context(), owner, mustName(t), nil, secret)
+	renamed, err := ParseName("renamed")
+	require.NoError(t, err)
+	again, created, err := svc.Import(t.Context(), owner, renamed, nil, secret)
+	require.NoError(t, err)
+	assert.False(t, created)
+	assert.Equal(t, imported.ID, again.ID)
+	assert.Equal(t, imported.Name, again.Name)
+
+	_, created, err = svc.Import(t.Context(), other, mustName(t), nil, secret)
 	require.ErrorIs(t, err, ErrDuplicate)
-	_, err = svc.Import(t.Context(), owner, mustName(t), nil, Secret{})
+	assert.False(t, created)
+	_, _, err = svc.Import(t.Context(), owner, mustName(t), nil, Secret{})
 	require.ErrorIs(t, err, ErrInvalid)
 }
 

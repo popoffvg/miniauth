@@ -39,6 +39,7 @@ type Querier interface {
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
 	GetStoredDeviceHash(ctx context.Context, id pgtype.UUID) ([]byte, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	GetUserByLogin(ctx context.Context, login string) (User, error)
 	InsertAccessGrant(ctx context.Context, arg InsertAccessGrantParams) error
 	InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error

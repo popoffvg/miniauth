@@ -55,6 +55,21 @@ func ParseSecret(value string) (Secret, error) {
 	return Secret{raw: value}, nil
 }
 
+// MarshalText does not write the token.
+func (Secret) MarshalText() ([]byte, error) {
+	return []byte("redacted"), nil
+}
+
+// UnmarshalText parses text with ParseSecret.
+func (s *Secret) UnmarshalText(text []byte) error {
+	parsed, err := ParseSecret(string(text))
+	if err != nil {
+		return err
+	}
+	*s = parsed
+	return nil
+}
+
 // Hash returns the value to store.
 func (s Secret) Hash() Hash {
 	return Hash(sha256.Sum256([]byte(s.raw)))
@@ -91,4 +106,19 @@ func ParsePrefix(value string) (Prefix, error) {
 
 func (p Prefix) String() string {
 	return p.value
+}
+
+// MarshalText encodes the prefix.
+func (p Prefix) MarshalText() ([]byte, error) {
+	return []byte(p.value), nil
+}
+
+// UnmarshalText parses text with ParsePrefix.
+func (p *Prefix) UnmarshalText(text []byte) error {
+	parsed, err := ParsePrefix(string(text))
+	if err != nil {
+		return err
+	}
+	*p = parsed
+	return nil
 }

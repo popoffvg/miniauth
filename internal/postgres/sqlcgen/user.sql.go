@@ -98,6 +98,24 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 	return i, err
 }
 
+const getUserByLogin = `-- name: GetUserByLogin :one
+SELECT id, login, created_at, disabled_at
+FROM users
+WHERE login = $1
+`
+
+func (q *Queries) GetUserByLogin(ctx context.Context, login string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByLogin, login)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Login,
+		&i.CreatedAt,
+		&i.DisabledAt,
+	)
+	return i, err
+}
+
 const insertUserIdentity = `-- name: InsertUserIdentity :exec
 WITH new_user AS (
     INSERT INTO users (id, login, created_at)

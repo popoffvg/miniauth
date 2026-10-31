@@ -17,6 +17,69 @@ paths:
           description: OK
         "302":
           description: Found
+  /api/v1/tokens/import:
+    post:
+      description: 'Stores the SHA-256 of a token made outside miniauth, so a client
+        keeps its token. The token does not expire. 201 stores the token. 200 means
+        the user already has the token: nothing changes. 409 means another user has
+        the token. 404 means the login is not known.'
+      operationId: importToken
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiImportTokenRequest'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiImportedToken'
+          description: OK
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiImportedToken'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+      security:
+      - bearerAuth: []
   /api/v1/users:
     post:
       operationId: createUser
@@ -332,6 +395,45 @@ components:
           type: string
         login:
           type: string
+      type: object
+    ApiImportTokenRequest:
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+        scopes:
+          items:
+            type: string
+          minItems: 1
+          type: array
+        token:
+          format: password
+          pattern: ^idp_[0-9A-Za-z]{43}$
+          type: string
+        user:
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+      - user
+      - name
+      - scopes
+      - token
+      type: object
+    ApiImportedToken:
+      properties:
+        id:
+          format: uuid
+          type: string
+        name:
+          type: string
+        prefix:
+          type: string
+        scopes:
+          items:
+            type: string
+          type: array
       type: object
     ApiProblemBody:
       properties:

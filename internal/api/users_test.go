@@ -186,6 +186,14 @@ func (m *memRepo) Find(_ context.Context, id users.ID) (users.User, error) {
 	return users.User{}, users.ErrNotFound
 }
 
+func (m *memRepo) FindByLogin(_ context.Context, login users.Login) (users.User, error) {
+	stored, ok := m.get(login)
+	if !ok {
+		return users.User{}, users.ErrNotFound
+	}
+	return stored.account, nil
+}
+
 func (m *memRepo) put(account users.User) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -215,5 +223,9 @@ func (failRepo) Create(context.Context, users.User, users.Identity) error {
 }
 
 func (failRepo) Find(context.Context, users.ID) (users.User, error) {
+	return users.User{}, errors.New("database is down")
+}
+
+func (failRepo) FindByLogin(context.Context, users.Login) (users.User, error) {
 	return users.User{}, errors.New("database is down")
 }

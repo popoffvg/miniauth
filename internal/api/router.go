@@ -21,6 +21,7 @@ import (
 
 // route is one HTTP operation.
 // isPublic is false unless the row sets it, so a new row is authenticated.
+// repeated lists more success statuses that send the response body.
 type route struct {
 	method   string
 	path     string
@@ -29,6 +30,7 @@ type route struct {
 	request  any
 	response any
 	status   int
+	repeated []int
 	errors   []int
 	empty    []int
 	doc      string
@@ -182,6 +184,25 @@ func (s *service) routes() []route {
 			},
 		},
 		{
+			method:   http.MethodPost,
+			path:     "/api/v1/tokens/import",
+			id:       "importToken",
+			handler:  s.importToken,
+			request:  new(importTokenRequest),
+			response: new(importedToken),
+			status:   http.StatusCreated,
+			repeated: []int{http.StatusOK},
+			errors: []int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusNotFound,
+				http.StatusConflict,
+				http.StatusRequestEntityTooLarge,
+				http.StatusUnsupportedMediaType,
+			},
+			doc: "Stores the SHA-256 of a token made outside miniauth, so a client keeps its token. The token does not expire. 201 stores the token. 200 means the user already has the token: nothing changes. 409 means another user has the token. 404 means the login is not known.",
+		},
+		{
 			method:   http.MethodGet,
 			path:     "/auth/check",
 			id:       "forwardAuth",
@@ -301,6 +322,9 @@ func addOperation(reflector *openapi3.Reflector, rt route) error {
 	}
 	if !rt.isPublic {
 		oc.AddSecurity("bearerAuth")
+	}
+	for _, status := range rt.repeated {
+		oc.AddRespStructure(rt.response, openapi.WithHTTPStatus(status))
 	}
 	for _, status := range rt.empty {
 		oc.AddRespStructure(new(struct{}), openapi.WithHTTPStatus(status))

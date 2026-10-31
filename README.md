@@ -2,7 +2,7 @@
 
 A small identity server in Go and PostgreSQL: password login, persistent browser sessions, personal access tokens, and a forward-auth endpoint for a reverse proxy such as Traefik.
 
-Status: early. The service answers `GET /healthz`, `GET /readyz`, `GET /auth/check`, `GET /login`, `POST /login`, `GET /`, `POST /api/v1/users`, `POST /logout`, `POST /logout/everywhere`, `GET /sessions`, `POST /sessions/{device}/signout`, and `POST /sessions/{device}/forget`.
+Status: early. `GET /openapi.yaml` and `api/openapi.yaml` list every route.
 
 `GET /healthz` reports that the process is up. `GET /readyz` returns 200 only when the process is ready to serve. It returns 503 when PostgreSQL does not answer, and while the process is shutting down. The process pings PostgreSQL every 5 seconds. A SIGTERM moves the process to draining and then shuts the HTTP server down.
 
@@ -23,6 +23,8 @@ The client IP of a login try is the TCP peer address. No trusted proxy is config
 `docker compose up --build` starts PostgreSQL, miniauth, and a local Traefik. Traefik listens on `127.0.0.1:8088`. `/app` requires a session and a grant on the resource `127.0.0.1:8088/app`. `/editors` also requires the group `editors` and a grant on `127.0.0.1:8088/editors`. A new stack has no resources and no grants. `MINIAUTH_COMPOSE=1 go test ./internal/api -run TestTraefikProtectsThePage` creates them in the database and checks each route. The cookie is `Secure`, so a browser on plain HTTP does not keep it. `curl` can send it.
 
 `POST /api/v1/users` creates a user and one password identity. The body is JSON: `login` and `password`. The caller sends `Authorization: Bearer <token>`. `MINIAUTH_ADMIN_TOKEN_SHA256` is the hex SHA-256 of that token. The token is not in the config. `GET /openapi.yaml` serves the description generated from the handlers. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, request and database spans are exported there. A query string, a header, and a SQL argument are not span attributes.
+
+`POST /api/v1/tokens/import` moves a token from a secret store, so the client keeps its token. It takes the same admin bearer token. The body is JSON: `user` (a login), `name`, `scopes` (at least one URL prefix), and `token` (`idp_...`). The table stores the SHA-256 of the token. The token does not expire. The reply has `id`, `name`, `prefix`, and `scopes`, never the token. The first import is 201. The same token again for the same user is 200 and changes nothing. The same token for another user is 409. An unknown login is 404. A bad token format or scope is 400. An `X-Request-ID` that starts with `idp_` is replaced, so the request log cannot hold the token.
 
 ## Release
 
