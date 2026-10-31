@@ -17,6 +17,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/passkeystep"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/sessions"
@@ -77,6 +78,7 @@ type service struct {
 	google      *googlestep.Step
 	telegram    *telegramstep.Step
 	links       *identitylink.Service
+	passkeys    *passkeystep.Service
 	spec        []byte
 
 	// invites is nil unless WithInvites sets it.
@@ -454,6 +456,87 @@ func (s *service) routes() []route {
 			pages:       []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
 			doc:         "Sets the new password through the token in the form. Every session of the user is deleted. Personal access tokens stay valid. The link cannot be used again. Origin MUST be the public origin, else 403.",
 			isPublic:    true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        passkeyScriptPath,
+			id:          "passkeyScript",
+			handler:     servePasskeyScript,
+			response:    new(string),
+			status:      http.StatusOK,
+			contentType: "text/javascript",
+			doc:         "The one script of the service. It runs the WebAuthn ceremonies of the login page and of the page that adds a passkey.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     passkeyLoginPath + "/options",
+			id:       "passkeyLoginOptions",
+			handler:  s.passkeyLoginOptions,
+			response: new(passkeyOptions),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Stores a new WebAuthn challenge on the login flow in the flow cookie and returns the options for navigator.credentials.get. The options require user verification and name no credential. Origin MUST be the public origin, else 403.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     passkeyLoginPath,
+			id:       "passkeyLogin",
+			handler:  s.passkeyLogin,
+			request:  new(passkeyCredential),
+			response: new(passkeyDone),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Checks the assertion against the challenge of the login flow. The challenge is cleared before the check, so it is used once. A passkey with user verification counts as two factors: it completes the flow alone, sets the session cookie, and answers the return URL. A response without user verification, an unknown credential, or a signature counter that does not increase is 400. Origin MUST be the public origin, else 403.",
+			isPublic: true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        passkeyNewPath,
+			id:          "passkeyNewPage",
+			handler:     s.passkeyNewPage,
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			empty:       []int{http.StatusSeeOther},
+			pages:       []int{http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "The form that adds a passkey for the session user. With no session it redirects to the login page. A login older than 10 minutes shows the step-up password form first, which returns here.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     passkeysPath + "/options",
+			id:       "passkeyAddOptions",
+			handler:  s.passkeyAddOptions,
+			response: new(passkeyOptions),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Starts a flow of the session user with a new WebAuthn challenge, sets the flow cookie, and returns the options for navigator.credentials.create. The options require a discoverable credential and user verification. A login older than 10 minutes is 403. Origin MUST be the public origin, else 403.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     passkeysPath,
+			id:       "passkeyAdd",
+			handler:  s.passkeyAdd,
+			request:  new(passkeyAddRequest),
+			response: new(passkeyDone),
+			status:   http.StatusCreated,
+			errors:   []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Checks the new credential against the challenge of the flow in the flow cookie and stores the passkey. The challenge is used once. A credential without user verification is 400. A credential that is already stored is 409. A login older than 10 minutes is 403. Origin MUST be the public origin, else 403.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     passkeysPath + "/{id}/delete",
+			id:       "deletePasskey",
+			handler:  s.deletePasskey,
+			request:  new(passkeyDeleteRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusOK, http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Deletes one passkey of the session user and redirects to the sessions page. Origin MUST be the public origin, else 403. A login older than 10 minutes shows the step-up password form instead, which returns to the sessions page. A passkey of another user is 404.",
+			isPublic: true,
 		},
 		{
 			method:      http.MethodGet,

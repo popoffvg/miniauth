@@ -5,6 +5,7 @@ import (
 	"embed"
 	"html/template"
 	"net/http"
+	"strings"
 
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/recovery"
@@ -33,6 +34,8 @@ const (
 	pageReset       pageName = "reset.html"
 	pageResetDone   pageName = "reset_done.html"
 	pageInvite      pageName = "invite.html"
+	// pageAddKey is the form that adds a passkey. It loads passkey.js. The handler MUST set Script in the view.
+	pageAddKey pageName = "passkey_new.html"
 	// pageTokenCreated shows the clear token. The handler MUST set Cache-Control: no-store.
 	pageTokenCreated pageName = "token_created.html"
 )
@@ -78,22 +81,74 @@ type pageView struct {
 	ResetToken recovery.Token
 	// Invite goes to the hidden field of the invite form, never to a URL.
 	Invite invites.Token
+	// Script loads passkey.js and adds passkeySources to the CSP.
+	Script bool
 }
 
 // pageCSP allows inline style and nothing else. form-action is not set:
 // a browser applies it to the 303 after the form, and the return URL can be on another subdomain.
-const pageCSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+var pageCSP = buildCSP()
 
-// telegramPageCSP also allows the widget script from telegram.org and the widget frame it opens
+// cspSource is one source that a page feature adds to one CSP directive.
+type cspSource struct {
+	directive string
+	source    string
+}
+
+// cspDirectives is the order of the directives a page feature can open. Every other directive is closed.
+var cspDirectives = []string{"script-src", "connect-src", "frame-src"}
+
+// passkeySources load passkey.js from this origin and let it fetch this origin.
+var passkeySources = []cspSource{
+	{directive: "script-src", source: "'self'"},
+	{directive: "connect-src", source: "'self'"},
+}
+
+// telegramSources allow the widget script from telegram.org and the widget frame it opens
 // from oauth.telegram.org. The script itself navigates to the callback, so no inline script is needed.
-const telegramPageCSP = "default-src 'none'; script-src https://telegram.org; frame-src https://oauth.telegram.org; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
+var telegramSources = []cspSource{
+	{directive: "script-src", source: "https://telegram.org"},
+	{directive: "frame-src", source: "https://oauth.telegram.org"},
+}
 
-// pageCSPOf is telegramPageCSP for a pageView that shows the Telegram widget, else pageCSP.
-func pageCSPOf(view any) string {
-	if v, ok := view.(pageView); ok && v.Telegram != (telegramWidget{}) {
-		return telegramPageCSP
+var (
+	scriptPageCSP   = buildCSP(passkeySources)
+	telegramPageCSP = buildCSP(telegramSources)
+)
+
+// buildCSP is pageCSP with the sources of each feature. Two features on one page add up.
+func buildCSP(features ...[]cspSource) string {
+	parts := []string{"default-src 'none'"}
+	for _, directive := range cspDirectives {
+		var sources []string
+		for _, feature := range features {
+			for _, source := range feature {
+				if source.directive == directive {
+					sources = append(sources, source.source)
+				}
+			}
+		}
+		if len(sources) > 0 {
+			parts = append(parts, directive+" "+strings.Join(sources, " "))
+		}
 	}
-	return pageCSP
+	return strings.Join(append(parts, "style-src 'unsafe-inline'", "base-uri 'none'", "frame-ancestors 'none'"), "; ")
+}
+
+// pageCSPOf adds the sources of the passkey script and of the Telegram widget when a pageView shows them.
+func pageCSPOf(view any) string {
+	v, ok := view.(pageView)
+	if !ok {
+		return pageCSP
+	}
+	var features [][]cspSource
+	if v.Script {
+		features = append(features, passkeySources)
+	}
+	if v.Telegram != (telegramWidget{}) {
+		features = append(features, telegramSources)
+	}
+	return buildCSP(features...)
 }
 
 // view is a pageView, or the view type of a page that has its own.

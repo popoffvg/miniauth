@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/devices"
+	"github.com/popoffvg/miniauth/internal/passkeystep"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -29,8 +30,11 @@ type deviceRequest struct {
 	Device string `path:"device" format:"uuid"`
 }
 
+// ShowPasskeys is false when the router has no passkey service.
 type sessionsPageView struct {
-	Devices []deviceView
+	Devices      []deviceView
+	Passkeys     []passkeystep.Passkey
+	ShowPasskeys bool
 }
 
 type deviceView struct {
@@ -65,6 +69,14 @@ func (s *service) sessionsPage(w http.ResponseWriter, r *http.Request) {
 			LastSeen:  device.LastSeen.UTC(),
 			IsCurrent: session.DeviceID != (devices.ID{}) && device.ID == session.DeviceID,
 		})
+	}
+	if s.passkeys != nil {
+		view.ShowPasskeys = true
+		if view.Passkeys, err = s.passkeys.List(r.Context(), session.UserID); err != nil {
+			loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: sessions page", "err", err)
+			writeProblem(w, http.StatusInternalServerError, "The passkeys were not loaded.")
+			return
+		}
 	}
 	var page strings.Builder
 	if err = sessionsPageTemplate.Execute(&page, view); err != nil {

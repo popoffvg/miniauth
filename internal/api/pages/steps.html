@@ -4,5 +4,5 @@
 <ul>
 {{range .Steps}}<li><a href="{{.Path}}">{{.Label}}</a></li>
 {{end}}</ul>
-{{range .Buttons}}<form method="post" action="{{.Path}}"><button type="submit">{{.Label}}</button></form>
-{{end}}{{if .Telegram.AuthURL}}{{template "telegram" .Telegram}}{{end}}{{template "foot"}}
+{{template "step buttons" .}}
+{{if .Telegram.AuthURL}}{{template "telegram" .Telegram}}{{end}}{{template "foot"}}
