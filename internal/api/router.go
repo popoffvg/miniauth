@@ -315,7 +315,7 @@ func (s *service) routes() []route {
 				http.StatusUnsupportedMediaType,
 				http.StatusServiceUnavailable,
 			},
-			doc: "Creates an invite for one resource. The reply holds the one-time link {public URL}/invite/{token}, shown once: only the SHA-256 of the token is stored. The link expires after 7 days. An unknown resource is 404.",
+			doc: "Creates an invite for one resource. The reply holds the one-time link {public URL}/invite/{token}, shown once: only the SHA-256 of the token is stored. The link expires after 7 days. An unknown resource is 404. Without MINIAUTH_PUBLIC_URL it is 503.",
 		},
 		{
 			method:      http.MethodGet,

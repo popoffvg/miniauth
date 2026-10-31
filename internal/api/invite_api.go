@@ -53,16 +53,22 @@ type invitePath struct {
 }
 
 const (
-	msgInviteGone      pageMessage = "This invite link does not work. It was used, it expired, or it is wrong."
-	msgInviteLogin     pageMessage = "The login or the password does not match the rules."
-	msgInviteLoginUsed pageMessage = "This login is taken. Choose another login."
-	msgInviteFailed    pageMessage = "The account was not created. Try again."
-	msgInviteOff       pageMessage = "Invites are not available."
+	msgInviteGone         pageMessage = "This invite link does not work. It was used, it expired, or it is wrong."
+	msgInviteLogin        pageMessage = "The login or the password does not match the rules."
+	msgInviteLoginUsed    pageMessage = "This login is taken. Choose another login."
+	msgInviteFailed       pageMessage = "The account was not created. Try again."
+	msgInviteOff          pageMessage = "Invites are not available."
+	msgInviteSignInFailed pageMessage = "Your account was created, but the sign-in failed. Sign in with your new login and password."
 )
 
 func (s *service) createInvite(w http.ResponseWriter, r *http.Request) {
 	if s.invites == nil {
 		writeProblem(w, http.StatusServiceUnavailable, "The invite API is not configured.")
+		return
+	}
+	// Without a public URL the Origin check refuses every accept, so a link could never work.
+	if s.publicURL.Origin() == "" {
+		writeProblem(w, http.StatusServiceUnavailable, "Invite links need MINIAUTH_PUBLIC_URL.")
 		return
 	}
 	body, err := decodeJSON[createInviteRequest](w, r, maxAccessBody)
@@ -138,7 +144,7 @@ func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.startBrowserSession(w, r, accepted.User.ID, loginflow.Factors(loginflow.FactorPassword)); err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: invite session", "err", err)
-		renderDenied(w, r, http.StatusInternalServerError, msgInviteFailed)
+		renderDenied(w, r, http.StatusInternalServerError, msgInviteSignInFailed)
 		return
 	}
 	resource := accepted.Resource.URL
