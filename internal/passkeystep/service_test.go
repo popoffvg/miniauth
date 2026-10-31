@@ -150,6 +150,10 @@ func TestRelyingPartyComesFromTheCookieDomain(t *testing.T) {
 		{domain: "", origin: "https://id.example.test:8443", wantID: "id.example.test", ok: true},
 		{domain: "", origin: "https://127.0.0.1:8443", ok: false},
 		{domain: "", origin: "ftp://id.example.test", ok: false},
+		{domain: ".example.test", origin: "https://example.test", wantID: "example.test", ok: true},
+		{domain: ".other.test", origin: "https://id.example.test", ok: false},
+		{domain: ".ample.test", origin: "https://id.example.test", ok: false},
+		{domain: ".id.example.test", origin: "https://example.test", ok: false},
 	}
 	for _, tt := range tests {
 		domain, err := sessions.ParseDomain(tt.domain)

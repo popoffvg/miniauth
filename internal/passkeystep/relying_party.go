@@ -27,15 +27,17 @@ type RelyingParty struct {
 // NewRelyingParty takes the id from the cookie domain without the leading dot.
 // With an empty domain, the id is the host of origin, so the passkeys work on that host only.
 // An IP address is not a valid id: a browser refuses it.
+// The id MUST be the origin host or a parent of it. A browser refuses any other id.
 func NewRelyingParty(domain sessions.Domain, origin *url.URL) (RelyingParty, error) {
 	if origin == nil || origin.Host == "" || (origin.Scheme != "https" && origin.Scheme != "http") {
 		return RelyingParty{}, ErrRelyingParty
 	}
+	host := strings.ToLower(origin.Hostname())
 	id := strings.TrimPrefix(domain.String(), ".")
 	if id == "" {
-		id = strings.ToLower(origin.Hostname())
+		id = host
 	}
-	if protocol.ValidateRPID(id) != nil {
+	if protocol.ValidateRPID(id) != nil || (host != id && !strings.HasSuffix(host, "."+id)) {
 		return RelyingParty{}, ErrRelyingParty
 	}
 	return RelyingParty{
