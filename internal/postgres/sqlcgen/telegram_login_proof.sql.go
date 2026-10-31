@@ -32,6 +32,16 @@ func (q *Queries) DeleteExpiredTelegramLoginProofs(ctx context.Context, now pgty
 	return err
 }
 
+const deleteTelegramLoginProof = `-- name: DeleteTelegramLoginProof :exec
+DELETE FROM telegram_login_proofs
+WHERE proof_hash = $1
+`
+
+func (q *Queries) DeleteTelegramLoginProof(ctx context.Context, proofHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteTelegramLoginProof, proofHash)
+	return err
+}
+
 const insertTelegramLoginProof = `-- name: InsertTelegramLoginProof :execrows
 INSERT INTO telegram_login_proofs (proof_hash, expires_at)
 VALUES ($1, $2)

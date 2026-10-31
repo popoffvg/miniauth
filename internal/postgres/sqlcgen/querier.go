@@ -46,6 +46,7 @@ type Querier interface {
 	DeleteResource(ctx context.Context, name string) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
 	DeleteTOTP(ctx context.Context, userID pgtype.UUID) error
+	DeleteTelegramLoginProof(ctx context.Context, proofHash []byte) error
 	DeleteUserPasskey(ctx context.Context, arg DeleteUserPasskeyParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
 	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)

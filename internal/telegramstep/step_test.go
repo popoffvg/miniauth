@@ -2,6 +2,7 @@ package telegramstep
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -36,6 +37,11 @@ func (m *memoryProofs) Use(_ context.Context, hash ProofHash, expiresAt time.Tim
 		return ErrReplay
 	}
 	m.stored[hash] = expiresAt
+	return nil
+}
+
+func (m *memoryProofs) Release(_ context.Context, hash ProofHash) error {
+	delete(m.stored, hash)
 	return nil
 }
 
@@ -277,6 +283,43 @@ func TestParseAuthDataRefusesAReshapedCheckString(t *testing.T) {
 			}
 			_, err := ParseAuthData(telegramtest.Sign(telegramtest.BotToken, fields))
 			require.ErrorIs(t, err, ErrBadData)
+		})
+	}
+}
+
+type failingIdentities struct{}
+
+func (failingIdentities) FindExternalIdentity(context.Context, users.ExternalAccount) (users.Identity, error) {
+	return users.Identity{}, errors.New("database is down")
+}
+
+type failingFlow struct{}
+
+func (failingFlow) Apply(context.Context, loginflow.Event) error {
+	return errors.New("database is down")
+}
+
+func TestFinishRetriesAfterAFailureBeforeTheOutcome(t *testing.T) {
+	data := parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4242, testNow)))
+	for name, failing := range map[string]func(*Step) Flow{
+		"identity lookup": func(step *Step) Flow {
+			step.identities = failingIdentities{}
+			return &recordedFlow{}
+		},
+		"flow apply": func(*Step) Flow { return failingFlow{} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			step := newTestStep(t, memoryIdentities{})
+			identities := step.identities
+			_, err := step.Finish(t.Context(), failing(step), data)
+			require.Error(t, err)
+			require.NotErrorIs(t, err, ErrReplay)
+
+			step.identities = identities
+			flow := &recordedFlow{}
+			_, err = step.Finish(t.Context(), flow, data)
+			require.NoError(t, err, "a retry after a failure MUST NOT be a replay")
+			assert.Len(t, flow.events, 1)
 		})
 	}
 }
