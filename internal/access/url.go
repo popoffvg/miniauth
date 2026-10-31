@@ -127,7 +127,7 @@ type RequestURL struct {
 
 // ParseRequestURL reads the forwarded scheme, host, and request URI.
 // The query and the fragment are dropped.
-// A path with an empty, "." or ".." segment, or an encoded '.', '/', or '\', is refused:
+// A path with an empty, "." or ".." segment, or an encoded byte the path may carry raw, is refused:
 // a backend can resolve such a path to a different resource than the one that matched.
 func ParseRequestURL(scheme, host, requestURI string) (RequestURL, error) {
 	scheme = strings.ToLower(strings.TrimSpace(scheme))
@@ -140,7 +140,7 @@ func ParseRequestURL(scheme, host, requestURI string) (RequestURL, error) {
 	}
 	path, _, _ := strings.Cut(requestURI, "?")
 	path, _, _ = strings.Cut(path, "#")
-	if len(path) > maxPathBytes || !cleanPath(path) || encodedSeparator(path) {
+	if len(path) > maxPathBytes || !cleanPath(path) || encodedPlainByte(path) {
 		return RequestURL{}, ErrRequestURL
 	}
 	return RequestURL{scheme: scheme, host: parsedHost, path: path}, nil
@@ -181,10 +181,23 @@ func cleanPath(path string) bool {
 	return true
 }
 
-func encodedSeparator(path string) bool {
-	lower := strings.ToLower(path)
-	return strings.Contains(lower, "%2e") || strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c")
+// encodedPlainByte reports a "%XY" that decodes to '/', '\', or a byte a path may carry raw:
+// an unreserved byte, a sub-delim, ':', or '@'.
+// A prefix has no '%', so the backend decodes such a path to one that a longer prefix covers.
+func encodedPlainByte(path string) bool {
+	for i := 0; i+2 < len(path); i++ {
+		if path[i] != '%' {
+			continue
+		}
+		decoded, err := strconv.ParseUint(path[i+1:i+3], 16, 8)
+		if err == nil && strings.IndexByte(plainPathBytes, byte(decoded)) >= 0 {
+			return true
+		}
+	}
+	return false
 }
+
+const plainPathBytes = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@/\\"
 
 func hasControl(s string) bool {
 	for _, r := range s {
