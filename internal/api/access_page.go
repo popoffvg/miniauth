@@ -19,8 +19,6 @@ import (
 // accessPagePath is the access page. The step-up and each change return here.
 const accessPagePath = "/access"
 
-const pageAccess pageName = "access.html"
-
 // expiryLocalLayouts are the values of an HTML datetime-local input, read as UTC.
 var expiryLocalLayouts = []string{"2006-01-02T15:04", "2006-01-02T15:04:05"}
 
@@ -39,23 +37,11 @@ var accessPageProblems = append([]accessProblem{
 	{err: errExpiryInput, status: http.StatusBadRequest, detail: "The expiry MUST be a date or a date and time in UTC."},
 }, accessProblems...)
 
-// accessResult is the query flag of the redirect after a change. It carries no data.
-type accessResult string
-
-// accessResults is the message of each flag. The page ignores a flag that is not in this list.
-var accessResults = []struct {
-	flag    accessResult
-	message pageMessage
-}{
-	{flag: "resource-added", message: "The resource is added."},
-	{flag: "resource-deleted", message: "The resource and its grants are deleted."},
-	{flag: "granted", message: "The access is granted."},
-	{flag: "revoked", message: "The access is revoked."},
-}
-
 // accessPageRequest documents the query of GET /access.
 type accessPageRequest struct {
-	Done string `query:"done" description:"The result of the last change. The page shows a fixed message for a known value and ignores any other value."`
+	Q      string `query:"q" description:"Shows only the resources and the grants whose resource, URL, user, or group contains this text."`
+	Status string `query:"status" enum:"active,expired" description:"Shows only the grants in this state. Any other value shows every grant."`
+	Done   string `query:"done" description:"The result of the last change. The page shows a fixed message for a known value and ignores any other value."`
 }
 
 // accessResourceForm documents the form of POST /access/resources.
@@ -80,47 +66,17 @@ type accessGrantPath struct {
 	ID string `path:"id" format:"uuid"`
 }
 
-// accessPageView is the data of access.html.
-type accessPageView struct {
-	Login     users.Login
-	Message   pageMessage
-	Notice    pageMessage
-	Resources []accessResourceView
-}
-
-type accessResourceView struct {
-	Name   access.ResourceName
-	URL    access.ResourceURL
-	Grants []accessGrantView
-}
-
-// accessGrantView names exactly one of User and Group. A zero ExpiresAt never expires.
-type accessGrantView struct {
-	ID        access.GrantID
-	User      users.Login
-	Group     groups.Name
-	ExpiresAt time.Time
-	Expired   bool
-}
-
 // accessPage lists the resources and their grants, with the forms that change them.
 func (s *service) accessPage(w http.ResponseWriter, r *http.Request) {
 	user, _, ok := s.accessPageAdmin(w, r)
 	if !ok {
 		return
 	}
-	var notice pageMessage
-	done := accessResult(r.URL.Query().Get("done"))
-	for _, result := range accessResults {
-		if result.flag == done {
-			notice = result.message
-		}
-	}
-	s.renderAccess(w, r, http.StatusOK, user, "", notice)
+	s.renderAccess(w, r, http.StatusOK, user, "", doneNotice(r))
 }
 
 func (s *service) addResourceForm(w http.ResponseWriter, r *http.Request) {
-	s.changeAccess(w, r, "resource-added", func(ctx context.Context, form url.Values) error {
+	s.changeAccess(w, r, doneResourceAdded, func(ctx context.Context, form url.Values) error {
 		name, err := access.ParseResourceName(form.Get("name"))
 		if err != nil {
 			return err
@@ -136,7 +92,7 @@ func (s *service) addResourceForm(w http.ResponseWriter, r *http.Request) {
 
 // deleteResourceForm answers 404 for a name that cannot be stored.
 func (s *service) deleteResourceForm(w http.ResponseWriter, r *http.Request) {
-	s.changeAccess(w, r, "resource-deleted", func(ctx context.Context, _ url.Values) error {
+	s.changeAccess(w, r, doneResourceDeleted, func(ctx context.Context, _ url.Values) error {
 		name, err := access.ParseResourceName(r.PathValue("name"))
 		if err != nil {
 			return access.ErrResourceNotFound
@@ -146,7 +102,7 @@ func (s *service) deleteResourceForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *service) grantForm(w http.ResponseWriter, r *http.Request) {
-	s.changeAccess(w, r, "granted", func(ctx context.Context, form url.Values) error {
+	s.changeAccess(w, r, doneGranted, func(ctx context.Context, form url.Values) error {
 		resource, err := access.ParseResourceName(form.Get("resource"))
 		if err != nil {
 			return err
@@ -166,7 +122,7 @@ func (s *service) grantForm(w http.ResponseWriter, r *http.Request) {
 
 // revokeForm answers 404 for an id that is not a UUID.
 func (s *service) revokeForm(w http.ResponseWriter, r *http.Request) {
-	s.changeAccess(w, r, "revoked", func(ctx context.Context, _ url.Values) error {
+	s.changeAccess(w, r, doneGrantRevoked, func(ctx context.Context, _ url.Values) error {
 		var id access.GrantID
 		if err := id.UnmarshalText([]byte(r.PathValue("id"))); err != nil {
 			return access.ErrGrantNotFound
@@ -178,7 +134,7 @@ func (s *service) revokeForm(w http.ResponseWriter, r *http.Request) {
 // changeAccess runs one change of the access page for an admin.
 // An AuthAt older than sessions.StepUpAfter starts a step-up first, and the form is sent again after it.
 // A change redirects with 303 to the page with done. A refused change shows the page with its message.
-func (s *service) changeAccess(w http.ResponseWriter, r *http.Request, done accessResult, change func(ctx context.Context, form url.Values) error) {
+func (s *service) changeAccess(w http.ResponseWriter, r *http.Request, done doneFlag, change func(ctx context.Context, form url.Values) error) {
 	if !s.sameOrigin(r) {
 		renderDenied(w, r, http.StatusForbidden, msgCrossOrigin)
 		return
@@ -207,7 +163,7 @@ func (s *service) changeAccess(w http.ResponseWriter, r *http.Request, done acce
 		renderDenied(w, r, http.StatusInternalServerError, msgAccessFailed)
 		return
 	}
-	http.Redirect(w, r, s.publicURL.Origin()+accessPagePath+"?done="+string(done), http.StatusSeeOther)
+	http.Redirect(w, r, s.publicURL.Origin()+withDone(accessPagePath, done), http.StatusSeeOther)
 }
 
 // accessPageAdmin returns the session user when the user is in groups.Admin.
@@ -247,22 +203,11 @@ func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status in
 		renderDenied(w, r, http.StatusInternalServerError, msgAccessFailed)
 		return
 	}
-	now := time.Now()
-	view := accessPageView{Login: user.Login, Message: message, Notice: notice, Resources: make([]accessResourceView, 0, len(resources))}
-	for _, resource := range resources {
-		row := accessResourceView{Name: resource.Name, URL: resource.URL}
-		for _, entry := range entries {
-			if entry.Grant.Resource != resource.Name {
-				continue
-			}
-			grant := accessGrantView{ID: entry.Grant.ID, User: entry.UserLogin, Expired: !entry.Grant.Expiry.ActiveAt(now)}
-			grant.Group, _ = entry.Grant.Subject.Group()
-			grant.ExpiresAt, _ = entry.Grant.Expiry.Time()
-			row.Grants = append(row.Grants, grant)
-		}
-		view.Resources = append(view.Resources, row)
-	}
-	renderPage(w, r, status, pageAccess, view)
+	view := newAccessPageView(r, resources, entries, time.Now())
+	// The caller checked the admin group, so the menu needs no second lookup.
+	view.Shell = shellView{Login: user.Login, Admin: true, Current: accessPagePath}
+	view.Message, view.Notice = message, notice
+	writePage(w, r, status, accessPage(view), pageCSP)
 }
 
 // parseGrantee reads the user and the group fields. The access service checks that exactly one is set.

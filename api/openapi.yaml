@@ -5,8 +5,9 @@ info:
 paths:
   /:
     get:
-      description: The default page after a login. It shows the login of the session.
-        With no session it redirects to the login page.
+      description: 'The overview page, the default page after a login: the login,
+        the groups, the two-step login state, and the counts of active tokens, devices,
+        and passkeys. With no session it redirects to the login page.'
       operationId: home
       responses:
         "200":
@@ -24,6 +25,25 @@ paths:
         no session it redirects to the login page, which returns here.
       operationId: accessPage
       parameters:
+      - description: Shows only the resources and the grants whose resource, URL,
+          user, or group contains this text.
+        in: query
+        name: q
+        schema:
+          description: Shows only the resources and the grants whose resource, URL,
+            user, or group contains this text.
+          type: string
+      - description: Shows only the grants in this state. Any other value shows every
+          grant.
+        in: query
+        name: status
+        schema:
+          description: Shows only the grants in this state. Any other value shows
+            every grant.
+          enum:
+          - active
+          - expired
+          type: string
       - description: The result of the last change. The page shows a fixed message
           for a known value and ignores any other value.
         in: query
@@ -725,6 +745,17 @@ paths:
           description: Unsupported Media Type
       security:
       - bearerAuth: []
+  /assets/app.css:
+    get:
+      description: The one stylesheet of every page.
+      operationId: appStylesheet
+      responses:
+        "200":
+          content:
+            text/css:
+              schema:
+                type: string
+          description: OK
   /assets/passkey.js:
     get:
       description: The one script of the service. It runs the WebAuthn ceremonies
@@ -1453,10 +1484,14 @@ paths:
           description: Service Unavailable
   /logout:
     post:
+      description: Deletes the sessions of the request. A browser form is redirected
+        to the login page with 303; any other client gets 204.
       operationId: logout
       responses:
         "204":
           description: No Content
+        "303":
+          description: See Other
   /logout/everywhere:
     post:
       operationId: logoutEverywhere
@@ -1549,8 +1584,8 @@ paths:
           description: Service Unavailable
   /passkeys/{id}/delete:
     post:
-      description: Deletes one passkey of the session user and redirects to the sessions
-        page. Origin MUST be the public origin, else 403. A login older than 10 minutes
+      description: Deletes one passkey of the session user and redirects to GET /sessions?done=passkey-deleted.
+        Origin MUST be the public origin, else 403. A login older than 10 minutes
         shows the step-up password form instead, which returns to the sessions page.
         A passkey of another user is 404.
       operationId: deletePasskey
@@ -1816,10 +1851,19 @@ paths:
           description: Service Unavailable
   /sessions:
     get:
-      description: HTML page with the devices of the session user. A browser with
-        no session is redirected to the login page. Any other request with no session
-        is 401.
+      description: 'The security page: the devices, the passkeys, and the two-step
+        login state of the session user. A browser with no session is redirected to
+        the login page. Any other request with no session is 401.'
       operationId: listDevices
+      parameters:
+      - description: The result of the last change. The page shows a fixed message
+          for a known value and ignores any other value.
+        in: query
+        name: done
+        schema:
+          description: The result of the last change. The page shows a fixed message
+            for a known value and ignores any other value.
+          type: string
       responses:
         "200":
           content:
@@ -1838,7 +1882,7 @@ paths:
   /sessions/{device}/forget:
     post:
       description: Deletes a device of the session user and its session. Origin MUST
-        be the public URL origin, else 403. Redirects to the sessions page.
+        be the public URL origin, else 403. Redirects to GET /sessions?done=forgotten.
       operationId: forgetDevice
       parameters:
       - in: path
@@ -1871,8 +1915,7 @@ paths:
   /sessions/{device}/signout:
     post:
       description: Deletes the session of a device of the session user. The device
-        stays. Origin MUST be the public URL origin, else 403. Redirects to the sessions
-        page.
+        stays. Origin MUST be the public URL origin, else 403. Redirects to GET /sessions?done=signed-out.
       operationId: signOutDevice
       parameters:
       - in: path
@@ -1949,8 +1992,8 @@ paths:
   /sessions/totp/disable:
     post:
       description: Turns off two-step login and deletes the recovery codes, then redirects
-        to GET /sessions. Origin MUST be the public origin, else 403. A login older
-        than 10 minutes starts a step-up first.
+        to GET /sessions?done=two-step-off. Origin MUST be the public origin, else
+        403. A login older than 10 minutes starts a step-up first.
       operationId: disableTOTP
       responses:
         "200":
@@ -2032,6 +2075,35 @@ paths:
         form to make one. With no session it redirects to the login page, which returns
         here.
       operationId: tokenPage
+      parameters:
+      - description: Shows only the tokens whose name, prefix, or scope contains this
+          text.
+        in: query
+        name: q
+        schema:
+          description: Shows only the tokens whose name, prefix, or scope contains
+            this text.
+          type: string
+      - description: Shows only the tokens in this state. Any other value shows every
+          token.
+        in: query
+        name: status
+        schema:
+          description: Shows only the tokens in this state. Any other value shows
+            every token.
+          enum:
+          - active
+          - expired
+          - revoked
+          type: string
+      - description: The result of the last change. The page shows a fixed message
+          for a known value and ignores any other value.
+        in: query
+        name: done
+        schema:
+          description: The result of the last change. The page shows a fixed message
+            for a known value and ignores any other value.
+          type: string
       responses:
         "200":
           content:
@@ -2099,7 +2171,7 @@ paths:
           description: Service Unavailable
   /tokens/{id}/revoke:
     post:
-      description: Revokes one token of the session user and redirects to GET /tokens.
+      description: Revokes one token of the session user and redirects to GET /tokens?done=token-revoked.
         Origin MUST be the public origin, else 403. A token of another user is 404.
       operationId: revokeToken
       parameters:

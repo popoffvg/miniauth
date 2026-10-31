@@ -38,6 +38,13 @@ type tokenFormRequest struct {
 	Expires string `formData:"expires" format:"date" description:"The token works until the end of this UTC day. Empty never expires."`
 }
 
+// tokenPageRequest documents the query of GET /tokens.
+type tokenPageRequest struct {
+	Q      string `query:"q" description:"Shows only the tokens whose name, prefix, or scope contains this text."`
+	Status string `query:"status" enum:"active,expired,revoked" description:"Shows only the tokens in this state. Any other value shows every token."`
+	Done   string `query:"done" description:"The result of the last change. The page shows a fixed message for a known value and ignores any other value."`
+}
+
 // tokenRevokeRequest documents the path of POST /tokens/{id}/revoke.
 type tokenRevokeRequest struct {
 	ID string `path:"id" format:"uuid"`
@@ -95,7 +102,7 @@ func (s *service) createToken(w http.ResponseWriter, r *http.Request) {
 	}
 	// The clear token is in this body only. It MUST NOT reach a URL, a log, or a cache.
 	w.Header().Set("Cache-Control", "no-store")
-	renderPage(w, r, http.StatusOK, pageTokenCreated, pageView{NewToken: &secret})
+	renderPage(w, r, http.StatusOK, pageTokenCreated, pageView{Shell: s.shellFor(r, user, tokensPath), NewToken: &secret})
 }
 
 // revokeToken revokes one token of the session user. A token of another user is 404.
@@ -121,7 +128,7 @@ func (s *service) revokeToken(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusInternalServerError, msgTokenFailed)
 		return
 	}
-	http.Redirect(w, r, s.publicURL.Origin()+tokensPath, http.StatusSeeOther)
+	http.Redirect(w, r, s.publicURL.Origin()+withDone(tokensPath, doneTokenRevoked), http.StatusSeeOther)
 }
 
 // tokenPageUser returns the active user of the browser session for the token page.
@@ -141,7 +148,13 @@ func (s *service) renderTokens(w http.ResponseWriter, r *http.Request, status in
 		renderDenied(w, r, http.StatusInternalServerError, msgTokenFailed)
 		return
 	}
-	renderPage(w, r, status, pageTokens, pageView{Login: user.Login, Message: message, Tokens: list})
+	view := pageView{Shell: s.shellFor(r, user, tokensPath), Message: message, Tokens: newTokenTable(r, list, time.Now())}
+	if r.Method == http.MethodGet {
+		view.Notice = doneNotice(r)
+	} else {
+		view.TokenForm = refusedTokenForm(r, message)
+	}
+	renderPage(w, r, status, pageTokens, view)
 }
 
 // parseTokenForm returns a message for the first field that is not valid, or an empty message.

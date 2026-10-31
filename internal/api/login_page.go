@@ -11,7 +11,6 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
-	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -187,31 +186,6 @@ func (s *service) startBrowserSession(w http.ResponseWriter, r *http.Request, us
 func (s *service) sameOrigin(r *http.Request) bool {
 	origin := s.publicURL.Origin()
 	return origin != "" && strings.EqualFold(r.Header.Get("Origin"), origin)
-}
-
-// home is the default page after a login. A disabled user is signed out here, as in /auth/check.
-func (s *service) home(w http.ResponseWriter, r *http.Request) {
-	session, err := s.openBrowserSession(r)
-	if errors.Is(err, sessions.ErrNotFound) {
-		http.Redirect(w, r, s.publicURL.Login(""), http.StatusFound)
-		return
-	}
-	if err != nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: home", "err", err)
-		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
-		return
-	}
-	user, err := s.accounts.Find(r.Context(), session.UserID)
-	if errors.Is(err, users.ErrNotFound) || err == nil && user.Disabled() {
-		http.Redirect(w, r, s.publicURL.Login(""), http.StatusFound)
-		return
-	}
-	if err != nil {
-		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: home", "err", err)
-		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
-		return
-	}
-	renderPage(w, r, http.StatusOK, pageSignedIn, pageView{Login: user.Login})
 }
 
 // retryAfter is the Retry-After value in whole seconds, at least 1.

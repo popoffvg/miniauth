@@ -226,7 +226,7 @@ func TestTokenPageEndToEnd(t *testing.T) {
 	t.Run("revoke ends the token", func(t *testing.T) {
 		resp := submitRevoke(t, ownerBrowser, base, base, tokenID)
 		require.Equal(t, http.StatusSeeOther, resp.status)
-		assert.Equal(t, base+tokensPath, resp.header.Get("Location"))
+		assert.Equal(t, base+withDone(tokensPath, doneTokenRevoked), resp.header.Get("Location"))
 
 		assert.Equal(t, http.StatusUnauthorized, tokenCheck(t, server.Client(), base, clearToken, "/api").status)
 		page := get(t, ownerBrowser, base+tokensPath)

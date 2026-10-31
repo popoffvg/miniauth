@@ -1,8 +1,0 @@
-{{template "head" "Recovery codes"}}
-<h1>Two-step login is on</h1>
-<p>Save these recovery codes now. This page shows them once. Each code works one time, in place of a code from the app.</p>
-<ul>
-{{range .RecoveryCodes}}<li><code>{{.Reveal}}</code></li>
-{{end}}</ul>
-<p><a href="/sessions">Back to your devices</a></p>
-{{template "foot"}}

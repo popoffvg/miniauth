@@ -1,0 +1,297 @@
+package api
+
+import "github.com/popoffvg/miniauth/internal/users"
+
+templ authHeading(title string, lead string) {
+	<h1>{ title }</h1>
+	if lead != "" {
+		<p class="auth-lead">{ lead }</p>
+	}
+}
+
+templ loginForm(view pageView) {
+	@authLayout("Sign in") {
+		@authHeading("Sign in", "Use your account to continue.")
+		<div class="auth-body">
+			@errorAlert(view.Message)
+			<form method="post" action="/login">
+				<div class="field">
+					<label for="login">Login</label>
+					<input id="login" name="login" autocomplete="username" required autofocus/>
+				</div>
+				<div class="field">
+					<div class="field-head">
+						<label for="password">Password</label>
+						if view.Recovery {
+							<a class="small" href="/recover">Forgot password?</a>
+						}
+					</div>
+					<input id="password" name="password" type="password" autocomplete="current-password" required/>
+				</div>
+				<div class="form-actions">
+					<button class="btn btn-primary btn-block" type="submit">Sign in</button>
+				</div>
+			</form>
+			@otherSteps(view)
+		</div>
+	}
+}
+
+// otherSteps is the "or" divider with the redirect step buttons and the step widgets of a login page.
+templ otherSteps(view pageView) {
+	if len(view.Buttons) > 0 || view.Telegram.AuthURL != "" {
+		<div class="or">or</div>
+		<div class="providers">
+			for _, step := range view.Buttons {
+				if step.Script {
+					<button class="btn btn-secondary btn-block" type="button" data-passkey-login={ step.Path }>
+						@icon(step.Icon)
+						{ step.Label }
+					</button>
+				} else {
+					<form method="post" action={ templ.SafeURL(step.Path) }>
+						<button class="btn btn-secondary btn-block" type="submit">
+							@icon(step.Icon)
+							{ step.Label }
+						</button>
+					</form>
+				}
+			}
+			if view.Telegram.AuthURL != "" {
+				<div class="provider-widget">
+					<script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login={ view.Telegram.BotName.String() } data-size="large" data-auth-url={ view.Telegram.AuthURL }></script>
+				</div>
+			}
+		</div>
+	}
+	if view.Script {
+		<p class="alert alert-error" role="alert" data-passkey-message hidden></p>
+		<script src="/assets/passkey.js"></script>
+	}
+}
+
+templ stepChooser(view pageView) {
+	@authLayout("Choose a sign-in method") {
+		@authHeading("Choose a sign-in method", "Pick one way to confirm it is you.")
+		<div class="auth-body">
+			@errorAlert(view.Message)
+			if len(view.Steps) > 0 {
+				<ul class="step-list">
+					for _, step := range view.Steps {
+						<li>
+							<a class="btn btn-secondary btn-block" href={ templ.SafeURL(step.Path) }>
+								@icon(step.Icon)
+								{ step.Label }
+							</a>
+						</li>
+					}
+				</ul>
+			}
+			@otherSteps(view)
+		</div>
+		@authLinks(nil) {
+			<a href="/login">Start again</a>
+		}
+	}
+}
+
+templ totpForm(view pageView) {
+	@authLayout("Two-step login") {
+		@authHeading("Enter the code", "Open your authenticator app and type the code it shows.")
+		<div class="auth-body">
+			@errorAlert(view.Message)
+			<form method="post" action="/login/totp">
+				<div class="field">
+					<label for="code">Code from the authenticator app</label>
+					<input class="mono" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="16" required autofocus/>
+				</div>
+				<div class="form-actions">
+					<button class="btn btn-primary btn-block" type="submit">Continue</button>
+				</div>
+			</form>
+		</div>
+		@authLinks(view.Links)
+	}
+}
+
+templ recoveryCodeForm(view pageView) {
+	@authLayout("Recovery code") {
+		@authHeading("Enter a recovery code", "Each recovery code works one time.")
+		<div class="auth-body">
+			@errorAlert(view.Message)
+			<form method="post" action="/login/recovery-code">
+				<div class="field">
+					<label for="code">Recovery code</label>
+					<input class="mono" id="code" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="32" required autofocus/>
+					<p class="help">A code looks like abcd-efgh-ijkl-mnop.</p>
+				</div>
+				<div class="form-actions">
+					<button class="btn btn-primary btn-block" type="submit">Continue</button>
+				</div>
+			</form>
+		</div>
+		@authLinks(view.Links)
+	}
+}
+
+// authLinks lists the other form steps as small links under the card body, then the children.
+templ authLinks(steps []loginStep) {
+	<div class="auth-links">
+		for _, step := range steps {
+			<a href={ templ.SafeURL(step.Path) }>{ step.Label }</a>
+		}
+		{ children... }
+	</div>
+}
+
+templ stepUpForm(view pageView) {
+	@authLayout("Confirm your password") {
+		<h1>Confirm your password</h1>
+		<p class="auth-lead">You are signed in as <strong>{ view.Login.String() }</strong>. This change needs a recent sign-in.</p>
+		<div class="auth-body">
+			@infoAlert(view.Prompt)
+			@errorAlert(view.Message)
+			<form method="post" action="/login">
+				<div class="field">
+					<label for="password">Password</label>
+					<input id="password" name="password" type="password" autocomplete="current-password" required autofocus/>
+				</div>
+				<div class="form-actions">
+					<button class="btn btn-primary btn-block" type="submit">Confirm</button>
+				</div>
+			</form>
+		</div>
+		@authLinks(nil) {
+			<a href="/">Cancel</a>
+		}
+	}
+}
+
+templ deniedPage(view pageView) {
+	@authLayout("Request refused") {
+		@authHeading("Request refused", "")
+		<div class="auth-body">
+			@errorAlert(view.Message)
+			<a class="btn btn-primary btn-block" href="/login">Open the sign-in page</a>
+		</div>
+		@authLinks(nil) {
+			<a href="/">Go to the overview</a>
+		}
+	}
+}
+
+templ urlDeniedPage(origin string, login users.Login, target string) {
+	@authLayoutAt("Access denied", origin) {
+		@authHeading("Access denied", "")
+		<div class="auth-body">
+			<div class="alert alert-error" role="alert">
+				@icon(iconLock)
+				<div class="alert-body">
+					The user <strong>{ login.String() }</strong> has no access to
+					if target == "" {
+						the requested URL.
+					} else {
+						<code>{ target }</code>.
+					}
+				</div>
+			</div>
+			<p class="muted small">Ask an administrator for access, or sign in as another user.</p>
+		</div>
+		@authLinks(nil) {
+			<a href={ templ.SafeURL(origin + "/") }>Go to your account</a>
+		}
+	}
+}
+
+templ recoverForm(view pageView) {
+	@authLayout("Forgot password") {
+		@authHeading("Forgot password", "Type the email address that is your login. If the address is known, we send a link to set a new password.")
+		<div class="auth-body">
+			@errorAlert(view.Message)
+			<form method="post" action="/recover">
+				<div class="field">
+					<label for="email">Email</label>
+					<input id="email" name="email" type="email" autocomplete="username" required autofocus/>
+				</div>
+				<div class="form-actions">
+					<button class="btn btn-primary btn-block" type="submit">Send the link</button>
+				</div>
+			</form>
+		</div>
+		@authLinks(nil) {
+			<a href="/login">Back to sign in</a>
+		}
+	}
+}
+
+templ recoverSentPage(view pageView) {
+	@authLayout("Check your mail") {
+		@authHeading("Check your mail", "")
+		<div class="auth-body">
+			<div class="alert alert-success" role="status">
+				@icon(iconSuccess)
+				<div class="alert-body">{ string(view.Message) }</div>
+			</div>
+			<p class="muted">The link works once and expires in 30 minutes.</p>
+		</div>
+		@authLinks(nil) {
+			<a href="/login">Back to sign in</a>
+		}
+	}
+}
+
+templ resetForm(view pageView) {
+	@authLayout("Set a new password") {
+		@authHeading("Set a new password", "Every browser session of your account is signed out after the change.")
+		<div class="auth-body">
+			@errorAlert(view.Message)
+			<form method="post" action="/recover/reset">
+				<input type="hidden" name="token" value={ view.ResetToken.LinkValue() }/>
+				<div class="field">
+					<label for="password">New password</label>
+					<input id="password" name="password" type="password" autocomplete="new-password" required autofocus/>
+				</div>
+				<div class="form-actions">
+					<button class="btn btn-primary btn-block" type="submit">Set the password</button>
+				</div>
+			</form>
+		</div>
+	}
+}
+
+templ resetDonePage(_ pageView) {
+	@authLayout("Password changed") {
+		@authHeading("Password changed", "")
+		<div class="auth-body">
+			<div class="alert alert-success" role="status">
+				@icon(iconSuccess)
+				<div class="alert-body">Your password was changed. Every browser session of your account was signed out. Personal access tokens stay valid.</div>
+			</div>
+			<a class="btn btn-primary btn-block" href="/login">Sign in</a>
+		</div>
+	}
+}
+
+templ inviteForm(view pageView) {
+	@authLayout("Create your account") {
+		@authHeading("Create your account", "You were invited. Choose a login and a password.")
+		<div class="auth-body">
+			@errorAlert(view.Message)
+			<form method="post" action="/invite/accept">
+				<input type="hidden" name="token" value={ view.Invite.Reveal() }/>
+				<div class="field">
+					<label for="login">Login</label>
+					<input id="login" name="login" autocomplete="username" maxlength="64" required autofocus aria-describedby="login-help"/>
+					<p class="help" id="login-help">1 to 64 characters. You cannot change it later.</p>
+				</div>
+				<div class="field">
+					<label for="password">Password</label>
+					<input id="password" name="password" type="password" autocomplete="new-password" required/>
+				</div>
+				<div class="form-actions">
+					<button class="btn btn-primary btn-block" type="submit">Create the account</button>
+				</div>
+			</form>
+		</div>
+	}
+}

@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -162,7 +161,7 @@ func TestAccessPageEndToEnd(t *testing.T) {
 		assert.Contains(t, page.body, "The access is granted.")
 		assert.Contains(t, page.body, host+"/app")
 		assert.Contains(t, page.body, member.login)
-		assert.Contains(t, page.body, "expires: never")
+		assert.Contains(t, page.body, `data-label="Expires"><span class="subtle">Never</span>`)
 		matches := accessRevokeFormPattern.FindStringSubmatch(page.body)
 		require.Len(t, matches, 2)
 		grantID = matches[1]
@@ -201,8 +200,8 @@ func TestAccessPageEndToEnd(t *testing.T) {
 		resp := postForm(t, adminBrowser, base+accessPagePath+"/grants", base, url.Values{"resource": {"app"}, "group": {"Editors"}, "expires": {expires}})
 		require.Equal(t, http.StatusSeeOther, resp.status, resp.body)
 		page := get(t, adminBrowser, base+accessPagePath)
-		assert.Contains(t, page.body, "Group <code>editors</code>")
-		assert.Contains(t, page.body, strings.Replace(expires, "T", " ", 1)+" UTC")
+		assert.Contains(t, page.body, `<span class="subtle">Group</span> <code>editors</code>`)
+		assert.Contains(t, page.body, `datetime="`+expires+`:00Z"`)
 	})
 
 	t.Run("a bad origin is 403 and changes nothing", func(t *testing.T) {

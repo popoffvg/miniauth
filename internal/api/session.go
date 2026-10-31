@@ -16,6 +16,11 @@ func (s *service) logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sessions.ClearCookie(w, s.domain)
+	// The sign-out button of a page is a form: a 204 would leave the browser on a page of the old session.
+	if browserRequest(r) {
+		http.Redirect(w, r, s.publicURL.Login(""), http.StatusSeeOther)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

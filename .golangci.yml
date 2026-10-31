@@ -34,6 +34,10 @@ linters:
         linters:
           - wrapcheck
           - gosec
+      # templ calls each child component with the context of Render; contextcheck cannot see it through the generated closures.
+      - linters:
+          - contextcheck
+        text: '^Function `\w+->\w+\$1'
 
 formatters:
   enable:

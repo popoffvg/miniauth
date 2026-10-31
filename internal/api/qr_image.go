@@ -38,3 +38,7 @@ func newQRImage(uri totpstep.KeyURI) (qrImage, error) {
 	}
 	return qrImage{Size: code.Size + 2*qrQuietZone, Path: svgPath(path.String())}, nil
 }
+
+func (q qrImage) viewBox() string {
+	return fmt.Sprintf("0 0 %d %d", q.Size, q.Size)
+}

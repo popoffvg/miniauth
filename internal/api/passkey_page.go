@@ -60,7 +60,7 @@ func (s *service) passkeyNewPage(w http.ResponseWriter, r *http.Request) {
 		s.askStepUp(w, r, user, loginflow.ReturnURL(s.publicURL.Origin()+passkeyNewPath), msgPasskeyStepUp)
 		return
 	}
-	renderPage(w, r, http.StatusOK, pageAddKey, pageView{Login: user.Login, Script: true})
+	renderPage(w, r, http.StatusOK, pageAddKey, pageView{Shell: s.shellFor(r, user, sessionsPagePath), Script: true})
 }
 
 // passkeyAddOptions starts a step-up flow of the session user that carries the registration challenge.
@@ -215,5 +215,5 @@ func (s *service) deletePasskey(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusInternalServerError, msgPasskeyFailed)
 		return
 	}
-	http.Redirect(w, r, s.publicURL.Origin()+sessionsPagePath, http.StatusSeeOther)
+	http.Redirect(w, r, s.publicURL.Origin()+withDone(sessionsPagePath, donePasskeyDeleted), http.StatusSeeOther)
 }

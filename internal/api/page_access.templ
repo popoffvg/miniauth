@@ -1,0 +1,223 @@
+package api
+
+import (
+	"strconv"
+
+	"github.com/popoffvg/miniauth/internal/access"
+)
+
+templ accessPage(view accessPageView) {
+	@shellLayout("Access", view.Shell) {
+		@pageHeader("Access", "A resource is a URL behind the proxy. A grant lets one user or one group reach it. Times are UTC.") {
+			<a class="btn btn-secondary" href="#grant">Grant access</a>
+			@primaryLink("#add-resource", iconPlus, "Add resource")
+		}
+		@doneAlert(view.Notice, accessPagePath)
+		@errorAlert(view.Message)
+		<div class="stack-lg">
+			<section class="card" aria-labelledby="resources-title">
+				<div class="card-header">
+					<div>
+						<h2 id="resources-title">Resources</h2>
+						<p>{ countText(view.TotalResources, "resource", "resources") }</p>
+					</div>
+				</div>
+				if view.TotalResources > 0 {
+					@searchToolbar(accessPagePath, view.Query, "Search resources and grants", string(view.Filter), nil)
+				}
+				if len(view.Resources) > 0 {
+					@resourceRows(view.Resources)
+				} else if view.TotalResources == 0 {
+					@emptyState(iconGlobe, "No resources.", "Add the URL of an app behind the proxy, then grant it to a user or a group.") {
+						@primaryLink("#add-resource", iconPlus, "Add resource")
+					}
+				} else {
+					@emptyState(iconSearch, "No resource matches the search.", "") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(accessPagePath) }>Clear the search</a>
+					}
+				}
+			</section>
+			<section class="card" aria-labelledby="grants-title">
+				<div class="card-header">
+					<div>
+						<h2 id="grants-title">Grants</h2>
+						<p>{ countText(view.TotalGrants, "grant", "grants") }</p>
+					</div>
+				</div>
+				if view.TotalGrants > 0 {
+					<div class="toolbar">
+						@filterChips(accessPagePath, view.Query, string(view.Filter), grantChips)
+					</div>
+				}
+				if len(view.Grants) > 0 {
+					@grantRows(view.Grants)
+				} else if view.TotalGrants == 0 {
+					@emptyState(iconLock, "No grants.", "Nobody can reach a resource until you grant it.") {
+						<a class="btn btn-secondary" href="#grant">Grant access</a>
+					}
+				} else {
+					@emptyState(iconSearch, "No grant matches the filter.", "") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(accessPagePath) }>Clear the filter</a>
+					}
+				}
+			</section>
+			<div class="grid-2">
+				@grantFormCard(view.Choices)
+				@resourceFormCard()
+			</div>
+		</div>
+	}
+}
+
+templ resourceRows(rows []accessResourceView) {
+	<table class="table">
+		<thead>
+			<tr>
+				<th scope="col">Resource</th>
+				<th scope="col">Grants</th>
+				<th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, resource := range rows {
+				<tr>
+					<td>
+						<div class="cell-main">{ resource.Name.String() }</div>
+						<div class="cell-sub"><code>{ resource.URL.String() }</code></div>
+					</td>
+					<td class="num" data-label="Grants">{ strconv.Itoa(resource.Grants) }</td>
+					<td class="actions">
+						@rowMenu(resource.Name.String()) {
+							@confirmPost(accessPagePath+"/resources/"+resource.Name.String()+"/delete", "Delete resource",
+								"Delete “"+resource.Name.String()+"” and its "+countText(resource.Grants, "grant", "grants")+"? Its users lose access at once. This cannot be undone.", "Delete resource")
+						}
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ grantRows(rows []accessGrantView) {
+	<table class="table">
+		<thead>
+			<tr>
+				<th scope="col">Grantee</th>
+				<th scope="col">Resource</th>
+				<th scope="col">Expires</th>
+				<th scope="col">Status</th>
+				<th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, grant := range rows {
+				<tr>
+					<td>
+						<div class="cell-main">
+							if grant.Group.String() != "" {
+								<span class="subtle">Group</span> <code>{ grant.Group.String() }</code>
+							} else {
+								<span class="subtle">User</span> <code>{ grant.User.String() }</code>
+							}
+						</div>
+					</td>
+					<td data-label="Resource">{ grant.Resource.String() }</td>
+					<td class="num" data-label="Expires">
+						@timeCell(timeText(grant.ExpiresAt))
+					</td>
+					<td data-label="Status">
+						if grant.Expired {
+							@badge(toneExpired, "Expired")
+						} else {
+							@badge(toneActive, "Active")
+						}
+					</td>
+					<td class="actions">
+						@rowMenu(grant.Resource.String()) {
+							@confirmPost(accessPagePath+"/grants/"+grant.ID.String()+"/revoke", "Revoke grant",
+								"Revoke this grant of “"+grant.Resource.String()+"”? The next request is refused.", "Revoke grant")
+						}
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ grantFormCard(choices []access.Resource) {
+	<section class="card" id="grant" aria-labelledby="grant-title">
+		<div class="card-header">
+			<div>
+				<h2 id="grant-title">Grant access</h2>
+				<p>Give one user or one group a resource.</p>
+			</div>
+		</div>
+		<form method="post" action="/access/grants">
+			<div class="card-body">
+				<div class="field">
+					<label for="resource"><span>Resource <span class="required" aria-hidden="true">*</span></span></label>
+					<select
+						id="resource"
+						name="resource"
+						required
+						if len(choices) == 0 {
+							disabled
+							aria-describedby="resource-help"
+						}
+					>
+						for _, choice := range choices {
+							<option value={ choice.Name.String() }>{ choice.Name.String() } ({ choice.URL.String() })</option>
+						}
+					</select>
+					if len(choices) == 0 {
+						<p class="help" id="resource-help">Add a resource first.</p>
+					}
+				</div>
+				<div class="field">
+					<label for="user">User login</label>
+					<input id="user" name="user" maxlength="64" aria-describedby="grantee-help"/>
+				</div>
+				<div class="field">
+					<label for="group">Or group</label>
+					<input id="group" name="group" maxlength="64" aria-describedby="grantee-help"/>
+					<p class="help" id="grantee-help">Fill in exactly one: a user login or a group name.</p>
+				</div>
+				<div class="field">
+					<label for="expires"><span>Expires at <span class="optional">(optional)</span></span></label>
+					<input id="expires" name="expires" type="datetime-local" aria-describedby="expires-help"/>
+					<p class="help" id="expires-help">UTC. Empty never expires.</p>
+				</div>
+			</div>
+			<div class="card-footer">
+				<button class="btn btn-primary" type="submit">Grant</button>
+			</div>
+		</form>
+	</section>
+}
+
+templ resourceFormCard() {
+	<section class="card" id="add-resource" aria-labelledby="add-resource-title">
+		<div class="card-header">
+			<div>
+				<h2 id="add-resource-title">Add resource</h2>
+				<p>A request whose URL starts with this URL matches the resource.</p>
+			</div>
+		</div>
+		<form method="post" action="/access/resources">
+			<div class="card-body">
+				<div class="field">
+					<label for="name"><span>Name <span class="required" aria-hidden="true">*</span></span></label>
+					<input id="name" name="name" maxlength="64" required/>
+				</div>
+				<div class="field">
+					<label for="url"><span>URL <span class="required" aria-hidden="true">*</span></span></label>
+					<input id="url" name="url" type="url" required aria-describedby="url-help"/>
+					<p class="help" id="url-help">An absolute http or https URL with no query, for example https://dash.example.test/.</p>
+				</div>
+			</div>
+			<div class="card-footer">
+				<button class="btn btn-primary" type="submit">Add resource</button>
+			</div>
+		</form>
+	</section>
+}

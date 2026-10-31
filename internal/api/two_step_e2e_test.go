@@ -116,7 +116,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 		assertSignedIn(t, submitLogin(t, owned, base, base, owner.login, owner.password))
 		page := get(t, owned, devicesPage)
 		require.Equal(t, http.StatusOK, page.status)
-		assert.Contains(t, page.body, "Two-step login: off")
+		assert.Contains(t, page.body, `data-two-step="off"`)
 		assert.Contains(t, page.body, `action="/sessions/totp/enroll"`)
 	})
 
@@ -157,7 +157,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.status)
 		assert.Contains(t, resp.body, string(msgWrongCode))
 		assert.Contains(t, resp.body, secret)
-		assert.Contains(t, get(t, owned, devicesPage).body, "Two-step login: off")
+		assert.Contains(t, get(t, owned, devicesPage).body, `data-two-step="off"`)
 	})
 
 	t.Run("the confirming code turns on two-step login and shows the recovery codes once", func(t *testing.T) {
@@ -172,7 +172,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 
 		page := get(t, owned, devicesPage)
 		require.Equal(t, http.StatusOK, page.status)
-		assert.Contains(t, page.body, "Two-step login: on")
+		assert.Contains(t, page.body, `data-two-step="on"`)
 		assert.Contains(t, page.body, `action="/sessions/totp/disable"`)
 		assert.NotContains(t, page.body, recoveryCodes[0])
 		assert.NotContains(t, page.body, secret)
@@ -270,7 +270,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 
 		off := postForm(t, owned, base+totpDisablePath, base, url.Values{})
 		require.Equal(t, http.StatusSeeOther, off.status)
-		assert.Contains(t, get(t, owned, devicesPage).body, "Two-step login: off")
+		assert.Contains(t, get(t, owned, devicesPage).body, `data-two-step="off"`)
 
 		_, resp = passwordOnly(t)
 		assertSignedIn(t, resp)

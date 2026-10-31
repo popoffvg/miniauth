@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"html/template"
 	"net/http"
 
 	"github.com/popoffvg/miniauth/internal/access"
@@ -31,33 +30,18 @@ func (noGrants) Check(context.Context, users.ID, []groups.Name, access.RequestUR
 	return access.ErrNoResource
 }
 
-var accessDeniedPage = template.Must(template.New("denied").Parse(`<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Access denied</title></head>
-<body>
-<h1>Access denied</h1>
-<p>The user <strong>{{.Login}}</strong> has no access to <code>{{.URL}}</code>.</p>
-</body>
-</html>
-`))
-
-type accessDenied struct {
-	Login string
-	URL   string
-}
-
 // urlGranted checks the forwarded URL against the grants of the user and the user's groups, for a session and for a token.
 // A missing or refused forwarded URL is denied: there is no URL to grant.
 // It writes the 403 or 500 response and returns false when the request MUST stop.
 func (s *service) urlGranted(w http.ResponseWriter, r *http.Request, user users.User, userGroups []groups.Name) bool {
 	target, err := forwardedRequestURL(r, s)
 	if err != nil {
-		writeAccessDenied(w, r, user.Login, "")
+		writeAccessDenied(w, r, s.publicURL.Origin(), user.Login, "")
 		return false
 	}
 	err = s.grants.Check(r.Context(), user.ID, userGroups, target)
 	if errors.Is(err, access.ErrNoResource) || errors.Is(err, access.ErrNoGrant) {
-		writeAccessDenied(w, r, user.Login, target.String())
+		writeAccessDenied(w, r, s.publicURL.Origin(), user.Login, target.String())
 		return false
 	}
 	if err != nil {
@@ -77,17 +61,19 @@ func forwardedRequestURL(r *http.Request, s *service) (access.RequestURL, error)
 }
 
 // writeAccessDenied names the URL without its query, which can hold a secret.
-func writeAccessDenied(w http.ResponseWriter, r *http.Request, login users.Login, target string) {
-	if target == "" {
-		target = "the requested URL"
-	}
+func writeAccessDenied(w http.ResponseWriter, r *http.Request, origin string, login users.Login, target string) {
 	if !browserRequest(r) {
-		writeProblem(w, http.StatusForbidden, "The user "+login.String()+" has no access to "+target+".")
+		shown := target
+		if shown == "" {
+			shown = "the requested URL"
+		}
+		writeProblem(w, http.StatusForbidden, "The user "+login.String()+" has no access to "+shown+".")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusForbidden)
-	_ = accessDeniedPage.Execute(w, accessDenied{Login: login.String(), URL: target})
+	// Another host serves this page, so the stylesheet and the links name the public origin of miniauth.
+	_ = urlDeniedPage(origin, login, target).Render(r.Context(), w)
 }
