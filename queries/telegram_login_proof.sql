@@ -9,3 +9,7 @@ WHERE expires_at <= sqlc.arg(now);
 
 -- name: CountTelegramLoginProofs :one
 SELECT count(*)::bigint AS n FROM telegram_login_proofs;
+
+-- name: DeleteTelegramLoginProof :exec
+DELETE FROM telegram_login_proofs
+WHERE proof_hash = sqlc.arg(proof_hash);

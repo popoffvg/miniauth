@@ -46,4 +46,10 @@ func TestTelegramProofRepository(t *testing.T) {
 	if gotErr := repo.Use(ctx, first, now.Add(time.Hour)); !errors.Is(gotErr, telegramstep.ErrReplay) {
 		t.Fatalf("Use after cleanup = %v, want ErrReplay for a live row", gotErr)
 	}
+	if err = repo.Release(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if err = repo.Use(ctx, first, now.Add(time.Hour)); err != nil {
+		t.Fatalf("Use after Release = %v, want nil", err)
+	}
 }

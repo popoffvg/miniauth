@@ -43,3 +43,11 @@ func (r *TelegramProofRepository) Cleanup(ctx context.Context, now time.Time) er
 	}
 	return nil
 }
+
+// Release deletes hash, so the same data can sign in again.
+func (r *TelegramProofRepository) Release(ctx context.Context, hash telegramstep.ProofHash) error {
+	if err := r.q.DeleteTelegramLoginProof(ctx, hash[:]); err != nil {
+		return fmt.Errorf("postgres: delete telegram login proof: %w", err)
+	}
+	return nil
+}

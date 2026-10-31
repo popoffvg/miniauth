@@ -28,9 +28,11 @@ type IdentityStore interface {
 
 // ProofStore remembers each accepted widget login.
 // Use MUST store hash and return ErrReplay when hash is already stored.
+// Release deletes hash. Finish calls it when the step fails after Use, so a retry is not a replay.
 // Cleanup deletes the rows that expired at or before now.
 type ProofStore interface {
 	Use(ctx context.Context, hash ProofHash, expiresAt time.Time) error
+	Release(ctx context.Context, hash ProofHash) error
 	Cleanup(ctx context.Context, now time.Time) error
 }
 
@@ -87,6 +89,7 @@ func (s *Step) BotName() BotName {
 
 // Finish checks data and sends EventStepPassed with FactorTelegram to flow.
 // The hash and the age are checked first. Then the proof of data is stored, so the same data passes once.
+// A failure after that releases the proof, so a retry of the same data is not a replay.
 // A known account returns its user. An unknown account sets UnknownAccount on the event and
 // returns the account in Outcome.Unlinked; it creates no user.
 func (s *Step) Finish(ctx context.Context, flow Flow, data AuthData) (Outcome, error) {
@@ -101,9 +104,22 @@ func (s *Step) Finish(ctx context.Context, flow Flow, data AuthData) (Outcome, e
 		return Outcome{}, err
 	}
 	// A row lives until the data is stale, so a replay always meets either the row or ErrStale.
-	if err := s.proofs.Use(ctx, data.proof(), data.authDate.Add(MaxAge)); err != nil {
+	proof := data.proof()
+	if err := s.proofs.Use(ctx, proof, data.authDate.Add(MaxAge)); err != nil {
 		return Outcome{}, err
 	}
+	outcome, err := s.finishUsed(ctx, flow, data)
+	if err != nil {
+		if releaseErr := s.proofs.Release(context.WithoutCancel(ctx), proof); releaseErr != nil {
+			return Outcome{}, errors.Join(err, releaseErr)
+		}
+		return Outcome{}, err
+	}
+	return outcome, nil
+}
+
+// finishUsed looks up the account and applies the event, after the proof of data is stored.
+func (s *Step) finishUsed(ctx context.Context, flow Flow, data AuthData) (Outcome, error) {
 	account := data.Account()
 	identity, err := s.identities.FindExternalIdentity(ctx, account)
 	known := err == nil
