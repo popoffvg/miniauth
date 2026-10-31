@@ -8,5 +8,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/miniauth ./cmd/miniauth
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/miniauth /miniauth
 USER nonroot:nonroot
+# The binary default is loopback. In a container only a wildcard address is reachable through a published port.
+ENV MINIAUTH_LISTEN=0.0.0.0:8080
 EXPOSE 8080
 ENTRYPOINT ["/miniauth"]

@@ -60,7 +60,6 @@ func TestCreateUserHurl(t *testing.T) {
 			},
 			ExposedPorts: []string{"8080/tcp"},
 			Env: map[string]string{
-				"MINIAUTH_LISTEN":             "0.0.0.0:8080",
 				"MINIAUTH_DATABASE_URL":       "postgres://miniauth:miniauth@postgres:5432/miniauth?sslmode=disable",
 				"MINIAUTH_ADMIN_TOKEN_SHA256": hash,
 			},
