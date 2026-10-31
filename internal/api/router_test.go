@@ -144,6 +144,7 @@ func TestRequestLogOmitsSecrets(t *testing.T) {
 	recorded := spanText(spans.Ended())
 	assert.Contains(t, recorded, "POST /api/v1/users")
 	assert.Contains(t, recorded, "http.response.status_code=401")
+	assert.Contains(t, recorded, "http.route=POST /api/v1/users")
 	assert.NotContains(t, recorded, token)
 	assert.NotContains(t, recorded, password)
 	assert.NotContains(t, recorded, sessionCookie)

@@ -51,9 +51,10 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 		start := time.Now()
 		ctx, span := startHTTPSpan(r, id)
 		ctx = withLogger(ctx, requestLogger)
-		//nolint:contextcheck // ctx is the request context with the span.
-		next.ServeHTTP(recorder, r.WithContext(ctx))
-		finishHTTPSpan(span, r, recorder.status)
+		// ServeMux sets Pattern on the request it serves, not on r.
+		served := r.WithContext(ctx) //nolint:contextcheck // ctx is the request context with the span.
+		next.ServeHTTP(recorder, served)
+		finishHTTPSpan(span, served, recorder.status)
 		attrs := []slog.Attr{
 			slog.String("method", r.Method),
 			slog.String("path", loggedPath(r.URL.Path)),
