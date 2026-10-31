@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/config"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
@@ -122,6 +123,10 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
+	grants, err := postgres.NewAccessRepository(pool)
+	if err != nil {
+		return err
+	}
 
 	handler, err := api.NewRouter(
 		users.NewService(accounts),
@@ -134,6 +139,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		logger,
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
 		api.WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
+		api.WithURLGrants(access.NewService(grants)),
 	)
 	if err != nil {
 		return err

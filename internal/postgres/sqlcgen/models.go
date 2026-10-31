@@ -10,6 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccessGrant struct {
+	ID           pgtype.UUID
+	ResourceName string
+	UserID       pgtype.UUID
+	GroupName    pgtype.Text
+	ExpiresAt    pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+}
+
 type AccessToken struct {
 	ID            pgtype.UUID
 	UserID        pgtype.UUID
@@ -54,6 +63,12 @@ type LoginFlow struct {
 	PendingFactor int32
 	ExpiresAt     pgtype.Timestamptz
 	SecretSalt    []byte
+}
+
+type Resource struct {
+	Name       string
+	Host       string
+	PathPrefix string
 }
 
 type Session struct {

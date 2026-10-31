@@ -18,10 +18,12 @@ type Querier interface {
 	CountSessions(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
+	DeleteAccessGrant(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteExpiredLoginFlows(ctx context.Context) error
 	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
 	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
+	DeleteResource(ctx context.Context, name string) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
 	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
@@ -29,14 +31,19 @@ type Querier interface {
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
 	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
+	GetResource(ctx context.Context, name string) (Resource, error)
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
 	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	InsertAccessGrant(ctx context.Context, arg InsertAccessGrantParams) error
 	InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
 	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
+	InsertResource(ctx context.Context, arg InsertResourceParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
+	ListAccessGrants(ctx context.Context, resourceName string) ([]AccessGrant, error)
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
+	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	Ping(ctx context.Context) (int32, error)
 	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)

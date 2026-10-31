@@ -68,6 +68,9 @@ func (s *service) forwardAuth(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
+	if !s.urlGranted(w, r, user, have) {
+		return
+	}
 	method := sessions.MethodFromFactors(session.Factors)
 	if !writeAuthHeaders(w, user.Login, have, method) {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: auth check", "err", errors.New("api: auth header is not safe"))
@@ -253,22 +256,47 @@ func sessionCookiePresent(r *http.Request) bool {
 // The host must match the public origin when the cookie domain is empty.
 // Anything else is empty, so the login page gets no return query.
 func returnURL(r *http.Request, domain sessions.Domain, publicURL PublicURL) string {
-	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
-	if proto != "http" && proto != "https" {
+	forwarded, ok := forwardedURL(r, domain, publicURL)
+	if !ok {
 		return ""
 	}
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if !forwardedHostAllowed(host, domain, publicURL) {
-		return ""
-	}
-	uri := r.Header.Get("X-Forwarded-Uri")
+	return forwarded.String()
+}
+
+// forwardedRequest is the URL in X-Forwarded-Proto, X-Forwarded-Host, and X-Forwarded-Uri.
+// uri is empty when X-Forwarded-Uri is missing.
+type forwardedRequest struct {
+	proto string
+	host  string
+	uri   string
+}
+
+// String reads a missing URI as "/".
+func (f forwardedRequest) String() string {
+	uri := f.uri
 	if uri == "" {
 		uri = "/"
 	}
-	if !safeForwardedURI(uri) {
-		return ""
+	return f.proto + "://" + f.host + uri
+}
+
+// forwardedURL is the one parser of the forwarded URL.
+// ok is false when the scheme, the host, or a present URI is refused.
+// The host must sit under the cookie domain, or match the public origin when the domain is empty.
+func forwardedURL(r *http.Request, domain sessions.Domain, publicURL PublicURL) (forwardedRequest, bool) {
+	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	if proto != "http" && proto != "https" {
+		return forwardedRequest{}, false
 	}
-	return proto + "://" + host + uri
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if !forwardedHostAllowed(host, domain, publicURL) {
+		return forwardedRequest{}, false
+	}
+	uri := r.Header.Get("X-Forwarded-Uri")
+	if uri != "" && !safeForwardedURI(uri) {
+		return forwardedRequest{}, false
+	}
+	return forwardedRequest{proto: proto, host: host, uri: uri}, true
 }
 
 func forwardedHostAllowed(host string, domain sessions.Domain, publicURL PublicURL) bool {

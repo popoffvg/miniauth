@@ -71,8 +71,10 @@ paths:
         and X-Auth-Method. A browser with no session is redirected to the login page.
         Any other request with no session is 401. An invalid, revoked, or expired
         token, or a token of a disabled user, is 401 with error="invalid_token". A
-        URL under no scope of the token is 403. A user outside group is 403. The scope
-        query does not limit a session.'
+        URL under no scope of the token is 403. A user outside group is 403. The URL
+        in X-Forwarded-Proto, X-Forwarded-Host, and X-Forwarded-Uri needs a resource
+        and an active grant for the user or one of the user''s groups, for a session
+        and for a token; else 403. The scope query does not limit a session.'
       operationId: forwardAuth
       parameters:
       - in: query

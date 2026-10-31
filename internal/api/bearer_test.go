@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/access/accesstest"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/tokens"
@@ -33,6 +35,8 @@ func TestForwardAuthAccessToken(t *testing.T) {
 		authorization string
 		host          string
 		uri           string
+		noGrant       bool
+		groupGrant    string
 		want          int
 		www           string
 	}{
@@ -55,13 +59,17 @@ func TestForwardAuthAccessToken(t *testing.T) {
 		{name: "malformed token", authorization: "Bearer idp_short", want: http.StatusUnauthorized, www: invalid},
 		{name: "user in the group", groups: []string{"editors"}, query: "group=editors", want: http.StatusOK},
 		{name: "user outside the group", query: "group=editors", want: http.StatusForbidden},
+		{name: "token in scope with no grant", scopes: []string{"https://app.example.test/mcp"}, uri: "/mcp", noGrant: true, want: http.StatusForbidden},
+		{name: "token with no scope and no grant", uri: "/any/path", noGrant: true, want: http.StatusForbidden},
+		{name: "grant to a group of the owner", groups: []string{"editors"}, groupGrant: "editors", uri: "/any/path", noGrant: true, want: http.StatusOK},
+		{name: "host outside the cookie domain", host: "app.other.test", uri: "/mcp", want: http.StatusForbidden},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			accounts := &memRepo{}
 			members := newMemGroups()
 			store := newMemTokens()
-			access := tokens.NewService(store)
+			issuer := tokens.NewService(store)
 			user := users.User{ID: users.NewID(), Login: mustLogin(t, "ada@example.test"), CreatedAt: time.Now().UTC()}
 			if tt.disabled {
 				user.DisabledAt = time.Now().UTC()
@@ -78,15 +86,25 @@ func TestForwardAuthAccessToken(t *testing.T) {
 			require.NoError(t, err)
 			name, err := tokens.ParseName("ci")
 			require.NoError(t, err)
-			secret, issued, err := access.Issue(t.Context(), user.ID, name, scopes, time.Time{})
+			secret, issued, err := issuer.Issue(t.Context(), user.ID, name, scopes, time.Time{})
 			require.NoError(t, err)
 			if tt.revoked {
-				require.NoError(t, access.Revoke(t.Context(), user.ID, issued.ID))
+				require.NoError(t, issuer.Revoke(t.Context(), user.ID, issued.ID))
 			}
 			if tt.expired {
 				store.expire(issued.ID)
 			}
-			router, err := NewRouter(users.NewService(accounts), sessions.NewService(newMemSessions()), members, sessions.Domain{}, PublicURL{}, hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler), WithAccessTokens(access))
+			grants := access.NewService(accesstest.NewRepository())
+			app := createResource(t, grants, "app", "app.example.test", "/")
+			if !tt.noGrant {
+				grantResource(t, grants, app, access.UserSubject(user.ID))
+			}
+			if tt.groupGrant != "" {
+				groupName, parseErr := groups.ParseName(tt.groupGrant)
+				require.NoError(t, parseErr)
+				grantResource(t, grants, app, access.GroupSubject(groupName))
+			}
+			router, err := NewRouter(users.NewService(accounts), sessions.NewService(newMemSessions()), members, mustDomain(t, ".example.test"), mustPublicURL(t, "https://id.example.test"), hashToken(t, "bootstrap-token-for-tests"), &readyState{ok: true}, slog.New(slog.DiscardHandler), WithAccessTokens(issuer), WithURLGrants(grants))
 			require.NoError(t, err)
 
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/check", nil)
@@ -103,7 +121,11 @@ func TestForwardAuthAccessToken(t *testing.T) {
 			}
 			req.Header.Set("X-Forwarded-Proto", "https")
 			req.Header.Set("X-Forwarded-Host", host)
-			req.Header.Set("X-Forwarded-Uri", tt.uri)
+			uri := tt.uri
+			if uri == "" {
+				uri = "/dash"
+			}
+			req.Header.Set("X-Forwarded-Uri", uri)
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
