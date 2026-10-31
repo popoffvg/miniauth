@@ -54,6 +54,15 @@ type Identity struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+type Invite struct {
+	TokenHash    []byte
+	ResourceName string
+	CreatedAt    pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	UsedAt       pgtype.Timestamptz
+	UserID       pgtype.UUID
+}
+
 type LoginAttempt struct {
 	Login       string
 	Ip          netip.Addr

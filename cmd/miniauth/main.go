@@ -16,6 +16,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/config"
+	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
@@ -135,6 +136,14 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		return err
 	}
 	defer stopRecovery()
+	inviteRepo, err := postgres.NewInviteRepository(pool)
+	if err != nil {
+		return err
+	}
+	inviteService, err := invites.NewService(inviteRepo, nil)
+	if err != nil {
+		return err
+	}
 
 	handler, err := api.NewRouter(
 		userService,
@@ -150,6 +159,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		api.WithURLGrants(grants),
 		api.WithAccessAdmin(grants),
 		withRecovery,
+		api.WithInvites(inviteService),
 	)
 	if err != nil {
 		return err

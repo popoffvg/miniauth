@@ -444,6 +444,62 @@ paths:
           description: Service Unavailable
       security:
       - bearerAuth: []
+  /api/v1/invites:
+    post:
+      description: 'Creates an invite for one resource. The reply holds the one-time
+        link {public URL}/invite/{token}, shown once: only the SHA-256 of the token
+        is stored. The link expires after 7 days. An unknown resource is 404.'
+      operationId: createInvite
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiCreateInviteRequest'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiInviteBody'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
   /api/v1/resources:
     get:
       description: Lists every resource in name order.
@@ -704,6 +760,96 @@ paths:
       responses:
         "204":
           description: No Content
+  /invite/{token}:
+    get:
+      description: Shows the account form of an open invite. An unknown, used, or
+        expired token is 410 with one page for the three cases. The request log shows
+        the route pattern, not the token.
+      operationId: invitePage
+      parameters:
+      - in: path
+        name: token
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "410":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Gone
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /invite/accept:
+    post:
+      description: Accepts the invite in the form. Origin MUST be the public origin,
+        else 403. In one transaction it marks the invite used, creates the user with
+        a password identity, and grants the resource. Then it starts a session and
+        redirects to https, the host, and the path prefix of the resource. A taken
+        login shows the form again with 409, and the invite stays unused. An unknown,
+        used, or expired token is 410.
+      operationId: acceptInvite
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiInviteFormRequest'
+      responses:
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "410":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Gone
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
   /login:
     get:
       description: Starts a login flow and shows the login form. The flow id and secret
@@ -1186,6 +1332,13 @@ components:
       required:
       - resource
       type: object
+    ApiCreateInviteRequest:
+      properties:
+        resource:
+          type: string
+      required:
+      - resource
+      type: object
     ApiCreateResourceRequest:
       properties:
         name:
@@ -1290,6 +1443,17 @@ components:
             type: string
           type: array
       type: object
+    ApiInviteBody:
+      properties:
+        expires_at:
+          format: date-time
+          type: string
+        link:
+          format: uri
+          type: string
+        resource:
+          type: string
+      type: object
     ApiProblemBody:
       properties:
         detail:
@@ -1347,6 +1511,24 @@ components:
       required:
       - name
       - url
+      type: object
+    FormDataApiInviteFormRequest:
+      properties:
+        login:
+          maxLength: 64
+          minLength: 1
+          type: string
+        password:
+          format: password
+          maxLength: 1024
+          minLength: 1
+          type: string
+        token:
+          type: string
+      required:
+      - token
+      - login
+      - password
       type: object
     FormDataApiLoginFormRequest:
       properties:

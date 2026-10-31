@@ -107,10 +107,13 @@ func requestID(r *http.Request) string {
 	return uuid.New().String()
 }
 
-// echoesCredential reports whether id is the bearer token, a secret cookie, a query value, or has the access token marker.
+// echoesCredential reports whether id is the bearer token, a secret cookie, a query value, a secret path segment, or has the access token marker.
 // A client can put a secret in X-Request-ID. That value MUST NOT be logged.
 // The body is not read here, so an id with the marker is refused: it can be the token of an import body.
 func echoesCredential(r *http.Request, id string) bool {
+	if loggedPath(r.URL.Path) != r.URL.Path && strings.Contains(r.URL.Path, id) {
+		return true
+	}
 	if strings.HasPrefix(id, tokens.SecretMarker) {
 		return true
 	}

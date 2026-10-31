@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invite, error)
 	ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error)
 	CountDevices(ctx context.Context) (int64, error)
 	CountIPFailures(ctx context.Context, arg CountIPFailuresParams) (CountIPFailuresRow, error)
@@ -41,6 +42,7 @@ type Querier interface {
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
 	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
+	GetInvite(ctx context.Context, tokenHash []byte) (Invite, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
 	GetOpenPasswordReset(ctx context.Context, arg GetOpenPasswordResetParams) (GetOpenPasswordResetRow, error)
 	GetResource(ctx context.Context, name string) (Resource, error)
@@ -51,6 +53,7 @@ type Querier interface {
 	InsertAccessGrant(ctx context.Context, arg InsertAccessGrantParams) error
 	InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
+	InsertInvite(ctx context.Context, arg InsertInviteParams) error
 	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
 	InsertPasswordReset(ctx context.Context, arg InsertPasswordResetParams) error
 	InsertRecoveryAttempt(ctx context.Context, arg InsertRecoveryAttemptParams) error
@@ -68,6 +71,7 @@ type Querier interface {
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
 	Ping(ctx context.Context) (int32, error)
 	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)
+	SetInviteUser(ctx context.Context, arg SetInviteUserParams) (int64, error)
 	SetPasswordHash(ctx context.Context, arg SetPasswordHashParams) (int64, error)
 	TouchAccessToken(ctx context.Context, arg TouchAccessTokenParams) error
 	TouchSessionDevice(ctx context.Context, arg TouchSessionDeviceParams) error
