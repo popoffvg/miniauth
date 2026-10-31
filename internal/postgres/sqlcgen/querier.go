@@ -17,6 +17,9 @@ type Querier interface {
 	// A success resets the count for its login. It does not reset the count for its IP.
 	CountLoginFailures(ctx context.Context, arg CountLoginFailuresParams) (CountLoginFailuresRow, error)
 	CountLoginFlows(ctx context.Context) (int64, error)
+	CountRecoveryIPFailures(ctx context.Context, arg CountRecoveryIPFailuresParams) (CountRecoveryIPFailuresRow, error)
+	// A success resets the count for its login. It does not reset the count for its IP.
+	CountRecoveryLoginFailures(ctx context.Context, arg CountRecoveryLoginFailuresParams) (CountRecoveryLoginFailuresRow, error)
 	CountSessions(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
@@ -27,6 +30,9 @@ type Querier interface {
 	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
 	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
+	DeleteOpenPasswordResets(ctx context.Context, userID pgtype.UUID) error
+	DeletePasswordResetsBefore(ctx context.Context, expiresAt pgtype.Timestamptz) error
+	DeleteRecoveryAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteResource(ctx context.Context, name string) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
@@ -36,6 +42,7 @@ type Querier interface {
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
 	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
+	GetOpenPasswordReset(ctx context.Context, arg GetOpenPasswordResetParams) (GetOpenPasswordResetRow, error)
 	GetResource(ctx context.Context, name string) (Resource, error)
 	GetSession(ctx context.Context, secretHash []byte) (GetSessionRow, error)
 	GetStoredDeviceHash(ctx context.Context, id pgtype.UUID) ([]byte, error)
@@ -45,6 +52,8 @@ type Querier interface {
 	InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
 	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
+	InsertPasswordReset(ctx context.Context, arg InsertPasswordResetParams) error
+	InsertRecoveryAttempt(ctx context.Context, arg InsertRecoveryAttemptParams) error
 	InsertResource(ctx context.Context, arg InsertResourceParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
@@ -55,8 +64,11 @@ type Querier interface {
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
+	LockOpenPasswordReset(ctx context.Context, arg LockOpenPasswordResetParams) (pgtype.UUID, error)
+	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
 	Ping(ctx context.Context) (int32, error)
 	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)
+	SetPasswordHash(ctx context.Context, arg SetPasswordHashParams) (int64, error)
 	TouchAccessToken(ctx context.Context, arg TouchAccessTokenParams) error
 	TouchSessionDevice(ctx context.Context, arg TouchSessionDeviceParams) error
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)

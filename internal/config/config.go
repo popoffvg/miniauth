@@ -41,6 +41,7 @@ type Config struct {
 	AdminToken api.AdminTokenHash
 	Cookie     sessions.Domain
 	PublicURL  api.PublicURL
+	Mail       Mail
 }
 
 // LogValue keeps the database URL and the admin token hash out of a log.
@@ -51,6 +52,8 @@ func (c Config) LogValue() slog.Value {
 		slog.String("admin_token", "redacted"),
 		slog.String("cookie_domain", c.Cookie.String()),
 		slog.String("public_host", c.PublicURL.Host()),
+		slog.String("mail", string(c.Mail.Kind)),
+		slog.String("smtp_host", c.Mail.SMTP.Host.String()),
 	)
 }
 
@@ -89,7 +92,8 @@ func Load(getenv func(string) string) (Config, error) {
 	admin, adminErr := parseAdmin(getenv(envAdmin))
 	cookie, cookieErr := parseCookie(getenv(envCookie))
 	public, publicErr := parsePublic(getenv(envPublic))
-	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr); err != nil {
+	mail, mailErr := parseMail(getenv)
+	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr); err != nil {
 		return Config{}, err
 	}
 	return Config{
@@ -98,6 +102,7 @@ func Load(getenv func(string) string) (Config, error) {
 		AdminToken: admin,
 		Cookie:     cookie,
 		PublicURL:  public,
+		Mail:       mail,
 	}, nil
 }
 

@@ -58,7 +58,7 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 		finishHTTPSpan(span, r, recorder.status)
 		attrs := []slog.Attr{
 			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
+			slog.String("path", loggedPath(r.URL.Path)),
 			slog.Int("status", recorder.status),
 			slog.Duration("duration", time.Since(start)),
 		}
@@ -74,11 +74,11 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 // The query string and the headers are omitted: they can hold a token or a password.
 func startHTTPSpan(r *http.Request, requestID string) (context.Context, trace.Span) {
 	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	ctx, span := otel.Tracer(httpTracerName).Start(ctx, r.Method+" "+r.URL.Path,
+	ctx, span := otel.Tracer(httpTracerName).Start(ctx, r.Method+" "+loggedPath(r.URL.Path),
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			semconv.HTTPRequestMethodKey.String(r.Method),
-			semconv.URLPath(r.URL.Path),
+			semconv.URLPath(loggedPath(r.URL.Path)),
 			attribute.String("http.request_id", requestID),
 		),
 	)

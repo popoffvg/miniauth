@@ -144,11 +144,9 @@ func writeAuthHeaders(w http.ResponseWriter, login users.Login, names []groups.N
 	return true
 }
 
-// The account has no separate email column.
 func emailFromLogin(login users.Login) string {
-	value := login.String()
-	if strings.Contains(value, "@") {
-		return value
+	if email, ok := login.Email(); ok {
+		return email.String()
 	}
 	return ""
 }

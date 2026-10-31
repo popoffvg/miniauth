@@ -544,6 +544,153 @@ paths:
           description: OK
         "503":
           description: Service Unavailable
+  /recover:
+    get:
+      description: Asks for the email address of a user who forgot the password. 503
+        when no mail sender is configured.
+      operationId: recoverPage
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+    post:
+      description: Sends a one-time reset link to the login equal to the email, in
+        the background. A known and an unknown address get the same 200 page. Origin
+        MUST be the public origin, else 403. A backoff per address and per client
+        IP is 429.
+      operationId: recover
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiRecoverFormRequest'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "429":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Too Many Requests
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /recover/{token}:
+    get:
+      description: The link from the recovery mail. It shows the new password form
+        with the token in a hidden field. Referrer-Policy is no-referrer. An unknown,
+        used, or expired link is 400.
+      operationId: resetPage
+      parameters:
+      - in: path
+        name: token
+        required: true
+        schema:
+          maxLength: 43
+          minLength: 43
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /recover/reset:
+    post:
+      description: Sets the new password through the token in the form. Every session
+        of the user is deleted. Personal access tokens stay valid. The link cannot
+        be used again. Origin MUST be the public origin, else 403.
+      operationId: resetPassword
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiResetFormRequest'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
   /sessions:
     get:
       description: HTML page with the devices of the session user. A browser with
@@ -902,6 +1049,31 @@ components:
           type: string
       required:
       - login
+      - password
+      type: object
+    FormDataApiRecoverFormRequest:
+      properties:
+        email:
+          format: email
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+      - email
+      type: object
+    FormDataApiResetFormRequest:
+      properties:
+        password:
+          format: password
+          maxLength: 1024
+          minLength: 1
+          type: string
+        token:
+          maxLength: 43
+          minLength: 43
+          type: string
+      required:
+      - token
       - password
       type: object
     FormDataApiTokenFormRequest:
