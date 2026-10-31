@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -31,11 +32,13 @@ const (
 	pageRecoverSent pageName = "recover_sent.html"
 	pageReset       pageName = "reset.html"
 	pageResetDone   pageName = "reset_done.html"
+	pageInvite      pageName = "invite.html"
 	// pageTokenCreated shows the clear token. The handler MUST set Cache-Control: no-store.
 	pageTokenCreated pageName = "token_created.html"
 )
 
-// pageMessage is a sentence a page shows to the user. It MUST NOT tell which logins exist.
+// pageMessage is a sentence a page shows to the user. It MUST NOT tell which logins exist,
+// except on the invite form, which needs an open invite.
 type pageMessage string
 
 const (
@@ -65,6 +68,8 @@ type pageView struct {
 	Recovery bool
 	// ResetToken goes to the hidden field of the new password form, never to a URL.
 	ResetToken recovery.Token
+	// Invite goes to the hidden field of the invite form, never to a URL.
+	Invite invites.Token
 }
 
 // pageCSP allows inline style and nothing else. form-action is not set:

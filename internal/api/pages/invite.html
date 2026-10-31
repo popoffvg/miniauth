@@ -1,0 +1,12 @@
+{{template "head" "Create your account"}}
+<h1>Create your account</h1>
+{{with .Message}}<p class="message" role="alert">{{.}}</p>{{end}}
+<form method="post" action="/invite/accept">
+<input type="hidden" name="token" value="{{.Invite.Reveal}}">
+<label for="login">Login</label>
+<input id="login" name="login" autocomplete="username" maxlength="64" required autofocus>
+<label for="password">Password</label>
+<input id="password" name="password" type="password" autocomplete="new-password" required>
+<button type="submit">Create the account</button>
+</form>
+{{template "foot"}}

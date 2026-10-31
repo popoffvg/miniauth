@@ -13,6 +13,7 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/groups"
+	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/recovery"
@@ -71,6 +72,9 @@ type service struct {
 	passwords   *passwordstep.Service
 	recovery    *recovery.Service
 	spec        []byte
+
+	// invites is nil unless WithInvites sets it.
+	invites *invites.Service
 }
 
 // WithLogin serves the login page. Without it, the login routes answer 503.
@@ -284,6 +288,48 @@ func (s *service) routes() []route {
 			status:  http.StatusNoContent,
 			errors:  []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
 			doc:     "Revokes the grant. The next /auth/check does not count it.",
+		},
+		{
+			method:   http.MethodPost,
+			path:     "/api/v1/invites",
+			id:       "createInvite",
+			handler:  s.createInvite,
+			request:  new(createInviteRequest),
+			response: new(inviteBody),
+			status:   http.StatusCreated,
+			errors: []int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusNotFound,
+				http.StatusRequestEntityTooLarge,
+				http.StatusUnsupportedMediaType,
+				http.StatusServiceUnavailable,
+			},
+			doc: "Creates an invite for one resource. The reply holds the one-time link {public URL}/invite/{token}, shown once: only the SHA-256 of the token is stored. The link expires after 7 days. An unknown resource is 404.",
+		},
+		{
+			method:      http.MethodGet,
+			path:        "/invite/{token}",
+			id:          "invitePage",
+			handler:     s.invitePage,
+			request:     new(invitePath),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			pages:       []int{http.StatusGone, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Shows the account form of an open invite. An unknown, used, or expired token is 410 with one page for the three cases. The request log shows the route pattern, not the token.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     "/invite/accept",
+			id:       "acceptInvite",
+			handler:  s.acceptInvite,
+			request:  new(inviteFormRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusGone, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Accepts the invite in the form. Origin MUST be the public origin, else 403. In one transaction it marks the invite used, creates the user with a password identity, and grants the resource. Then it starts a session and redirects to https, the host, and the path prefix of the resource. A taken login shows the form again with 409, and the invite stays unused. An unknown, used, or expired token is 410.",
+			isPublic: true,
 		},
 		{
 			method:   http.MethodGet,
