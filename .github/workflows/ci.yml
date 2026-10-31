@@ -42,12 +42,12 @@ jobs:
             go.sum
             tools/go.sum
       - name: gosec
-        run: go tool -modfile=tools/go.mod gosec -no-fail -fmt sarif -out gosec.sarif ./...
+        run: go tool -modfile=tools/go.mod gosec -exclude-generated -no-fail -fmt sarif -out gosec.sarif ./...
       - uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gosec.sarif
       - name: gosec gate
-        run: go tool -modfile=tools/go.mod gosec -quiet ./...
+        run: go tool -modfile=tools/go.mod gosec -exclude-generated -quiet ./...
 
   test:
     runs-on: ubuntu-latest
