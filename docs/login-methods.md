@@ -78,7 +78,7 @@ Make the bot:
 1. Create a bot with BotFather. Put its user name and token in the two variables.
 2. Set the bot domain (`/setdomain` in BotFather) to the host of `MINIAUTH_PUBLIC_URL`.
 
-The login page then shows the Telegram Login Widget in redirect mode. Telegram sends the browser to `GET /login/telegram/callback`. The callback needs the login flow cookie of an open flow. It checks the hash with the bot token. It refuses data that is one day old or more, data more than one minute in the future, and data that signed in before. Only the Telegram `id` links an account to a user.
+The login page then shows the Telegram Login Widget in redirect mode. Telegram sends the browser to `GET /login/telegram/callback?flow_nonce=...`. The callback needs the login flow cookie of an open flow, and `flow_nonce` MUST belong to that flow. The nonce is an HMAC of the flow secret, so data that another browser received for its own flow is refused: an attacker cannot sign a victim in to the attacker's account. It checks the hash with the bot token. It refuses data that is one day old or more, data more than one minute in the future, and data that signed in before. Only the Telegram `id` links an account to a user.
 
 ## Account linking
 

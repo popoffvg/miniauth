@@ -519,7 +519,7 @@ func (s *service) routes() []route {
 			request:  new(telegramCallbackRequest),
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusOK, http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:      "The data-auth-url of the Telegram Login Widget. It needs the login flow cookie of an open flow. The hash MUST be the HMAC-SHA256 of the other fields, sorted by key and joined as key=value lines, keyed with the SHA-256 of the bot token. Data older than one day, more than a minute in the future, or used before is 400. Only the id field links the account. A linked account completes the flow: it sets the session cookie and redirects to the return URL. An unknown account starts no session and creates no user: it is kept 15 minutes as a pending link bound to the browser by the cookie __Host-id_pending_link, and the page asks for a password login, which then links it.",
+			doc:      "The data-auth-url of the Telegram Login Widget. It needs the login flow cookie of an open flow, and flow_nonce MUST be the nonce of that flow, so data sent to another browser is 400. The hash MUST be the HMAC-SHA256 of the other fields, sorted by key and joined as key=value lines, keyed with the SHA-256 of the bot token. Data older than one day, more than a minute in the future, or used before is 400. Only the id field links the account. A linked account completes the flow: it sets the session cookie and redirects to the return URL. An unknown account starts no session and creates no user: it is kept 15 minutes as a pending link bound to the browser by the cookie __Host-id_pending_link, and the page asks for a password login, which then links it.",
 			isPublic: true,
 		},
 		{

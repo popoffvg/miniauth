@@ -48,6 +48,8 @@ Pages that show a secret once (a new token, a TOTP secret, recovery codes, an in
 
 Each browser POST MUST send an `Origin` header equal to the origin of `MINIAUTH_PUBLIC_URL`. A missing or other `Origin` is 403. This is the defence against cross-site form posts.
 
+The Telegram callback is a GET from another site, so it has no `Origin` check. Its URL carries `flow_nonce`, an HMAC of the login flow secret. The callback refuses a nonce that is not the nonce of the flow in the cookie.
+
 ## Logs and traces
 
 The process writes JSON logs to standard output, one line per request.

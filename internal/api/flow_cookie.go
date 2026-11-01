@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"strings"
@@ -48,4 +49,20 @@ func flowFromRequest(r *http.Request) (loginflow.FlowID, loginflow.FlowSecret, e
 		return "", loginflow.FlowSecret{}, loginflow.ErrFlowNotFound
 	}
 	return id, secret, nil
+}
+
+type newFlowSecretKey struct{}
+
+// withNewFlowSecret lets the page of the response that sets a new flow cookie read the secret of that flow.
+func withNewFlowSecret(r *http.Request, secret loginflow.FlowSecret) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), newFlowSecretKey{}, secret))
+}
+
+// flowSecretOf returns the secret of the flow this response shows: a new flow first, else the flow cookie.
+func flowSecretOf(r *http.Request) (loginflow.FlowSecret, bool) {
+	if secret, ok := r.Context().Value(newFlowSecretKey{}).(loginflow.FlowSecret); ok {
+		return secret, true
+	}
+	_, secret, err := flowFromRequest(r)
+	return secret, err == nil
 }
