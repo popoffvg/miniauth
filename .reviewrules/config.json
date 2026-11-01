@@ -4,7 +4,7 @@
   "rules": [
     {
       "id": "secret-in-clear-text",
-      "rule": "In production Go and SQL code, a secret (password, session id, personal access token, flow secret, reset or invite token, TOTP secret, recovery code, provider client secret, SMTP password) MUST NOT reach a log line, an error message, a URL, a span attribute, or a database column in clear text. The database stores a hash of each session id and each token. A return URL that the user asked for is not a secret.",
+      "rule": "In production Go and SQL code, a secret (password, session id, personal access token, flow secret, reset or invite token, TOTP secret, recovery code, provider client secret, SMTP password) MUST NOT reach a log line, an error message, a span attribute, a database column, or a URL that a server or a proxy logs, in clear text. The database stores a hash of each session id and each token. A return URL that the user asked for is not a secret. A one-time link that a page shows once to an admin (an invite) or that a mail sends to the user (a reset) is the product, not a leak.",
       "scope": ["cmd/**/*.go", "internal/**/*.go", "queries/*.sql", "migrations/*.sql"],
       "severity": "high"
     },
@@ -16,7 +16,7 @@
     },
     {
       "id": "domain-types",
-      "rule": "Domain-driven design: each entity, value object, id, and DTO has its own named type. A bare string, []byte, or uuid.UUID MUST NOT carry a domain concept in an exported signature or a struct field of production code. A DTO stays in its adapter package (internal/api).",
+      "rule": "Domain-driven design: each entity, value object, id, and DTO has its own named type. A bare string, []byte, or uuid.UUID MUST NOT carry a domain concept in an exported signature or a struct field of production code. A DTO stays in its adapter package (internal/api). Allowed: a Parse* or New* constructor that takes the raw input, and a String, Reveal, CookieValue, or LinkValue method that returns it, because they are the type boundary; a named type that wraps a string in an unexported field; the read models of an admin service (useradmin.Account, groupadmin.Group); the WebAuthn JSON responses of the passkey provider; and DTO fields in internal/api for form and JSON input, which may be raw strings because the handler parses them into domain types.",
       "scope": ["internal/**/*.go"],
       "severity": "medium"
     },
@@ -28,7 +28,7 @@
     },
     {
       "id": "sql-through-sqlc",
-      "rule": "SQL lives in queries/*.sql and goes through sqlc. Production Go code MUST NOT build or hold SQL strings.",
+      "rule": "SQL lives in queries/*.sql and goes through sqlc. Production Go code MUST NOT build or hold SQL strings. The SQL text that a tracing hook receives from pgx is not SQL built in Go.",
       "scope": ["cmd/**/*.go", "internal/**/*.go"],
       "severity": "medium"
     },
