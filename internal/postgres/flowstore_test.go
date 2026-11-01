@@ -169,6 +169,37 @@ func TestLoginFlowEngine(t *testing.T) {
 			t.Fatalf("load after cancel = %v, want ErrFlowNotFound", err)
 		}
 	})
+
+	t.Run("a flow that expires after load does not complete", func(t *testing.T) {
+		id, err := loginflow.NewFlowID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		secret, err := loginflow.NewFlowSecret()
+		if err != nil {
+			t.Fatal(err)
+		}
+		hash, err := secret.Hash()
+		if err != nil {
+			t.Fatal(err)
+		}
+		flow := loginflow.LoginFlow{ID: id, ReturnURL: returnURL, ExpiresAt: time.Now().Add(time.Second).UTC(), State: loginflow.StateAwaiting, Kind: loginflow.KindLogin}
+		if err = store.Create(ctx, flow, hash); err != nil {
+			t.Fatal(err)
+		}
+		prev, err := store.Load(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Second)
+		next, err := prev.Next(loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPassword, UserID: ada.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.Write(ctx, id, prev, next); !errors.Is(err, loginflow.ErrFlowNotFound) {
+			t.Fatalf("Write() of a complete flow after expiry = %v, want ErrFlowNotFound", err)
+		}
+	})
 }
 
 func assertHashIsNotSecret(ctx context.Context, t *testing.T, store *postgres.FlowStore, id loginflow.FlowID, secret loginflow.FlowSecret) {

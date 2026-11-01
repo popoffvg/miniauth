@@ -81,7 +81,7 @@ func (s *service) passkeyLogin(w http.ResponseWriter, r *http.Request) {
 	case passkeyRefused(err):
 		writeProblem(w, http.StatusBadRequest, msgPasskeyRefused)
 		return
-	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
+	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition), errors.Is(err, loginflow.ErrFlowNotFound):
 		clearFlowCookie(w)
 		writeProblem(w, http.StatusBadRequest, string(msgFlowExpired))
 		return

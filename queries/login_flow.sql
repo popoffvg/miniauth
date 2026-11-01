@@ -45,11 +45,11 @@ SET
     pending_factor = sqlc.arg(pending_factor),
     expires_at = sqlc.arg(expires_at),
     user_id = sqlc.arg(user_id)
-WHERE id = sqlc.arg(id) AND version = sqlc.arg(prev_version);
+WHERE id = sqlc.arg(id) AND version = sqlc.arg(prev_version) AND expires_at > now();
 
 -- name: DeleteLoginFlowVersion :execrows
 DELETE FROM login_flows
-WHERE id = $1 AND version = $2;
+WHERE id = $1 AND version = $2 AND expires_at > now();
 
 -- name: DeleteLoginFlow :exec
 DELETE FROM login_flows
