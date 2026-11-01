@@ -171,7 +171,7 @@ func (s *service) usersForm(w http.ResponseWriter, r *http.Request) (users.User,
 }
 
 func (s *service) usersPageAdmin(w http.ResponseWriter, r *http.Request) (users.User, sessions.Session, bool) {
-	if s.userAdmin == nil || s.flows == nil || s.passwords == nil {
+	if !s.usersPageOn() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgUsersUnavailable)
 		return users.User{}, sessions.Session{}, false
 	}
@@ -195,7 +195,7 @@ func (s *service) renderUsers(w http.ResponseWriter, r *http.Request, status int
 	}
 	view := newUsersPageView(r, accounts, user.Login)
 	// The caller checked the admins group, so the menu needs no second lookup.
-	view.Shell = views.Shell{Login: user.Login, Admin: true, Current: usersPagePath}
+	view.Shell = s.shell(user, true, usersPagePath)
 	view.Message, view.Notice = note.message, note.notice
 	view.InvitesOn = s.invites != nil && s.publicURL.Origin() != ""
 	if view.Groups, err = s.userAdmin.Groups(r.Context()); err != nil {

@@ -1,14 +1,18 @@
 package views
 
 import (
+	"slices"
+
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
 // Shell is the sidebar of a signed-in page: the user, the menu, and the item of this page.
+// Off lists the items whose service is not configured: the menu hides them.
 type Shell struct {
 	Login   users.Login
 	Admin   bool
 	Current NavPath
+	Off     []NavPath
 }
 
 // NavPath is the path of one menu item.
@@ -51,7 +55,7 @@ func (shell Shell) itemsOf(section navSection) []navItem {
 	}
 	var items []navItem
 	for _, item := range navItems {
-		if item.Section == section {
+		if item.Section == section && !slices.Contains(shell.Off, item.Path) {
 			items = append(items, item)
 		}
 	}

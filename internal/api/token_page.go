@@ -135,7 +135,7 @@ func (s *service) revokeToken(w http.ResponseWriter, r *http.Request) {
 // tokenPageUser returns the active user of the browser session for the token page.
 // It returns false after it wrote a reply.
 func (s *service) tokenPageUser(w http.ResponseWriter, r *http.Request) (users.User, sessions.Session, bool) {
-	if s.tokens == nil || s.flows == nil || s.passwords == nil {
+	if !s.tokensOn() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgTokensUnavailable)
 		return users.User{}, sessions.Session{}, false
 	}

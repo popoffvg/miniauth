@@ -169,7 +169,7 @@ func (s *service) changeAccess(w http.ResponseWriter, r *http.Request, done done
 // accessPageAdmin returns the session user when the user is in groups.Admins.
 // It returns false after it wrote a reply: a login redirect, 403 for any other user, or an error page.
 func (s *service) accessPageAdmin(w http.ResponseWriter, r *http.Request) (users.User, sessions.Session, bool) {
-	if s.accessAdmin == nil || s.flows == nil || s.passwords == nil {
+	if !s.accessPageOn() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgAccessUnavailable)
 		return users.User{}, sessions.Session{}, false
 	}
@@ -191,7 +191,7 @@ func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status in
 	}
 	view := newAccessPageView(r, resources, entries, time.Now())
 	// The caller checked the admins group, so the menu needs no second lookup.
-	view.Shell = views.Shell{Login: user.Login, Admin: true, Current: accessPagePath}
+	view.Shell = s.shell(user, true, accessPagePath)
 	view.Message, view.Notice = message, notice
 	writePage(w, r, status, views.AccessPage(view), pageCSP)
 }
