@@ -173,7 +173,7 @@ templ passkeyNewPage(view Page) {
 				<div class="card-body">
 					<div class="field">
 						<label for="name"><span>Name <span class="required" aria-hidden="true">*</span></span></label>
-						<input id="name" name="name" maxlength="64" required autofocus aria-describedby="name-help"/>
+						<input id="name" name="name" maxlength={ nameFieldLength(passkey.MaxNameLengthRunes) } required autofocus aria-describedby="name-help"/>
 						<p class="help" id="name-help">A name you know this passkey by, for example "Laptop".</p>
 					</div>
 				</div>

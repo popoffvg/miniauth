@@ -1,5 +1,7 @@
 package views
 
+import "github.com/popoffvg/miniauth/internal/tokens"
+
 templ tokensPage(view Page) {
 	@shellLayout("Tokens", view.Shell) {
 		@pageHeader("Personal access tokens", "A script sends a token as Authorization: Bearer <token>. The token acts as you.") {
@@ -102,7 +104,7 @@ templ tokenFormCard(form TokenForm) {
 					<input
 						id="name"
 						name="name"
-						maxlength="64"
+						maxlength={ nameFieldLength(tokens.MaxNameLengthRunes) }
 						required
 						value={ form.Name }
 						aria-describedby="name-help"
