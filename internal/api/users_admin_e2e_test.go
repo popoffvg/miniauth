@@ -96,7 +96,7 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 		WithURLGrants(grants),
 		WithAccessAdmin(grants),
 		WithInvites(inviteService),
-		WithUserAdmin(useradmin.NewService(adminRepo, accounts)),
+		WithUserAdmin(useradmin.NewService(adminRepo, accounts, nil)),
 		WithGroupAdmin(mustGroupAdmin(t, groupStore, grants)),
 	)
 	require.NoError(t, err)

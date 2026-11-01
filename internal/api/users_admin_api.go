@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/popoffvg/sfsm"
+
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/useradmin"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -55,6 +57,7 @@ var userAdminProblems = []struct {
 	{err: useradmin.ErrNotMember, status: http.StatusNotFound, detail: "The user is not in the group."},
 	{err: useradmin.ErrSelfDisable, status: http.StatusConflict, detail: "You cannot disable your own account."},
 	{err: useradmin.ErrSelfAdmin, status: http.StatusConflict, detail: "You cannot remove yourself from the admins group."},
+	{err: sfsm.ErrStaleState, status: http.StatusConflict, detail: "Another request changed the user at the same moment. Load the user again and try again."},
 }
 
 // userAdminProblem returns false for an error that is not in userAdminProblems.
@@ -108,7 +111,9 @@ func (s *service) disableUserAPI(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *service) enableUserAPI(w http.ResponseWriter, r *http.Request) {
-	s.changeUserAPI(w, r, s.userAdmin.Enable)
+	s.changeUserAPI(w, r, func(ctx context.Context, login users.Login) error {
+		return s.userAdmin.Enable(ctx, useradmin.Actor{}, login)
+	})
 }
 
 func (s *service) addMemberAPI(w http.ResponseWriter, r *http.Request) {

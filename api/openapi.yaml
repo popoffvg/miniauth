@@ -1099,7 +1099,7 @@ paths:
     post:
       description: Disables the user and deletes every session of the user in one
         transaction. The next /auth/check of the user is refused. A disabled user
-        stays disabled.
+        stays disabled. A change of the same user at the same moment is 409.
       operationId: disableUser
       parameters:
       - in: path
@@ -1128,6 +1128,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
         "503":
           content:
             application/json:
@@ -1139,6 +1145,7 @@ paths:
   /api/v1/users/{login}/enable:
     post:
       description: Enables the user. The user signs in again; no session comes back.
+        A change of the same user at the same moment is 409.
       operationId: enableUser
       parameters:
       - in: path
@@ -1167,6 +1174,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
         "503":
           content:
             application/json:
