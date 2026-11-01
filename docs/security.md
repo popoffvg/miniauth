@@ -4,7 +4,7 @@
 
 | Cookie | Holds | Domain | Lifetime |
 | --- | --- | --- | --- |
-| `__Secure-id_session` | The session id. | `MINIAUTH_COOKIE_DOMAIN`, or host-only when empty | 30 days |
+| `__Secure-id_session` | The session id. | `MINIAUTH_COOKIE_DOMAIN`, or host-only when empty | 30 days after the last use. A use moves the expiry at most once an hour and sets the cookie again. |
 | `__Secure-id_device` | The device id of this browser. It stays after logout. | Same as the session cookie | 2 years |
 | `__Host-id_login_flow` | The id and secret of an open login flow. | Host-only | 15 minutes |
 | `__Host-id_google_verifier` | The PKCE verifier of a Google login. | Host-only | 15 minutes |

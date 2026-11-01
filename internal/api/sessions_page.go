@@ -27,7 +27,7 @@ type sessionsPageRequest struct {
 }
 
 func (s *service) sessionsPage(w http.ResponseWriter, r *http.Request) {
-	session, err := s.openBrowserSession(r)
+	session, err := s.openBrowserSession(w, r)
 	if errors.Is(err, sessions.ErrNotFound) {
 		s.sessionsPageLogin(w, r)
 		return
@@ -118,7 +118,7 @@ func (s *service) changeDevice(w http.ResponseWriter, r *http.Request, change fu
 		writeProblem(w, http.StatusForbidden, "The request origin is not allowed.")
 		return
 	}
-	session, err := s.openBrowserSession(r)
+	session, err := s.openBrowserSession(w, r)
 	if errors.Is(err, sessions.ErrNotFound) {
 		writeProblem(w, http.StatusUnauthorized, "The session is not valid.")
 		return

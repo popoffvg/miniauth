@@ -81,6 +81,8 @@ http:
           - X-Auth-Email
           - X-Auth-Groups
           - X-Auth-Method
+        addAuthCookiesToResponse:
+          - __Secure-id_session
   routers:
     dashboard:
       rule: Host(`dash.example.test`)
@@ -88,7 +90,7 @@ http:
       service: dashboard
 ```
 
-To require a group too, use `address: http://miniauth:8080/auth/check?group=editors`.
+To require a group too, use `address: http://miniauth:8080/auth/check?group=editors`. `addAuthCookiesToResponse` passes the session cookie that `/auth/check` sets again when it extends the session, so an active user stays signed in.
 
 Each protected URL needs a resource and a grant. Without them, `/auth/check` answers 403. Make them in the admin panel at `/access` and `/groups`, with the API, or in the file of `MINIAUTH_RESOURCES_FILE`. With the API:
 
