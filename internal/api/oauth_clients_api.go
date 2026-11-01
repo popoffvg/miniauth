@@ -35,7 +35,7 @@ func newOAuthClientBody(client oauth.Client) oauthClientBody {
 	return oauthClientBody{ClientID: client.ID, Name: client.Name, RedirectURIs: client.RedirectURIs, CreatedAt: client.CreatedAt}
 }
 
-// requireOAuthService writes 503 and returns false when the router has no OAuth service.
+// requireOAuthService stops execution when the router has no OAuth service.
 func (s *service) requireOAuthService(w http.ResponseWriter) bool {
 	if s.oauth == nil {
 		writeProblem(w, http.StatusServiceUnavailable, "The OAuth API is not configured.")

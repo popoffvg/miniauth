@@ -7,16 +7,16 @@ import (
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/oauth"
+	"github.com/popoffvg/miniauth/internal/tokens"
 )
 
 const (
 	grantAuthorizationCode = "authorization_code"
 	grantRefreshToken      = "refresh_token"
-	// maxTokenRequestBytes fits a code, a verifier, a redirect URI, and a resource, form-encoded.
-	maxTokenRequestBytes = 8 << 10
+	// maxTokenRequestBytes limits the form-encoded POST /oauth/token payload.
+	maxTokenRequestBytes = 32 << 10
 )
 
-// tokenRequest documents the form of POST /oauth/token.
 type tokenRequest struct {
 	GrantType    string `formData:"grant_type" required:"true" enum:"authorization_code,refresh_token"`
 	ClientID     string `formData:"client_id" required:"true" format:"uuid"`
@@ -24,9 +24,9 @@ type tokenRequest struct {
 	RedirectURI  string `formData:"redirect_uri" description:"authorization_code only. The same URI as in the authorization request."`
 	CodeVerifier string `formData:"code_verifier" description:"authorization_code only. The PKCE verifier."`
 	RefreshToken string `formData:"refresh_token" description:"refresh_token only."`
+	Resource     string `formData:"resource" description:"Optional RFC 8707 resource indicator."`
 }
 
-// tokenResponse is the RFC 6749 token reply. Its access and refresh tokens are clear text.
 type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
@@ -35,7 +35,6 @@ type tokenResponse struct {
 	Resource     string `json:"resource"`
 }
 
-// oauthErrorCode is the OAuth error value in a redirect to the client and in a token error reply.
 type oauthErrorCode string
 
 const (
@@ -50,13 +49,12 @@ const (
 	errTemporarilyUnavailable  oauthErrorCode = "temporarily_unavailable"
 )
 
-// oauthErrorBody is the RFC 6749 error reply of the token endpoint.
 type oauthErrorBody struct {
 	Error       oauthErrorCode `json:"error"`
 	Description string         `json:"error_description"`
 }
 
-// exchangeToken is the token endpoint. A public client sends client_id and no secret.
+// RFC 6749 Section 3.2 token endpoint.
 func (s *service) exchangeToken(w http.ResponseWriter, r *http.Request) {
 	// The reply holds secrets. No cache may keep it.
 	w.Header().Set("Cache-Control", "no-store")
@@ -89,7 +87,16 @@ func (s *service) exchangeToken(w http.ResponseWriter, r *http.Request) {
 		var secret oauth.RefreshSecret
 		secret, err = oauth.ParseRefreshSecret(r.PostForm.Get("refresh_token"))
 		if err == nil {
-			issued, err = s.oauth.Refresh(r.Context(), clientID, secret)
+			var target tokens.Scope
+			if rawTarget := r.PostForm.Get("resource"); rawTarget != "" {
+				target, err = tokens.ParseScope(rawTarget)
+				if err != nil {
+					err = oauth.ErrInvalidTarget
+				}
+			}
+			if err == nil {
+				issued, err = s.oauth.Refresh(r.Context(), clientID, secret, target)
+			}
 		}
 	default:
 		writeOAuthError(w, http.StatusBadRequest, errUnsupportedGrantType, "The grant type must be authorization_code or refresh_token.")
@@ -104,6 +111,9 @@ func (s *service) exchangeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, oauth.ErrInvalidGrant):
 		writeOAuthError(w, http.StatusBadRequest, errInvalidGrant, "The grant is not valid, was used, or expired.")
+		return
+	case errors.Is(err, oauth.ErrInvalidTarget):
+		writeOAuthError(w, http.StatusBadRequest, errInvalidTarget, "The requested resource does not match the consent.")
 		return
 	case err != nil:
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: oauth token", "err", err)
@@ -138,7 +148,15 @@ func (s *service) exchangeCode(r *http.Request, clientID oauth.ClientID) (oauth.
 	if err != nil {
 		return oauth.IssuedTokens{}, err
 	}
-	return s.oauth.ExchangeCode(r.Context(), clientID, code, redirect, verifier)
+	var target tokens.Scope
+	if rawTarget := form.Get("resource"); rawTarget != "" {
+		var parseErr error
+		target, parseErr = tokens.ParseScope(rawTarget)
+		if parseErr != nil {
+			return oauth.IssuedTokens{}, oauth.ErrInvalidTarget
+		}
+	}
+	return s.oauth.ExchangeCode(r.Context(), clientID, code, redirect, verifier, target)
 }
 
 func writeOAuthError(w http.ResponseWriter, status int, code oauthErrorCode, description string) {

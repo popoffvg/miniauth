@@ -361,6 +361,18 @@ func (q *Queries) ListOAuthClients(ctx context.Context) ([]OauthClient, error) {
 	return items, nil
 }
 
+const lockOAuthClient = `-- name: LockOAuthClient :exec
+SELECT id
+FROM oauth_clients
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockOAuthClient(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockOAuthClient, id)
+	return err
+}
+
 const lockOAuthClientConsents = `-- name: LockOAuthClientConsents :exec
 SELECT id
 FROM oauth_consents

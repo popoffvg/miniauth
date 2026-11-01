@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -97,10 +98,7 @@ type Client struct {
 
 // Allows reports whether the client registered requested.
 func (c Client) Allows(requested RedirectURI) bool {
-	for _, registered := range c.RedirectURIs {
-		if registered.Matches(requested) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(c.RedirectURIs, func(registered RedirectURI) bool {
+		return registered.Matches(requested)
+	})
 }

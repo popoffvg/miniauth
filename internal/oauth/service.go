@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/tokens"
@@ -41,11 +42,7 @@ type Transaction interface {
 	ClaimRefresh(ctx context.Context, hash RefreshHash, at time.Time) (RefreshToken, Consent, error)
 	CreateAccessToken(ctx context.Context, token tokens.Token, hash tokens.Hash, consent ConsentID) error
 	CreateRefresh(ctx context.Context, refresh RefreshToken) error
-}
-
-// Accounts finds the user of a consent. Find MUST return users.ErrNotFound for a missing user.
-type Accounts interface {
-	Find(ctx context.Context, id users.ID) (users.User, error)
+	FindUser(ctx context.Context, id users.ID) (users.User, error)
 }
 
 // IssuedTokens is the reply of the token endpoint. Access and Refresh are clear: they MUST NOT reach a log.
@@ -59,21 +56,20 @@ type IssuedTokens struct {
 // Service is the OAuth authorization server. Store keeps its state.
 type Service struct {
 	store     Store
-	accounts  Accounts
 	clockFunc func() time.Time
 }
 
 // NewService reads the clock from time.Now.
-func NewService(store Store, accounts Accounts) (*Service, error) {
-	return NewServiceWithClock(store, accounts, time.Now)
+func NewService(store Store) (*Service, error) {
+	return NewServiceWithClock(store, time.Now)
 }
 
-// NewServiceWithClock refuses a nil store, accounts, or clock before any request.
-func NewServiceWithClock(store Store, accounts Accounts, clockFunc func() time.Time) (*Service, error) {
-	if store == nil || accounts == nil || clockFunc == nil {
-		return nil, errors.New("oauth: store, accounts, or clock is missing")
+// NewServiceWithClock refuses a nil store or clock before any request.
+func NewServiceWithClock(store Store, clockFunc func() time.Time) (*Service, error) {
+	if store == nil || clockFunc == nil {
+		return nil, errors.New("oauth: store or clock is missing")
 	}
-	return &Service{store: store, accounts: accounts, clockFunc: clockFunc}, nil
+	return &Service{store: store, clockFunc: clockFunc}, nil
 }
 
 // RegisterClient stores a client with at least one redirect URI.
@@ -117,12 +113,9 @@ func (s *Service) HasConsent(ctx context.Context, userID users.ID, request Autho
 	if err != nil {
 		return false, err
 	}
-	for _, entry := range consents {
-		if entry.Consent.ClientID == request.Client.ID && entry.Consent.Resource == request.Resource {
-			return true, nil
-		}
-	}
-	return false, nil
+	return slices.ContainsFunc(consents, func(entry ConsentEntry) bool {
+		return entry.Consent.ClientID == request.Client.ID && entry.Consent.Resource == request.Resource
+	}), nil
 }
 
 // Approve records the consent of the user for request and returns a new authorization code.
@@ -159,8 +152,9 @@ func (s *Service) Approve(ctx context.Context, userID users.ID, request Authoriz
 
 // ExchangeCode spends the code and issues an access token and a refresh token.
 // The client, the redirect URI, and the verifier MUST match the authorization request, else ErrInvalidGrant.
+// If target is not empty, it MUST match the consent resource, else ErrInvalidTarget.
 // A code spent before ends its consent: a second exchange means the code leaked.
-func (s *Service) ExchangeCode(ctx context.Context, clientID ClientID, code Code, redirectURI RedirectURI, verifier Verifier) (IssuedTokens, error) {
+func (s *Service) ExchangeCode(ctx context.Context, clientID ClientID, code Code, redirectURI RedirectURI, verifier Verifier, target tokens.Scope) (IssuedTokens, error) {
 	client, err := s.store.FindClient(ctx, clientID)
 	if err != nil {
 		return IssuedTokens{}, err
@@ -170,26 +164,33 @@ func (s *Service) ExchangeCode(ctx context.Context, clientID ClientID, code Code
 	var reused Consent
 	err = s.store.InTransaction(ctx, func(tx Transaction) error {
 		stored, consent, claimErr := tx.ClaimCode(ctx, code.Hash(), now)
+		at := s.clock()
 		if errors.Is(claimErr, ErrCodeReused) {
-			reused = consent
+			if consent.IsGrantedTo(clientID) && stored.IsRedeemableWith(redirectURI, verifier, at) {
+				reused = consent
+			}
 			return ErrInvalidGrant
 		}
 		if claimErr != nil {
 			return claimErr
 		}
-		if !stored.IsRedeemableWith(redirectURI, verifier, now) || !consent.IsGrantedTo(clientID) {
+		if !stored.IsRedeemableWith(redirectURI, verifier, at) || !consent.IsGrantedTo(clientID) {
 			return ErrInvalidGrant
 		}
+		if target != (tokens.Scope{}) && consent.Resource != target {
+			return ErrInvalidTarget
+		}
 		var issueErr error
-		issued, issueErr = s.issue(ctx, tx, client, consent, now)
+		issued, issueErr = s.issue(ctx, tx, client, consent, at)
 		return issueErr
 	})
 	return s.endReused(ctx, reused, now, issued, err)
 }
 
 // Refresh rotates the refresh token: it spends secret and issues a new access token and a new refresh token.
+// If target is not empty, it MUST match the consent resource, else ErrInvalidTarget.
 // A refresh token spent before ends its consent: a second use means the token leaked.
-func (s *Service) Refresh(ctx context.Context, clientID ClientID, secret RefreshSecret) (IssuedTokens, error) {
+func (s *Service) Refresh(ctx context.Context, clientID ClientID, secret RefreshSecret, target tokens.Scope) (IssuedTokens, error) {
 	client, err := s.store.FindClient(ctx, clientID)
 	if err != nil {
 		return IssuedTokens{}, err
@@ -199,18 +200,24 @@ func (s *Service) Refresh(ctx context.Context, clientID ClientID, secret Refresh
 	var reused Consent
 	err = s.store.InTransaction(ctx, func(tx Transaction) error {
 		stored, consent, claimErr := tx.ClaimRefresh(ctx, secret.Hash(), now)
+		at := s.clock()
 		if errors.Is(claimErr, ErrRefreshReused) {
-			reused = consent
+			if consent.IsGrantedTo(clientID) {
+				reused = consent
+			}
 			return ErrInvalidGrant
 		}
 		if claimErr != nil {
 			return claimErr
 		}
-		if !stored.IsLiveAt(now) || !consent.IsGrantedTo(clientID) {
+		if !stored.IsLiveAt(at) || !consent.IsGrantedTo(clientID) {
 			return ErrInvalidGrant
 		}
+		if target != (tokens.Scope{}) && consent.Resource != target {
+			return ErrInvalidTarget
+		}
 		var issueErr error
-		issued, issueErr = s.issue(ctx, tx, client, consent, now)
+		issued, issueErr = s.issue(ctx, tx, client, consent, at)
 		return issueErr
 	})
 	return s.endReused(ctx, reused, now, issued, err)
@@ -219,7 +226,7 @@ func (s *Service) Refresh(ctx context.Context, clientID ClientID, secret Refresh
 // endReused ends the consent of a reused secret after the token request rolled back.
 func (s *Service) endReused(ctx context.Context, reused Consent, now time.Time, issued IssuedTokens, err error) (IssuedTokens, error) {
 	if reused.ID != (ConsentID{}) {
-		if endErr := s.store.EndConsent(ctx, reused.ID, now); endErr != nil {
+		if endErr := s.store.EndConsent(context.WithoutCancel(ctx), reused.ID, now); endErr != nil {
 			return IssuedTokens{}, endErr
 		}
 	}
@@ -241,7 +248,7 @@ func (s *Service) RevokeConsent(ctx context.Context, userID users.ID, id Consent
 
 // issue refuses a disabled or deleted user, then stores both tokens.
 func (s *Service) issue(ctx context.Context, tx Transaction, client Client, consent Consent, now time.Time) (IssuedTokens, error) {
-	user, err := s.accounts.Find(ctx, consent.UserID)
+	user, err := tx.FindUser(ctx, consent.UserID)
 	if errors.Is(err, users.ErrNotFound) {
 		return IssuedTokens{}, ErrInvalidGrant
 	}

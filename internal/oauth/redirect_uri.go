@@ -66,11 +66,27 @@ func (u RedirectURI) WithParams(params url.Values) string {
 		return u.value
 	}
 	query := parsed.Query()
+	if params.Has("code") {
+		query.Del("error")
+		query.Del("error_description")
+	}
+	if params.Has("error") {
+		query.Del("code")
+	}
 	for name, values := range params {
 		query[name] = values
 	}
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
+}
+
+// Host returns the host part of the redirect URI.
+func (u RedirectURI) Host() string {
+	parsed, err := url.Parse(u.value)
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
 }
 
 func (u RedirectURI) String() string {

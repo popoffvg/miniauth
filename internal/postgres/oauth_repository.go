@@ -83,6 +83,12 @@ func (r *OAuthRepository) ListClients(ctx context.Context) ([]oauth.Client, erro
 func (r *OAuthRepository) DeleteClient(ctx context.Context, id oauth.ClientID) error {
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		q := sqlcgen.New(tx)
+		if err := q.LockOAuthClient(ctx, pgUUIDBytes(id.Bytes())); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return oauth.ErrClientNotFound
+			}
+			return oauthError("lock oauth client", err)
+		}
 		if err := q.LockOAuthClientConsents(ctx, pgUUIDBytes(id.Bytes())); err != nil {
 			return oauthError("lock oauth client consents", err)
 		}
@@ -220,13 +226,28 @@ type oauthTransaction struct {
 
 // ClaimCode is one conditional UPDATE. A parallel claim waits for the row lock and then sees used_at set.
 func (t *oauthTransaction) ClaimCode(ctx context.Context, hash oauth.CodeHash, at time.Time) (oauth.AuthorizationCode, oauth.Consent, error) {
-	row, err := t.q.ClaimOAuthCode(ctx, sqlcgen.ClaimOAuthCodeParams{UsedAt: pgTime(at), CodeHash: hash[:]})
-	isClaimed := err == nil
+	peek, err := t.q.GetOAuthCode(ctx, hash[:])
 	if errors.Is(err, pgx.ErrNoRows) {
-		row, err = t.q.GetOAuthCode(ctx, hash[:])
-		if errors.Is(err, pgx.ErrNoRows) {
-			return oauth.AuthorizationCode{}, oauth.Consent{}, oauth.ErrInvalidGrant
+		return oauth.AuthorizationCode{}, oauth.Consent{}, oauth.ErrInvalidGrant
+	}
+	if err != nil {
+		return oauth.AuthorizationCode{}, oauth.Consent{}, oauthError("get oauth code", err)
+	}
+	if !peek.ConsentID.Valid {
+		return oauth.AuthorizationCode{}, oauth.Consent{}, errors.New("postgres: code consent_id is null")
+	}
+	consentID := oauth.ConsentIDFromBytes(peek.ConsentID.Bytes)
+	consent, err := t.consent(ctx, consentID)
+	if err != nil {
+		return oauth.AuthorizationCode{}, oauth.Consent{}, err
+	}
+	row, err := t.q.ClaimOAuthCode(ctx, sqlcgen.ClaimOAuthCodeParams{UsedAt: pgTime(at), CodeHash: hash[:]})
+	if errors.Is(err, pgx.ErrNoRows) {
+		code, parseErr := codeFromRow(peek)
+		if parseErr != nil {
+			return oauth.AuthorizationCode{}, oauth.Consent{}, parseErr
 		}
+		return code, consent, oauth.ErrCodeReused
 	}
 	if err != nil {
 		return oauth.AuthorizationCode{}, oauth.Consent{}, oauthError("claim oauth code", err)
@@ -235,25 +256,33 @@ func (t *oauthTransaction) ClaimCode(ctx context.Context, hash oauth.CodeHash, a
 	if err != nil {
 		return oauth.AuthorizationCode{}, oauth.Consent{}, err
 	}
-	consent, err := t.consent(ctx, code.ConsentID)
-	if err != nil {
-		return oauth.AuthorizationCode{}, oauth.Consent{}, err
-	}
-	if !isClaimed {
-		return code, consent, oauth.ErrCodeReused
-	}
 	return code, consent, nil
 }
 
 // ClaimRefresh is one conditional UPDATE, like ClaimCode.
 func (t *oauthTransaction) ClaimRefresh(ctx context.Context, hash oauth.RefreshHash, at time.Time) (oauth.RefreshToken, oauth.Consent, error) {
-	row, err := t.q.ClaimOAuthRefreshToken(ctx, sqlcgen.ClaimOAuthRefreshTokenParams{UsedAt: pgTime(at), SecretHash: hash[:]})
-	isClaimed := err == nil
+	peek, err := t.q.GetOAuthRefreshToken(ctx, hash[:])
 	if errors.Is(err, pgx.ErrNoRows) {
-		row, err = t.q.GetOAuthRefreshToken(ctx, hash[:])
-		if errors.Is(err, pgx.ErrNoRows) {
-			return oauth.RefreshToken{}, oauth.Consent{}, oauth.ErrInvalidGrant
+		return oauth.RefreshToken{}, oauth.Consent{}, oauth.ErrInvalidGrant
+	}
+	if err != nil {
+		return oauth.RefreshToken{}, oauth.Consent{}, oauthError("get oauth refresh token", err)
+	}
+	if !peek.ConsentID.Valid {
+		return oauth.RefreshToken{}, oauth.Consent{}, errors.New("postgres: refresh token consent_id is null")
+	}
+	consentID := oauth.ConsentIDFromBytes(peek.ConsentID.Bytes)
+	consent, err := t.consent(ctx, consentID)
+	if err != nil {
+		return oauth.RefreshToken{}, oauth.Consent{}, err
+	}
+	row, err := t.q.ClaimOAuthRefreshToken(ctx, sqlcgen.ClaimOAuthRefreshTokenParams{UsedAt: pgTime(at), SecretHash: hash[:]})
+	if errors.Is(err, pgx.ErrNoRows) {
+		refresh, parseErr := refreshFromRow(peek)
+		if parseErr != nil {
+			return oauth.RefreshToken{}, oauth.Consent{}, parseErr
 		}
+		return refresh, consent, oauth.ErrRefreshReused
 	}
 	if err != nil {
 		return oauth.RefreshToken{}, oauth.Consent{}, oauthError("claim oauth refresh token", err)
@@ -261,13 +290,6 @@ func (t *oauthTransaction) ClaimRefresh(ctx context.Context, hash oauth.RefreshH
 	refresh, err := refreshFromRow(row)
 	if err != nil {
 		return oauth.RefreshToken{}, oauth.Consent{}, err
-	}
-	consent, err := t.consent(ctx, refresh.ConsentID)
-	if err != nil {
-		return oauth.RefreshToken{}, oauth.Consent{}, err
-	}
-	if !isClaimed {
-		return refresh, consent, oauth.ErrRefreshReused
 	}
 	return refresh, consent, nil
 }
@@ -298,6 +320,11 @@ func (t *oauthTransaction) CreateRefresh(ctx context.Context, refresh oauth.Refr
 		return oauthError("create oauth refresh token", err)
 	}
 	return nil
+}
+
+// FindUser loads the account through the open transaction queries.
+func (t *oauthTransaction) FindUser(ctx context.Context, id users.ID) (users.User, error) {
+	return userFromRow(t.q.GetUserByID(ctx, pgUUIDBytes(id.Bytes())))
 }
 
 func (t *oauthTransaction) consent(ctx context.Context, id oauth.ConsentID) (oauth.Consent, error) {

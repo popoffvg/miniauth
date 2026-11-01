@@ -89,7 +89,7 @@ func TestOAuthEndToEnd(t *testing.T) {
 	grants := access.NewService(accessRepo, nil)
 	mcp := createResource(t, grants, "mcp", host, "/mcp")
 	grantResource(t, grants, mcp, access.UserSubject(owner.id))
-	oauthServer, err := oauth.NewService(oauthRepo, accounts)
+	oauthServer, err := oauth.NewService(oauthRepo)
 	require.NoError(t, err)
 	router, err := NewRouter(
 		accounts,
@@ -209,10 +209,21 @@ func TestOAuthEndToEnd(t *testing.T) {
 		assert.Contains(t, resp.body, `"invalid_grant"`)
 	})
 
+	t.Run("a mismatched resource in token exchange is rejected", func(t *testing.T) {
+		resp := tokenRequestFor(t, server.Client(), base, url.Values{
+			"grant_type": {grantAuthorizationCode}, "client_id": {client.id}, "code": {code},
+			"redirect_uri": {client.redirect}, "code_verifier": {client.verifier},
+			"resource": {"https://wrong.example.test/other"},
+		})
+		assert.Equal(t, http.StatusBadRequest, resp.status)
+		assert.Contains(t, resp.body, `"invalid_target"`)
+	})
+
 	t.Run("the code exchange gives a token that reaches only the resource", func(t *testing.T) {
 		resp := tokenRequestFor(t, server.Client(), base, url.Values{
 			"grant_type": {grantAuthorizationCode}, "client_id": {client.id}, "code": {code},
 			"redirect_uri": {client.redirect}, "code_verifier": {client.verifier},
+			"resource": {resource},
 		})
 		require.Equal(t, http.StatusOK, resp.status, resp.body)
 		assert.Equal(t, "no-store", resp.header.Get("Cache-Control"))

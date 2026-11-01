@@ -713,7 +713,7 @@ func (s *service) routes() []route {
 			request:  new(consentRevokeRequest),
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:      "Disconnects one app of the session user: it revokes the consent and deletes its access and refresh tokens, then redirects to GET /tokens?done=app-revoked. The next connection shows the consent page again. Origin MUST be the public origin, else 403. A consent of another user is 404.",
+			doc:      "Disconnects one app of the session user. It revokes the consent and deletes its tokens. It redirects to GET /tokens?done=app-revoked. The next connection shows the consent page again. Origin MUST be the public origin, else 403. A consent of another user is 404.",
 			isPublic: true,
 		},
 		{
@@ -809,7 +809,7 @@ func (s *service) routes() []route {
 			request:  new(authorizeRequest),
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:      "The consent form. Origin MUST be the public origin, else 403. It checks every field again. action=allow records the consent and redirects to the client with a code, iss, and state; action=deny redirects with error=access_denied.",
+			doc:      "The consent form. Origin MUST be the public origin, else 403. It checks every field again. action=allow records the consent and redirects to the client with a code, iss, and state. action=deny redirects with error=access_denied.",
 			isPublic: true,
 		},
 		{

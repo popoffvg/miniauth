@@ -16,6 +16,9 @@ var (
 	// ErrInvalidGrant means the code or the refresh token is malformed, unknown, used, expired,
 	// or bound to another client, redirect URI, or verifier. The token endpoint answers invalid_grant.
 	ErrInvalidGrant = errors.New("oauth: grant is not valid")
+	// ErrInvalidTarget means the requested resource indicator does not match the consent resource.
+	// The token endpoint answers invalid_target (RFC 8707).
+	ErrInvalidTarget = errors.New("oauth: requested resource does not match consent")
 	// ErrConsentNotFound means the user has no active consent with this id or for this request.
 	ErrConsentNotFound = errors.New("oauth: consent is not found")
 	// ErrCodeReused means the code was exchanged before. The store returns it with the consent of the code.

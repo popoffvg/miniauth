@@ -8,6 +8,7 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/oauth"
+	"github.com/popoffvg/miniauth/internal/tokens"
 )
 
 const (
@@ -19,14 +20,13 @@ const (
 	oauthTokenPath                = "/oauth/token" // #nosec G101 -- a path, not a secret.
 )
 
-// resourceDirectory names the resource of a URL for the OAuth routes and /auth/check. It reads no grant.
+// resourceDirectory matches resources by request URL without checking grants.
 type resourceDirectory interface {
 	MatchResource(ctx context.Context, target access.RequestURL) (access.Resource, error)
 	FindResourceByURL(ctx context.Context, url access.ResourceURL) (access.Resource, error)
 }
 
-// WithOAuth serves the OAuth authorization server for MCP clients.
-// Without it, the OAuth routes answer 503 and /auth/check names no resource metadata.
+// WithOAuth enables OAuth 2.0 authorization server endpoints and WWW-Authenticate metadata pointers.
 func WithOAuth(server *oauth.Service, resources resourceDirectory) RouterOption {
 	return func(s *service) {
 		s.oauth = server
@@ -34,7 +34,7 @@ func WithOAuth(server *oauth.Service, resources resourceDirectory) RouterOption 
 	}
 }
 
-// authorizationServerMetadata is the RFC 8414 document. The issuer is the public origin.
+// authorizationServerMetadata is the RFC 8414 metadata document.
 type authorizationServerMetadata struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
@@ -46,7 +46,7 @@ type authorizationServerMetadata struct {
 	IssParameterSupported             bool     `json:"authorization_response_iss_parameter_supported"`
 }
 
-// protectedResourceMetadata is the RFC 9728 document of one resource.
+// protectedResourceMetadata is the RFC 9728 protected resource metadata document.
 type protectedResourceMetadata struct {
 	Resource               string   `json:"resource"`
 	AuthorizationServers   []string `json:"authorization_servers"`
@@ -80,20 +80,34 @@ func (s *service) serveAuthorizationServerMetadata(w http.ResponseWriter, _ *htt
 	})
 }
 
-// protectedResourceMetadata answers for the resource whose host is X-Forwarded-Host and whose prefix is the path.
-// A URL that is not exactly a resource is 404.
+func forwardedTarget(r *http.Request) (proto string, host string, ok bool) {
+	proto = strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	if proto != "http" && proto != "https" {
+		return "", "", false
+	}
+	host = strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" || strings.ContainsAny(host, "\r\n/\\@ ?#") {
+		return "", "", false
+	}
+	if _, ok := forwardedHostname(host); !ok {
+		return "", "", false
+	}
+	return proto, host, true
+}
+
+// RFC 9728 protected resource metadata handler.
 func (s *service) serveProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	if !s.isOAuthServerReady() {
 		writeProblem(w, http.StatusServiceUnavailable, "The OAuth server is not configured.")
 		return
 	}
-	forwarded, ok := forwardedURL(r, s.domain, s.publicURL)
+	proto, host, ok := forwardedTarget(r)
 	if !ok {
 		writeProblem(w, http.StatusNotFound, "No protected resource is at this URL.")
 		return
 	}
-	resourceURL, err := access.ParseResourceURL(forwarded.proto + "://" + forwarded.host + "/" + r.PathValue("path"))
+	resourceURL, err := access.ParseResourceURL(proto + "://" + host + "/" + r.PathValue("path"))
 	if err != nil {
 		writeProblem(w, http.StatusNotFound, "No protected resource is at this URL.")
 		return
@@ -108,16 +122,18 @@ func (s *service) serveProtectedResourceMetadata(w http.ResponseWriter, r *http.
 		writeProblem(w, http.StatusInternalServerError, "The metadata lookup failed.")
 		return
 	}
+	resourceIdentifier := proto + "://" + resource.URL.String()
+	if scope, err := tokens.ParseScope(resourceIdentifier); err == nil {
+		resourceIdentifier = scope.String()
+	}
 	writeJSON(w, http.StatusOK, protectedResourceMetadata{
-		Resource:               forwarded.proto + "://" + resource.URL.String(),
+		Resource:               resourceIdentifier,
 		AuthorizationServers:   []string{s.publicURL.Origin()},
 		BearerMethodsSupported: []string{"header"},
 	})
 }
 
-// bearerChallenge is the WWW-Authenticate value of a 401 from /auth/check.
-// With OAuth on, it names the metadata of the resource that covers the forwarded URL,
-// so an MCP client finds the authorization server.
+// RFC 9728 WWW-Authenticate response header builder.
 func (s *service) bearerChallenge(r *http.Request, isInvalidToken bool) string {
 	var params []string
 	if isInvalidToken {
@@ -132,16 +148,20 @@ func (s *service) bearerChallenge(r *http.Request, isInvalidToken bool) string {
 	return "Bearer " + strings.Join(params, ", ")
 }
 
-// resourceMetadataURL is empty when OAuth is off or no resource covers the forwarded URL.
+// resourceMetadataURL returns the RFC 9728 metadata URL for the target request.
 func (s *service) resourceMetadataURL(r *http.Request) string {
 	if !s.isOAuthServerReady() {
 		return ""
 	}
-	forwarded, ok := forwardedURL(r, s.domain, s.publicURL)
-	if !ok || forwarded.uri == "" {
+	proto, host, ok := forwardedTarget(r)
+	if !ok {
 		return ""
 	}
-	target, err := access.ParseRequestURL(forwarded.proto, forwarded.host, forwarded.uri)
+	uri := r.Header.Get("X-Forwarded-Uri")
+	if uri == "" || !safeForwardedURI(uri) {
+		return ""
+	}
+	target, err := access.ParseRequestURL(proto, host, uri)
 	if err != nil {
 		return ""
 	}
@@ -152,7 +172,7 @@ func (s *service) resourceMetadataURL(r *http.Request) string {
 		}
 		return ""
 	}
-	metadata := forwarded.proto + "://" + resource.URL.Host.String() + protectedResourceMetadataPath +
+	metadata := proto + "://" + resource.URL.Host.String() + protectedResourceMetadataPath +
 		strings.TrimSuffix(resource.URL.Prefix.String(), "/")
 	if strings.ContainsAny(metadata, "\"\\") || !safeHeader(metadata) {
 		return ""

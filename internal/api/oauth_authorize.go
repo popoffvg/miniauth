@@ -53,8 +53,7 @@ type authorizeRequest struct {
 	Action              string `formData:"action" enum:"allow,deny" description:"The consent form only."`
 }
 
-// A refusal with a message is a page: the redirect URI is not trusted, so nothing goes back to the client.
-// Any other refusal goes back to the client as the OAuth error code.
+// An untrusted redirect URI MUST render a page. Errors MUST NOT go to the client URI.
 type authorizeRefusal struct {
 	message pageMessage
 	code    oauthErrorCode
@@ -68,13 +67,12 @@ type consentPageView struct {
 	Fields       []consentField
 }
 
-// consentField is one hidden field of the consent form.
 type consentField struct {
 	Name  string
 	Value string
 }
 
-// authorizePage shows the consent page, or sends a code at once to a client the user approved before.
+// RFC 6749 Section 3.1 authorization endpoint.
 func (s *service) authorizePage(w http.ResponseWriter, r *http.Request) {
 	if !s.isOAuthServerReady() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgOAuthUnavailable)
@@ -102,17 +100,15 @@ func (s *service) authorizePage(w http.ResponseWriter, r *http.Request) {
 	for _, name := range authorizeParams {
 		fields = append(fields, consentField{Name: name, Value: r.URL.Query().Get(name)})
 	}
-	redirect, _ := url.Parse(request.RedirectURI.String())
 	writePage(w, r, http.StatusOK, consentPage(consentPageView{
 		Login:        user.Login,
 		ClientName:   request.Client.Name,
-		RedirectHost: redirect.Host,
+		RedirectHost: request.RedirectURI.Host(),
 		Resource:     request.Resource,
 		Fields:       fields,
 	}), pageCSP)
 }
 
-// answerConsent reads the consent form. Allow records the consent and sends a code; deny sends access_denied.
 func (s *service) answerConsent(w http.ResponseWriter, r *http.Request) {
 	if !s.sameOrigin(r) {
 		renderDenied(w, r, http.StatusForbidden, msgCrossOrigin)
@@ -162,7 +158,7 @@ func (s *service) sendCode(w http.ResponseWriter, r *http.Request, user users.Us
 	s.redirectToClient(w, r, request, url.Values{"code": {code.Reveal()}}, status)
 }
 
-// redirectToClient adds iss, so the client can tell this server from a mix-up attacker, and the state.
+// RFC 9207 Section 2 requires iss parameter on authorization responses to prevent mix-up attacks.
 func (s *service) redirectToClient(w http.ResponseWriter, r *http.Request, request oauth.AuthorizeRequest, params url.Values, status int) {
 	params.Set("iss", s.publicURL.Origin())
 	if state := request.State.String(); state != "" {
@@ -171,7 +167,6 @@ func (s *service) redirectToClient(w http.ResponseWriter, r *http.Request, reque
 	http.Redirect(w, r, request.RedirectURI.WithParams(params), status)
 }
 
-// writeAuthorizeRefusal writes the refusal and returns true when the request MUST stop.
 func (s *service) writeAuthorizeRefusal(w http.ResponseWriter, r *http.Request, request oauth.AuthorizeRequest, refusal authorizeRefusal, err error, status int) bool {
 	switch {
 	case err != nil:

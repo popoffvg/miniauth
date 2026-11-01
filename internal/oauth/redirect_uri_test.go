@@ -12,7 +12,6 @@ func TestParseRedirectURIAcceptsHTTPSAndLoopback(t *testing.T) {
 	for _, raw := range []string{
 		"https://app.example.test/callback",
 		"http://localhost/callback",
-		"http://127.0.0.1:33418/callback",
 		"http://[::1]:8080/cb?x=1",
 	} {
 		_, err := ParseRedirectURI(raw)

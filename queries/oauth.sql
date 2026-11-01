@@ -21,6 +21,12 @@ WHERE id IN (
     WHERE c.client_id = $1
 );
 
+-- name: LockOAuthClient :exec
+SELECT id
+FROM oauth_clients
+WHERE id = $1
+FOR UPDATE;
+
 -- name: DeleteOAuthClient :execrows
 DELETE FROM oauth_clients
 WHERE id = $1;

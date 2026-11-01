@@ -166,7 +166,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
-	oauthServer, err := oauth.NewService(oauthRepo, userService)
+	oauthServer, err := oauth.NewService(oauthRepo)
 	if err != nil {
 		return err
 	}

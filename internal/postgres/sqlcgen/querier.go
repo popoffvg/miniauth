@@ -109,6 +109,7 @@ type Querier interface {
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, error)
 	ListUserPasskeys(ctx context.Context, userID pgtype.UUID) ([]Passkey, error)
+	LockOAuthClient(ctx context.Context, id pgtype.UUID) error
 	// FOR UPDATE waits for every token issue under the client's consents,
 	// so the access token delete that follows sees their tokens.
 	LockOAuthClientConsents(ctx context.Context, clientID pgtype.UUID) error

@@ -1981,7 +1981,7 @@ paths:
     post:
       description: The consent form. Origin MUST be the public origin, else 403. It
         checks every field again. action=allow records the consent and redirects to
-        the client with a code, iss, and state; action=deny redirects with error=access_denied.
+        the client with a code, iss, and state. action=deny redirects with error=access_denied.
       operationId: oauthConsent
       parameters:
       - in: query
@@ -2787,10 +2787,10 @@ paths:
           description: Service Unavailable
   /tokens/consents/{id}/revoke:
     post:
-      description: 'Disconnects one app of the session user: it revokes the consent
-        and deletes its access and refresh tokens, then redirects to GET /tokens?done=app-revoked.
-        The next connection shows the consent page again. Origin MUST be the public
-        origin, else 403. A consent of another user is 404.'
+      description: Disconnects one app of the session user. It revokes the consent
+        and deletes its tokens. It redirects to GET /tokens?done=app-revoked. The
+        next connection shows the consent page again. Origin MUST be the public origin,
+        else 403. A consent of another user is 404.
       operationId: revokeConsent
       parameters:
       - in: path
@@ -3727,6 +3727,9 @@ components:
           type: string
         refresh_token:
           description: refresh_token only.
+          type: string
+        resource:
+          description: Optional RFC 8707 resource indicator.
           type: string
       required:
       - grant_type
