@@ -1,31 +1,31 @@
-package api
+package views
 
 import (
 	"net/url"
 	"strconv"
 )
 
-templ groupsPage(view groupsPageView) {
+templ GroupsPage(view GroupsView) {
 	@shellLayout("Groups", view.Shell) {
 		@pageHeader("Groups", "A group is a set of users and a set of resources. Each member reaches each resource of the group.") {
-			@primaryLink("#new-group", iconPlus, "New group")
+			@primaryLink("#new-group", IconPlus, "New group")
 		}
-		@doneAlert(view.Notice, groupsPagePath)
+		@doneAlert(view.Notice, GroupsPath)
 		@errorAlert(view.Message)
 		<div class="stack-lg">
 			<section class="card" aria-label="Groups">
 				if view.Total > 0 {
-					@searchToolbar(groupsPagePath, view.Query, "Search groups and resources", "", nil)
+					@searchToolbar(GroupsPath, view.Query, "Search groups and resources", "", nil)
 				}
 				if len(view.Rows) > 0 {
 					@groupRows(view.Rows)
 				} else if view.Total == 0 {
-					@emptyState(iconGroups, "No groups.", "Create a group, then give it resources.") {
-						@primaryLink("#new-group", iconPlus, "New group")
+					@emptyState(IconGroups, "No groups.", "Create a group, then give it resources.") {
+						@primaryLink("#new-group", IconPlus, "New group")
 					}
 				} else {
-					@emptyState(iconSearch, "No group matches the search.", "") {
-						<a class="btn btn-secondary" href={ templ.SafeURL(groupsPagePath) }>Clear the search</a>
+					@emptyState(IconSearch, "No group matches the search.", "") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(GroupsPath) }>Clear the search</a>
 					}
 				}
 			</section>
@@ -34,7 +34,7 @@ templ groupsPage(view groupsPageView) {
 	}
 }
 
-templ groupRows(rows []groupRow) {
+templ groupRows(rows []GroupRow) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -51,13 +51,13 @@ templ groupRows(rows []groupRow) {
 						<div class="cell-main">
 							{ row.Group.Name.String() }
 							if row.Group.BuiltIn {
-								@badge(toneNeutral, "Built-in")
+								@badge(ToneNeutral, "Built-in")
 							}
 							if row.Group.Managed() {
-								@badge(toneConfig, "From config")
+								@badge(ToneConfig, "From config")
 							}
 						</div>
-						<div class="cell-sub">Created <span class="num">{ timeText(row.Group.CreatedAt).Date() }</span></div>
+						<div class="cell-sub">Created <span class="num">{ Timestamp(row.Group.CreatedAt).date() }</span></div>
 					</td>
 					<td class="num" data-label="Members">{ strconv.Itoa(row.Group.Members) }</td>
 					<td data-label="Resources">

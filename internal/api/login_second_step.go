@@ -9,6 +9,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // codeFormRequest documents the form of POST /login/totp and POST /sessions/totp/confirm.
@@ -95,7 +96,7 @@ func (s *service) secondStep(w http.ResponseWriter, r *http.Request, factor logi
 		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
 		return
 	}
-	retry := func(status int, message pageMessage) {
+	retry := func(status int, message views.Message) {
 		s.renderStep(w, r, status, flow, factor, message)
 	}
 	if stepFailed(w, r, verify(r.Context(), machine, user, ip), retry) {

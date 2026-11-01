@@ -1,6 +1,6 @@
-package api
+package views
 
-templ linkConfirmPage(view linkPageView) {
+templ LinkConfirmPage(view LinkView) {
 	@authLayout("Link an account") {
 		@authHeading("Link an account", "Link the "+view.Provider+" account "+view.Subject.String()+" to your account "+view.Login.String()+"?")
 		<div class="auth-body">
@@ -13,10 +13,10 @@ templ linkConfirmPage(view linkPageView) {
 				<dd>{ view.Login.String() }</dd>
 			</dl>
 			<div class="alert alert-warning" role="note">
-				@icon(iconWarning)
+				@icon(IconWarning)
 				<div class="alert-body">Link it only if you signed in with this { view.Provider } account yourself, in this browser. After the link, this { view.Provider } account signs in to your account.</div>
 			</div>
-			<form method="post" action={ templ.SafeURL(linkPagePath) }>
+			<form method="post" action={ templ.SafeURL(LinkPath) }>
 				<input type="hidden" name="return" value={ view.Return.String() }/>
 				<div class="providers">
 					<button class="btn btn-primary btn-block" type="submit" name="action" value="link">Link account</button>

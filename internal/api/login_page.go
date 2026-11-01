@@ -13,6 +13,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // maxLoginFormBody is large enough for the longest login and password, form-encoded.
@@ -62,7 +63,7 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	retry := func(status int, message pageMessage) {
+	retry := func(status int, message views.Message) {
 		s.renderSteps(w, r, status, machine.Get(), message)
 	}
 	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
@@ -127,7 +128,7 @@ func (s *service) openFlow(w http.ResponseWriter, r *http.Request) (loginMachine
 
 // stepFailed answers the error of a login step and reports whether it wrote a reply.
 // retry shows the form of the step again with a message.
-func stepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(status int, message pageMessage)) bool {
+func stepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(status int, message views.Message)) bool {
 	var tooSoon *password.TooSoonError
 	switch {
 	case err == nil:

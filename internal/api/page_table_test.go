@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/tokens"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 func TestTokenTableFiltersByStatusAndQuery(t *testing.T) {
@@ -54,7 +55,7 @@ func TestTokenTableFiltersByStatusAndQuery(t *testing.T) {
 
 func TestDoneNoticeShowsOnlyAKnownFlag(t *testing.T) {
 	known := httptest.NewRequestWithContext(t.Context(), http.MethodGet, withDone(tokensPath, doneTokenRevoked), nil)
-	assert.Equal(t, pageMessage("The token is revoked."), doneNotice(known))
+	assert.Equal(t, views.Message("The token is revoked."), doneNotice(known))
 	unknown := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tokensPath+"?done=<script>", nil)
 	assert.Empty(t, doneNotice(unknown))
 }
@@ -63,8 +64,8 @@ func TestRefusedTokenFormKeepsTheFields(t *testing.T) {
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, tokensPath, nil)
 	req.PostForm = map[string][]string{"name": {"ci"}, "scopes": {"ftp://bad"}, "expires": {"2027-01-01"}}
 	form := refusedTokenForm(req, msgScopeNotValid)
-	assert.Equal(t, tokenForm{Name: "ci", Scopes: "ftp://bad", Expires: "2027-01-01", Field: tokenFieldScopes, Message: msgScopeNotValid}, form)
-	assert.Equal(t, tokenForm{}, refusedTokenForm(req, msgTokenNotFound), "a message of no field keeps no form")
+	assert.Equal(t, views.TokenForm{Name: "ci", Scopes: "ftp://bad", Expires: "2027-01-01", Field: views.TokenFieldScopes, Message: msgScopeNotValid}, form)
+	assert.Equal(t, views.TokenForm{}, refusedTokenForm(req, msgTokenNotFound), "a message of no field keeps no form")
 }
 
 func TestAppStylesheetIsServed(t *testing.T) {

@@ -1,11 +1,11 @@
-package api
+package views
 
-templ tokensPage(view pageView) {
+templ tokensPage(view Page) {
 	@shellLayout("Tokens", view.Shell) {
 		@pageHeader("Personal access tokens", "A script sends a token as Authorization: Bearer <token>. The token acts as you.") {
-			@primaryLink("#new-token", iconPlus, "New token")
+			@primaryLink("#new-token", IconPlus, "New token")
 		}
-		@doneAlert(view.Notice, tokensPath)
+		@doneAlert(view.Notice, TokensPath)
 		@errorAlert(view.Message)
 		<div class="stack-lg">
 			if view.TokenForm.Field != "" {
@@ -13,17 +13,17 @@ templ tokensPage(view pageView) {
 			}
 			<section class="card" aria-label="Tokens">
 				if view.Tokens.Total > 0 {
-					@searchToolbar(tokensPath, view.Tokens.Query, "Search tokens", string(view.Tokens.Filter), tokenChips)
+					@searchToolbar(TokensPath, view.Tokens.Query, "Search tokens", string(view.Tokens.Filter), TokenChips)
 				}
 				if len(view.Tokens.Rows) > 0 {
 					@tokenRows(view.Tokens.Rows)
 				} else if view.Tokens.Total == 0 {
-					@emptyState(iconKey, "No tokens.", "Make a token to call a protected URL from a script or a tool.") {
-						@primaryLink("#new-token", iconPlus, "New token")
+					@emptyState(IconKey, "No tokens.", "Make a token to call a protected URL from a script or a tool.") {
+						@primaryLink("#new-token", IconPlus, "New token")
 					}
 				} else {
-					@emptyState(iconSearch, "No token matches the filter.", "Change the search or the status filter.") {
-						<a class="btn btn-secondary" href={ templ.SafeURL(tokensPath) }>Clear the filter</a>
+					@emptyState(IconSearch, "No token matches the filter.", "Change the search or the status filter.") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(TokensPath) }>Clear the filter</a>
 					}
 				}
 			</section>
@@ -34,7 +34,7 @@ templ tokensPage(view pageView) {
 	}
 }
 
-templ tokenRows(rows []tokenRow) {
+templ tokenRows(rows []TokenRow) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -51,7 +51,7 @@ templ tokenRows(rows []tokenRow) {
 				<tr>
 					<td>
 						<div class="cell-main">{ row.Token.Name.String() }</div>
-						<div class="cell-sub"><code>{ row.Token.Prefix.String() }</code> · created <span class="num">{ timeText(row.Token.CreatedAt).Date() }</span></div>
+						<div class="cell-sub"><code>{ row.Token.Prefix.String() }</code> · created <span class="num">{ Timestamp(row.Token.CreatedAt).date() }</span></div>
 					</td>
 					<td data-label="Scopes">
 						if len(row.Token.Scopes) == 0 {
@@ -65,10 +65,10 @@ templ tokenRows(rows []tokenRow) {
 						}
 					</td>
 					<td class="num" data-label="Last used">
-						@timeCell(timeText(row.Token.LastUsedAt))
+						@timeCell(Timestamp(row.Token.LastUsedAt))
 					</td>
 					<td class="num" data-label="Expires">
-						@timeCell(timeText(row.Token.ExpiresAt))
+						@timeCell(Timestamp(row.Token.ExpiresAt))
 					</td>
 					<td data-label="Status">
 						@badge(row.Status.Tone, row.Status.Label)
@@ -76,7 +76,7 @@ templ tokenRows(rows []tokenRow) {
 					<td class="actions">
 						if !row.Token.Revoked() {
 							@rowMenu(row.Token.Name.String()) {
-								@confirmPost(tokensPath+"/"+row.Token.ID.String()+"/revoke", "Revoke token",
+								@confirmPost(TokensPath+"/"+row.Token.ID.String()+"/revoke", "Revoke token",
 									"Revoke token “"+row.Token.Name.String()+"”? A client that sends it is refused. This cannot be undone.", "Revoke token")
 							}
 						}
@@ -87,7 +87,7 @@ templ tokenRows(rows []tokenRow) {
 	</table>
 }
 
-templ tokenFormCard(form tokenForm) {
+templ tokenFormCard(form TokenForm) {
 	<section class="card" id="new-token" aria-labelledby="new-token-title">
 		<div class="card-header">
 			<div>
@@ -106,13 +106,13 @@ templ tokenFormCard(form tokenForm) {
 						required
 						value={ form.Name }
 						aria-describedby="name-help"
-						if form.Field == tokenFieldName {
+						if form.Field == TokenFieldName {
 							aria-invalid="true"
 							autofocus
 						}
 					/>
 					<p class="help" id="name-help">A name you know the token by, for example "ci".</p>
-					@fieldError(form, tokenFieldName)
+					@fieldError(form, TokenFieldName)
 				</div>
 				<div class="field">
 					<label for="scopes"><span>Scopes <span class="optional">(optional)</span></span></label>
@@ -121,13 +121,13 @@ templ tokenFormCard(form tokenForm) {
 						name="scopes"
 						rows="3"
 						aria-describedby="scopes-help"
-						if form.Field == tokenFieldScopes {
+						if form.Field == TokenFieldScopes {
 							aria-invalid="true"
 							autofocus
 						}
 					>{ form.Scopes }</textarea>
 					<p class="help" id="scopes-help">One URL prefix per line, for example https://app.example.test/api/. Empty reaches every URL.</p>
-					@fieldError(form, tokenFieldScopes)
+					@fieldError(form, TokenFieldScopes)
 				</div>
 				<div class="field">
 					<label for="expires"><span>Expires after <span class="optional">(optional)</span></span></label>
@@ -137,35 +137,35 @@ templ tokenFormCard(form tokenForm) {
 						type="date"
 						value={ form.Expires }
 						aria-describedby="expires-help"
-						if form.Field == tokenFieldExpires {
+						if form.Field == TokenFieldExpires {
 							aria-invalid="true"
 							autofocus
 						}
 					/>
 					<p class="help" id="expires-help">The token works until the end of this day, UTC. Empty never expires.</p>
-					@fieldError(form, tokenFieldExpires)
+					@fieldError(form, TokenFieldExpires)
 				</div>
 			</div>
 			<div class="card-footer">
-				<a class="btn btn-secondary" href={ templ.SafeURL(tokensPath) }>Cancel</a>
+				<a class="btn btn-secondary" href={ templ.SafeURL(TokensPath) }>Cancel</a>
 				<button class="btn btn-primary" type="submit">Make token</button>
 			</div>
 		</form>
 	</section>
 }
 
-templ fieldError(form tokenForm, field tokenField) {
+templ fieldError(form TokenForm, field TokenField) {
 	if form.Field == field {
 		<p class="error-text">
-			@icon(iconError)
+			@icon(IconError)
 			{ string(form.Message) }
 		</p>
 	}
 }
 
-templ tokenCreatedPage(view pageView) {
+templ tokenCreatedPage(view Page) {
 	@shellLayout("Token made", view.Shell) {
-		@breadcrumbs(tokensPath, "Tokens", "New token")
+		@breadcrumbs(TokensPath, "Tokens", "New token")
 		@pageHeader("Token made", "Copy the token now and store it in a safe place.")
 		<section class="card">
 			<div class="card-body">
@@ -179,7 +179,7 @@ templ tokenCreatedPage(view pageView) {
 				}
 			</div>
 			<div class="card-footer">
-				<a class="btn btn-primary" href={ templ.SafeURL(tokensPath) }>Done</a>
+				<a class="btn btn-primary" href={ templ.SafeURL(TokensPath) }>Done</a>
 			</div>
 		</section>
 	}

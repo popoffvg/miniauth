@@ -13,19 +13,20 @@ import (
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // accessPagePath is the access page. The step-up and each change return here.
-const accessPagePath = "/access"
+const accessPagePath = views.AccessPath
 
 // expiryLocalLayouts are the values of an HTML datetime-local input, read as UTC.
 var expiryLocalLayouts = []string{"2006-01-02T15:04", "2006-01-02T15:04:05"}
 
 const (
-	msgAccessUnavailable pageMessage = "The access page is not available."
-	msgAccessAdminOnly   pageMessage = "Only a member of the admins group can open the access page."
-	msgAccessStepUp      pageMessage = "Enter your password again to change access."
-	msgAccessFailed      pageMessage = "The access change failed. Try again."
+	msgAccessUnavailable views.Message = "The access page is not available."
+	msgAccessAdminOnly   views.Message = "Only a member of the admins group can open the access page."
+	msgAccessStepUp      views.Message = "Enter your password again to change access."
+	msgAccessFailed      views.Message = "The access change failed. Try again."
 )
 
 // errExpiryInput means the expiry field is not an HTML date or datetime-local value.
@@ -154,7 +155,7 @@ func (s *service) changeAccess(w http.ResponseWriter, r *http.Request, done done
 	if err := change(r.Context(), r.PostForm); err != nil {
 		for _, problem := range accessPageProblems {
 			if errors.Is(err, problem.err) {
-				s.renderAccess(w, r, problem.status, user, pageMessage(problem.detail), "")
+				s.renderAccess(w, r, problem.status, user, views.Message(problem.detail), "")
 				return
 			}
 		}
@@ -175,7 +176,7 @@ func (s *service) accessPageAdmin(w http.ResponseWriter, r *http.Request) (users
 	return s.adminPageUser(w, r, accessPagePath, msgAccessFailed, msgAccessAdminOnly)
 }
 
-func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status int, user users.User, message, notice pageMessage) {
+func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status int, user users.User, message, notice views.Message) {
 	resources, err := s.accessAdmin.ListResources(r.Context())
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: access page", "err", err)
@@ -190,9 +191,9 @@ func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status in
 	}
 	view := newAccessPageView(r, resources, entries, time.Now())
 	// The caller checked the admins group, so the menu needs no second lookup.
-	view.Shell = shellView{Login: user.Login, Admin: true, Current: accessPagePath}
+	view.Shell = views.Shell{Login: user.Login, Admin: true, Current: accessPagePath}
 	view.Message, view.Notice = message, notice
-	writePage(w, r, status, accessPage(view), pageCSP)
+	writePage(w, r, status, views.AccessPage(view), pageCSP)
 }
 
 // parseGrantee reads the user and the group fields. The access service checks that exactly one is set.
