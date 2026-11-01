@@ -57,6 +57,7 @@ Traefik calls `GET /auth/check` before each protected request. It sends the requ
 | Bad, unknown, revoked, or expired token, or a token of a disabled user | 401 with `WWW-Authenticate: Bearer error="invalid_token"` |
 | User not in the group of `?group=` | 403 |
 | No resource for the URL, no active grant, or no forwarded headers | 403 |
+| A path with an empty, `.` or `..` segment, a backslash, or an escape of `/`, `%`, or a byte a path may carry raw (`%2e`, `%61`, `%25`) | 403 |
 | URL outside every scope of the token | 403 |
 
 A browser navigation is a request with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`, or `Accept: text/html`, and with no `Authorization` header. An XHR or a CORS fetch is not a navigation.

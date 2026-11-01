@@ -181,8 +181,8 @@ func cleanPath(path string) bool {
 	return true
 }
 
-// encodedPlainByte reports a "%XY" that decodes to '/', '\', or a byte a path may carry raw:
-// an unreserved byte, a sub-delim, ':', or '@'.
+// encodedPlainByte reports a "%XY" that decodes to '/', '\', '%', or a byte a path may carry raw:
+// an unreserved byte, a sub-delim, ':', or '@'. A backend that decodes twice turns "%25" into a new escape.
 // A prefix has no '%', so the backend decodes such a path to one that a longer prefix covers.
 func encodedPlainByte(path string) bool {
 	for i := 0; i+2 < len(path); i++ {
@@ -197,7 +197,7 @@ func encodedPlainByte(path string) bool {
 	return false
 }
 
-const plainPathBytes = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@/\\"
+const plainPathBytes = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@/\\%"
 
 func hasControl(s string) bool {
 	for _, r := range s {
