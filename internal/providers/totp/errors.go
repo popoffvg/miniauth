@@ -17,4 +17,6 @@ var (
 	ErrInvalidKey = errors.New("totp: TOTP key must be 32 bytes in base64")
 	// ErrInvalidCode means the text is not a code of the expected form.
 	ErrInvalidCode = errors.New("totp: code form is not valid")
+	// ErrNoTransition means the enrollment policy refuses the event in the current stage.
+	ErrNoTransition = errors.New("totp: no transition")
 )

@@ -17,11 +17,20 @@ type Credential struct {
 	LastStep    TimeStep
 	CreatedAt   time.Time
 	ConfirmedAt time.Time
+	Version     EnrollmentVersion
 }
 
 // Confirmed reports whether the first code was accepted.
 func (c Credential) Confirmed() bool {
 	return !c.ConfirmedAt.IsZero()
+}
+
+func (c Credential) state() EnrollmentState {
+	stage := StagePending
+	if c.Confirmed() {
+		stage = StageConfirmed
+	}
+	return EnrollmentState{Stage: stage, Version: c.Version, CreatedAt: c.CreatedAt}
 }
 
 // Enrollment is what the enrollment page shows once: the secret and its QR code text.
