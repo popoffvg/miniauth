@@ -116,14 +116,14 @@ func parseEntry(raw json.RawMessage) (access.PredefinedResource, error) {
 	return resource, nil
 }
 
-// strictDecode refuses an unknown field and a second JSON value.
+// strictDecode refuses an unknown field and any data after the first JSON value.
 func strictDecode(data []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return fmt.Errorf("miniauth: decode: %w", err)
 	}
-	if decoder.More() {
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return errEntry
 	}
 	return nil
