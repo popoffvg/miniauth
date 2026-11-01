@@ -54,7 +54,7 @@ func (s *service) overviewOf(r *http.Request, user users.User, session sessions.
 		return views.OverviewView{}, err
 	}
 	view := views.OverviewView{
-		Shell:  views.Shell{Login: user.Login, Admin: slices.Contains(names, groups.Admins()), Current: "/"},
+		Shell:  s.shell(user, slices.Contains(names, groups.Admins()), "/"),
 		Groups: names,
 	}
 	if view.TwoStep, err = s.twoStepView(r, user.ID); err != nil {

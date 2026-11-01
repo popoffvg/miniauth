@@ -136,7 +136,7 @@ func (s *service) changeGroups(w http.ResponseWriter, r *http.Request, done done
 }
 
 func (s *service) groupsPageAdmin(w http.ResponseWriter, r *http.Request) (users.User, sessions.Session, bool) {
-	if s.groupAdmin == nil || s.accessAdmin == nil || s.flows == nil || s.passwords == nil {
+	if !s.groupsPageOn() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgGroupsUnavailable)
 		return users.User{}, sessions.Session{}, false
 	}
@@ -158,7 +158,7 @@ func (s *service) renderGroups(w http.ResponseWriter, r *http.Request, status in
 	}
 	view := newGroupsPageView(r, found, resources)
 	// The caller checked the admins group, so the menu needs no second lookup.
-	view.Shell = views.Shell{Login: user.Login, Admin: true, Current: groupsPagePath}
+	view.Shell = s.shell(user, true, groupsPagePath)
 	view.Message, view.Notice = message, notice
 	writePage(w, r, status, views.GroupsPage(view), pageCSP)
 }
