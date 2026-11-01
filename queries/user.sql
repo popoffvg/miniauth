@@ -1,4 +1,5 @@
 -- name: InsertUserIdentity :exec
+-- The account joins the built-in group in the same statement.
 WITH new_user AS (
     INSERT INTO users (id, login, created_at)
     VALUES (
@@ -7,15 +8,21 @@ WITH new_user AS (
         sqlc.arg(created_at)
     )
     RETURNING id
+),
+new_identity AS (
+    INSERT INTO identities (id, user_id, kind, password_hash, created_at)
+    SELECT
+        sqlc.arg(identity_id),
+        new_user.id,
+        sqlc.arg(kind),
+        sqlc.arg(password_hash),
+        sqlc.arg(created_at)
+    FROM new_user
+    RETURNING user_id
 )
-INSERT INTO identities (id, user_id, kind, password_hash, created_at)
-SELECT
-    sqlc.arg(identity_id),
-    new_user.id,
-    sqlc.arg(kind),
-    sqlc.arg(password_hash),
-    sqlc.arg(created_at)
-FROM new_user;
+INSERT INTO group_memberships (user_id, name)
+SELECT new_identity.user_id, sqlc.arg(group_name)
+FROM new_identity;
 
 -- name: GetIdentityByLogin :one
 SELECT

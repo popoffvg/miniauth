@@ -60,12 +60,12 @@ func TestServiceRefusesSelfChanges(t *testing.T) {
 	admin := useradmin.Actor{ID: ada.ID}
 
 	require.ErrorIs(t, service.Disable(ctx, admin, ada.Login), useradmin.ErrSelfDisable)
-	require.ErrorIs(t, service.RemoveFromGroup(ctx, admin, ada.Login, groups.Admin()), useradmin.ErrSelfAdmin)
+	require.ErrorIs(t, service.RemoveFromGroup(ctx, admin, ada.Login, groups.Admins()), useradmin.ErrSelfAdmin)
 	assert.Empty(t, store.disabled)
 	assert.Empty(t, store.removed)
 
 	require.NoError(t, service.RemoveFromGroup(ctx, admin, ada.Login, editors), "the actor may leave another group")
-	require.NoError(t, service.RemoveFromGroup(ctx, admin, bob.Login, groups.Admin()))
+	require.NoError(t, service.RemoveFromGroup(ctx, admin, bob.Login, groups.Admins()))
 	require.NoError(t, service.Disable(ctx, admin, bob.Login))
 	require.NoError(t, service.Disable(ctx, useradmin.Actor{}, bob.Login), "the bootstrap token is no user")
 	assert.Equal(t, []users.ID{bob.ID, bob.ID}, store.disabled)

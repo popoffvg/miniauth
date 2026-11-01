@@ -35,6 +35,7 @@ type Querier interface {
 	DeleteExpiredLoginFlows(ctx context.Context) error
 	DeleteExpiredPendingIdentityLinks(ctx context.Context, now pgtype.Timestamptz) error
 	DeleteExpiredTelegramLoginProofs(ctx context.Context, now pgtype.Timestamptz) error
+	DeleteGroup(ctx context.Context, name string) (int64, error)
 	DeleteGroupMembership(ctx context.Context, arg DeleteGroupMembershipParams) (int64, error)
 	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
@@ -46,6 +47,8 @@ type Querier interface {
 	DeleteRecoveryCodes(ctx context.Context, userID pgtype.UUID) error
 	DeleteResource(ctx context.Context, name string) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
+	DeleteStaleManagedGrants(ctx context.Context, arg DeleteStaleManagedGrantsParams) (int64, error)
+	DeleteStaleManagedResources(ctx context.Context, keep []string) (int64, error)
 	DeleteTOTP(ctx context.Context, userID pgtype.UUID) error
 	DeleteTelegramLoginProof(ctx context.Context, proofHash []byte) error
 	DeleteUserPasskey(ctx context.Context, arg DeleteUserPasskeyParams) (int64, error)
@@ -53,8 +56,10 @@ type Querier interface {
 	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)
 	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
 	EnableUser(ctx context.Context, id pgtype.UUID) (int64, error)
+	EnsureGroup(ctx context.Context, arg EnsureGroupParams) error
 	EnsureGroupMembership(ctx context.Context, arg EnsureGroupMembershipParams) error
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)
+	GetAccessGrant(ctx context.Context, id pgtype.UUID) (AccessGrant, error)
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
 	GetActivePasskeyByCredential(ctx context.Context, credentialID []byte) (Passkey, error)
 	GetExternalIdentity(ctx context.Context, arg GetExternalIdentityParams) (GetExternalIdentityRow, error)
@@ -71,6 +76,7 @@ type Querier interface {
 	GetUserByLogin(ctx context.Context, login string) (User, error)
 	InsertAccessGrant(ctx context.Context, arg InsertAccessGrantParams) error
 	InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error
+	InsertGroup(ctx context.Context, arg InsertGroupParams) error
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
 	InsertInvite(ctx context.Context, arg InsertInviteParams) error
 	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
@@ -82,6 +88,7 @@ type Querier interface {
 	InsertResource(ctx context.Context, arg InsertResourceParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertTelegramLoginProof(ctx context.Context, arg InsertTelegramLoginProofParams) (int64, error)
+	// The account joins the built-in group in the same statement.
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
 	LinkPendingIdentity(ctx context.Context, arg LinkPendingIdentityParams) (LinkPendingIdentityRow, error)
 	ListAccessGrantEntries(ctx context.Context, arg ListAccessGrantEntriesParams) ([]ListAccessGrantEntriesRow, error)
@@ -89,6 +96,7 @@ type Querier interface {
 	ListAllResources(ctx context.Context) ([]Resource, error)
 	ListDevices(ctx context.Context, userID pgtype.UUID) ([]ListDevicesRow, error)
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
+	ListGroupSummaries(ctx context.Context, name pgtype.Text) ([]ListGroupSummariesRow, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, error)
@@ -107,6 +115,8 @@ type Querier interface {
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
 	UpsertDevice(ctx context.Context, arg UpsertDeviceParams) (pgtype.UUID, error)
 	UpsertDeviceSession(ctx context.Context, arg UpsertDeviceSessionParams) error
+	UpsertManagedGroupGrant(ctx context.Context, arg UpsertManagedGroupGrantParams) error
+	UpsertManagedResource(ctx context.Context, arg UpsertManagedResourceParams) error
 	// A confirmed row is not replaced: zero rows means the user is already enrolled.
 	UpsertPendingTOTP(ctx context.Context, arg UpsertPendingTOTPParams) (int64, error)
 	// Zero rows means the code is unknown or spent.

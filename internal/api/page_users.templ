@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groups"
 )
 
 templ usersPage(view usersPageView) {
@@ -25,7 +25,7 @@ templ usersPage(view usersPageView) {
 					@searchToolbar(usersPagePath, view.Query, "Search users and groups", string(view.Filter), userChips)
 				}
 				if len(view.Rows) > 0 {
-					@userRows(view.Rows)
+					@userRows(view.Rows, view.Groups)
 				} else if view.Total == 0 {
 					@emptyState(iconUsers, "No users.", "Invite a person to create the first account.")
 				} else {
@@ -35,13 +35,13 @@ templ usersPage(view usersPageView) {
 				}
 			</section>
 			if view.InvitesOn {
-				@inviteFormCard(view.Resources)
+				@inviteFormCard(view.Groups)
 			}
 		</div>
 	}
 }
 
-templ userRows(rows []userRow) {
+templ userRows(rows []userRow, choices []groups.Name) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -89,11 +89,17 @@ templ userRows(rows []userRow) {
 					<td class="num" data-label="Devices">{ strconv.Itoa(row.Account.Devices) }</td>
 					<td class="actions">
 						@rowMenu(row.Account.User.Login.String()) {
-							<form class="menu-form" method="post" action={ templ.SafeURL(row.actionPath("groups")) }>
-								<label class="visually-hidden" for={ "group-" + row.Account.User.Login.String() }>Group name</label>
-								<input class="input" id={ "group-" + row.Account.User.Login.String() } name="group" maxlength="64" required placeholder="Group name"/>
-								<button class="btn btn-secondary btn-sm" type="submit">Add to group</button>
-							</form>
+							if joinable := row.joinable(choices); len(joinable) > 0 {
+								<form class="menu-form" method="post" action={ templ.SafeURL(row.actionPath("groups")) }>
+									<label class="visually-hidden" for={ "group-" + row.Account.User.Login.String() }>Group</label>
+									<select class="input" id={ "group-" + row.Account.User.Login.String() } name="group" required>
+										for _, name := range joinable {
+											<option value={ name.String() }>{ name.String() }</option>
+										}
+									</select>
+									<button class="btn btn-secondary btn-sm" type="submit">Add to group</button>
+								</form>
+							}
 							for _, name := range row.Account.Groups {
 								if row.canLeave(name) {
 									@confirmPost(row.actionPath("groups/"+url.PathEscape(name.String())+"/remove"), "Remove from "+name.String(),
@@ -119,34 +125,29 @@ templ userRows(rows []userRow) {
 	</table>
 }
 
-templ inviteFormCard(resources []access.Resource) {
+templ inviteFormCard(choices []groups.Name) {
 	<section class="card" id="invite" aria-labelledby="invite-title">
 		<div class="card-header">
 			<div>
 				<h2 id="invite-title">Invite user</h2>
-				<p>The link creates one account with access to one resource. It works once and expires after 7 days.</p>
+				<p>The link creates one account in the group you choose and in users. It works once and expires after 7 days.</p>
 			</div>
 		</div>
 		<form method="post" action="/users/invites">
 			<div class="card-body">
 				<div class="field">
-					<label for="invite-resource"><span>Resource <span class="required" aria-hidden="true">*</span></span></label>
-					<select
-						id="invite-resource"
-						name="resource"
-						required
-						if len(resources) == 0 {
-							disabled
-							aria-describedby="invite-resource-help"
-						}
-					>
-						for _, choice := range resources {
-							<option value={ choice.Name.String() }>{ choice.Name.String() } ({ choice.URL.String() })</option>
+					<label for="invite-group"><span>Group <span class="required" aria-hidden="true">*</span></span></label>
+					<select id="invite-group" name="group" required aria-describedby="invite-group-help">
+						for _, choice := range choices {
+							<option
+								value={ choice.String() }
+								if choice == groups.Users() {
+									selected
+								}
+							>{ choice.String() }</option>
 						}
 					</select>
-					if len(resources) == 0 {
-						<p class="help" id="invite-resource-help">Add a resource on the Access page first.</p>
-					}
+					<p class="help" id="invite-group-help">The new user reaches every resource of the group. Manage groups on the Groups page.</p>
 				</div>
 			</div>
 			<div class="card-footer">
@@ -160,7 +161,7 @@ templ inviteShownCard(invite inviteBody) {
 	<section class="card" aria-labelledby="invite-link-title">
 		<div class="card-header">
 			<div>
-				<h2 id="invite-link-title">Invite link for { invite.Resource.String() }</h2>
+				<h2 id="invite-link-title">Invite link to the group { invite.Group.String() }</h2>
 				<p>Send it to one person. It expires { timeText(invite.ExpiresAt).Human() }.</p>
 			</div>
 		</div>

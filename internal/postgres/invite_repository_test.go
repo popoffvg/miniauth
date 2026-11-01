@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
@@ -24,12 +24,13 @@ func TestInviteAcceptance(t *testing.T) {
 
 	accounts := users.NewService(postgres.NewUserRepository(pool))
 	createAccount(t, accounts, "taken")
-	grantRepo, err := postgres.NewAccessRepository(pool)
+	groupRepo, err := postgres.NewGroupRepository(pool)
 	require.NoError(t, err)
-	grants := access.NewService(grantRepo, accounts)
-	app := accessResource(t, "app", "app.example.test", "/")
-	_, err = grants.CreateResource(ctx, app.Name, app.URL)
+	groupAdmin, err := postgres.NewGroupAdminRepository(pool)
 	require.NoError(t, err)
+	ops, err := groups.ParseName("ops")
+	require.NoError(t, err)
+	require.NoError(t, groupAdmin.CreateGroup(ctx, ops, time.Now()))
 	repo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
 	now := time.Now()
@@ -43,13 +44,21 @@ func TestInviteAcceptance(t *testing.T) {
 		return parsed
 	}
 
-	t.Run("an unknown resource is refused", func(t *testing.T) {
-		_, _, err := service.Create(ctx, accessResource(t, "missing", "x.example.test", "/").Name)
-		require.ErrorIs(t, err, access.ErrResourceNotFound)
+	t.Run("an unknown group is refused", func(t *testing.T) {
+		missing, err := groups.ParseName("missing")
+		require.NoError(t, err)
+		_, _, err = service.Create(ctx, missing)
+		require.ErrorIs(t, err, groups.ErrGroupNotFound)
+	})
+
+	t.Run("a zero group invites to users", func(t *testing.T) {
+		_, invite, err := service.Create(ctx, groups.Name{})
+		require.NoError(t, err)
+		assert.Equal(t, groups.Users(), invite.Group)
 	})
 
 	t.Run("a taken login keeps the invite unused", func(t *testing.T) {
-		token, _, err := service.Create(ctx, app.Name)
+		token, _, err := service.Create(ctx, ops)
 		require.NoError(t, err)
 		_, err = service.Accept(ctx, token, login("taken"), password)
 		require.ErrorIs(t, err, users.ErrLoginTaken)
@@ -61,7 +70,7 @@ func TestInviteAcceptance(t *testing.T) {
 	})
 
 	t.Run("two parallel acceptances create one account", func(t *testing.T) {
-		token, _, err := service.Create(ctx, app.Name)
+		token, _, err := service.Create(ctx, ops)
 		require.NoError(t, err)
 		logins := []users.Login{login("first"), login("second")}
 		errs := make([]error, len(logins))
@@ -85,12 +94,10 @@ func TestInviteAcceptance(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, stored.UsedAt.IsZero())
 		require.NotZero(t, stored.UserID)
-		entries, err := grants.ListGrants(ctx, access.GrantFilter{Resource: app.Name})
+		user := stored.UserID
+		names, err := groupRepo.List(ctx, user)
 		require.NoError(t, err)
-		require.Len(t, entries, 1)
-		user, ok := entries[0].Grant.Subject.User()
-		require.True(t, ok)
-		assert.Equal(t, stored.UserID, user)
+		assert.Equal(t, []groups.Name{ops, groups.Users()}, names, "the account joins the group of the invite and users")
 		var created []users.ID
 		for _, name := range logins {
 			account, err := accounts.FindByLogin(ctx, name)
@@ -104,7 +111,7 @@ func TestInviteAcceptance(t *testing.T) {
 	})
 
 	t.Run("an expired invite is refused", func(t *testing.T) {
-		token, invite, err := service.Create(ctx, app.Name)
+		token, invite, err := service.Create(ctx, ops)
 		require.NoError(t, err)
 		later, err := invites.NewService(repo, func() time.Time { return invite.ExpiresAt })
 		require.NoError(t, err)

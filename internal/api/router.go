@@ -12,6 +12,7 @@ import (
 	"github.com/swaggest/openapi-go/openapi3"
 
 	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groupadmin"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
@@ -88,6 +89,8 @@ type service struct {
 	invites *invites.Service
 	// userAdmin is nil unless WithUserAdmin sets it.
 	userAdmin *useradmin.Service
+	// groupAdmin is nil unless WithGroupAdmin sets it.
+	groupAdmin *groupadmin.Service
 }
 
 // WithLogin serves the login page. Without it, the login routes answer 503.
@@ -243,7 +246,7 @@ func (s *service) routes() []route {
 			request: new(groupMemberPath),
 			status:  http.StatusNoContent,
 			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
-			doc:     "Adds the user to the group. A member stays a member: the request is idempotent.",
+			doc:     "Adds the user to the group. A member stays a member: the request is idempotent. An unknown user or group is 404.",
 		},
 		{
 			method:  http.MethodDelete,
@@ -254,6 +257,64 @@ func (s *service) routes() []route {
 			status:  http.StatusNoContent,
 			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
 			doc:     "Removes the user from the group. A user who is not in the group is 404.",
+		},
+		{
+			method:   http.MethodGet,
+			path:     "/api/v1/groups",
+			id:       "listGroups",
+			handler:  s.listGroups,
+			response: new(groupListBody),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
+			doc:      "Lists every group in name order, with its member count and its resources. A group reaches a resource through a group grant.",
+		},
+		{
+			method:   http.MethodPost,
+			path:     "/api/v1/groups",
+			id:       "createGroup",
+			handler:  s.createGroup,
+			request:  new(createGroupRequest),
+			response: new(groupBody),
+			status:   http.StatusCreated,
+			errors: []int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusConflict,
+				http.StatusRequestEntityTooLarge,
+				http.StatusUnsupportedMediaType,
+				http.StatusServiceUnavailable,
+			},
+			doc: "Creates an empty group. A name that is stored is 409.",
+		},
+		{
+			method:  http.MethodDelete,
+			path:    "/api/v1/groups/{group}",
+			id:      "deleteGroup",
+			handler: s.deleteGroup,
+			request: new(groupPath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable},
+			doc:     "Deletes the group, its memberships, and its grants. The built-in groups admins and users are 409. A group that MINIAUTH_RESOURCES_FILE names is 409.",
+		},
+		{
+			method:  http.MethodPut,
+			path:    "/api/v1/groups/{group}/resources/{name}",
+			id:      "addGroupResource",
+			handler: s.addGroupResource,
+			request: new(groupResourcePath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:     "Gives the group the resource: a group grant with no expiry. A group that has the resource keeps it: the request is idempotent. An unknown group or resource is 404.",
+		},
+		{
+			method:  http.MethodDelete,
+			path:    "/api/v1/groups/{group}/resources/{name}",
+			id:      "removeGroupResource",
+			handler: s.removeGroupResource,
+			request: new(groupResourcePath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable},
+			doc:     "Revokes the grant of the resource to the group. A group without the resource is 404. A grant from MINIAUTH_RESOURCES_FILE is 409.",
 		},
 		{
 			method:   http.MethodPost,
@@ -309,8 +370,8 @@ func (s *service) routes() []route {
 			handler: s.deleteResource,
 			request: new(resourcePath),
 			status:  http.StatusNoContent,
-			errors:  []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
-			doc:     "Deletes the resource and its grants.",
+			errors:  []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable},
+			doc:     "Deletes the resource and its grants. A resource from MINIAUTH_RESOURCES_FILE is 409.",
 		},
 		{
 			method:   http.MethodPost,
@@ -329,7 +390,7 @@ func (s *service) routes() []route {
 				http.StatusUnsupportedMediaType,
 				http.StatusServiceUnavailable,
 			},
-			doc: "Gives one user or one group one resource. The body names exactly one of user (a login) and group. expires_at is RFC 3339 and MUST be in the future; with no expires_at the grant does not expire. An unknown user or resource is 404. A grant that already exists is 409.",
+			doc: "Gives one user or one group one resource. The body names exactly one of user (a login) and group. expires_at is RFC 3339 and MUST be in the future; with no expires_at the grant does not expire. An unknown user, group, or resource is 404. A grant that already exists is 409.",
 		},
 		{
 			method:   http.MethodGet,
@@ -349,8 +410,8 @@ func (s *service) routes() []route {
 			handler: s.revokeGrant,
 			request: new(grantPath),
 			status:  http.StatusNoContent,
-			errors:  []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
-			doc:     "Revokes the grant. The next /auth/check does not count it.",
+			errors:  []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable},
+			doc:     "Revokes the grant. The next /auth/check does not count it. A grant from MINIAUTH_RESOURCES_FILE is 409.",
 		},
 		{
 			method:   http.MethodPost,
@@ -368,7 +429,7 @@ func (s *service) routes() []route {
 				http.StatusUnsupportedMediaType,
 				http.StatusServiceUnavailable,
 			},
-			doc: "Creates an invite for one resource. The reply holds the one-time link {public URL}/invite/{token}, shown once: only the SHA-256 of the token is stored. The link expires after 7 days. An unknown resource is 404. Without MINIAUTH_PUBLIC_URL it is 503.",
+			doc: "Creates an invite to one group; with no group it is users. The reply holds the one-time link {public URL}/invite/{token}, shown once: only the SHA-256 of the token is stored. The link expires after 7 days. An unknown group is 404. Without MINIAUTH_PUBLIC_URL it is 503.",
 		},
 		{
 			method:      http.MethodGet,
@@ -391,7 +452,7 @@ func (s *service) routes() []route {
 			request:  new(inviteFormRequest),
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusGone, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:      "Accepts the invite in the form. Origin MUST be the public origin, else 403. In one transaction it marks the invite used, creates the user with a password identity, and grants the resource. Then it starts a session and redirects to https, the host, and the path prefix of the resource. A taken login shows the form again with 409, and the invite stays unused. An unknown, used, or expired token is 410.",
+			doc:      "Accepts the invite in the form. Origin MUST be the public origin, else 403. In one transaction it marks the invite used and creates the user with a password identity in the group of the invite and in users. Then it starts a session and redirects to the overview page. A taken login shows the form again with 409, and the invite stays unused. An unknown, used, or expired token is 410.",
 			isPublic: true,
 		},
 		{
@@ -737,7 +798,7 @@ func (s *service) routes() []route {
 			contentType: "text/html",
 			empty:       []int{http.StatusSeeOther},
 			pages:       []int{http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:         "Lists the resources and their grants, with the forms to change them. Only a member of the group admin opens it; any other user is 403. With no session it redirects to the login page, which returns here.",
+			doc:         "Lists the resources and their grants, with the forms to change them. Only a member of the group admins opens it; any other user is 403. With no session it redirects to the login page, which returns here.",
 			isPublic:    true,
 		},
 		{
@@ -795,7 +856,7 @@ func (s *service) routes() []route {
 			contentType: "text/html",
 			empty:       []int{http.StatusSeeOther},
 			pages:       []int{http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:         "Lists the users with their groups and state, with the forms to change them and to make an invite link. Only a member of the group admin opens it; any other user is 403. With no session it redirects to the login page, which returns here.",
+			doc:         "Lists the users with their groups and state, with the forms to change them and to make an invite link. Only a member of the group admins opens it; any other user is 403. With no session it redirects to the login page, which returns here.",
 			isPublic:    true,
 		},
 		{
@@ -828,7 +889,7 @@ func (s *service) routes() []route {
 			request:  new(userGroupForm),
 			status:   http.StatusSeeOther,
 			pages:    usersFormPages,
-			doc:      "Adds the user to the group of the form and redirects to GET /users?done=member-added. " + usersFormDoc,
+			doc:      "Adds the user to the group of the form and redirects to GET /users?done=member-added. An unknown group is 404. " + usersFormDoc,
 			isPublic: true,
 		},
 		{
@@ -839,7 +900,7 @@ func (s *service) routes() []route {
 			request:  new(groupMemberPath),
 			status:   http.StatusSeeOther,
 			pages:    usersFormPages,
-			doc:      "Removes the user from the group and redirects to GET /users?done=member-removed. An admin cannot leave the group admin: 409. " + usersFormDoc,
+			doc:      "Removes the user from the group and redirects to GET /users?done=member-removed. An admin cannot leave the group admins: 409. " + usersFormDoc,
 			isPublic: true,
 		},
 		{
@@ -853,8 +914,66 @@ func (s *service) routes() []route {
 			contentType: "text/html",
 			empty:       []int{http.StatusSeeOther},
 			pages:       []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
-			doc:         "Makes an invite link for the resource of the form and shows it once, with Cache-Control: no-store. " + usersFormDoc,
+			doc:         "Makes an invite link to the group of the form and shows it once, with Cache-Control: no-store. An empty group is users. " + usersFormDoc,
 			isPublic:    true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        groupsPagePath,
+			id:          "groupsPage",
+			handler:     s.groupsPage,
+			request:     new(groupsPageRequest),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			empty:       []int{http.StatusSeeOther},
+			pages:       []int{http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "Lists the groups with their member counts and resources, with the forms to change them. Only a member of the group admins opens it; any other user is 403. With no session it redirects to the login page, which returns here.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     groupsPagePath,
+			id:       "createGroupForm",
+			handler:  s.createGroupForm,
+			request:  new(groupForm),
+			status:   http.StatusSeeOther,
+			pages:    groupsFormPages,
+			doc:      "Creates an empty group and redirects to GET /groups?done=group-created. " + groupsFormDoc,
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     groupsPagePath + "/{group}/delete",
+			id:       "deleteGroupForm",
+			handler:  s.deleteGroupForm,
+			request:  new(groupPath),
+			status:   http.StatusSeeOther,
+			pages:    groupsFormPages,
+			doc:      "Deletes the group, its memberships, and its grants, and redirects to GET /groups?done=group-deleted. A built-in group or a group from the resources file is 409. " + groupsFormDoc,
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     groupsPagePath + "/{group}/resources",
+			id:       "addGroupResourceForm",
+			handler:  s.addGroupResourceForm,
+			request:  new(groupResourceForm),
+			status:   http.StatusSeeOther,
+			pages:    groupsFormPages,
+			doc:      "Gives the group the resource of the form and redirects to GET /groups?done=group-resource-added. " + groupsFormDoc,
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     groupsPagePath + "/{group}/resources/{name}/remove",
+			id:       "removeGroupResourceForm",
+			handler:  s.removeGroupResourceForm,
+			request:  new(groupResourcePath),
+			status:   http.StatusSeeOther,
+			pages:    groupsFormPages,
+			doc:      "Revokes the grant of the resource to the group and redirects to GET /groups?done=group-resource-removed. A grant from the resources file is 409. " + groupsFormDoc,
+			isPublic: true,
 		},
 		{
 			method:   http.MethodPost,

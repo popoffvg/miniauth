@@ -30,8 +30,15 @@ type createResourceRequest struct {
 
 // resourceBody names a resource. URL is the host and the path prefix, with no scheme.
 type resourceBody struct {
+	Name    access.ResourceName `json:"name"`
+	URL     access.ResourceURL  `json:"url" doc:"The host and the path prefix, such as dash.example.test/mcp. The scheme is not stored."`
+	Managed bool                `json:"managed" doc:"True for a resource from MINIAUTH_RESOURCES_FILE. The API refuses to delete it: 409."`
+}
+
+// grantResourceBody is the resource of a grant.
+type grantResourceBody struct {
 	Name access.ResourceName `json:"name"`
-	URL  access.ResourceURL  `json:"url" doc:"The host and the path prefix, such as dash.example.test/mcp. The scheme is not stored."`
+	URL  access.ResourceURL  `json:"url" doc:"The host and the path prefix. The scheme is not stored."`
 }
 
 type resourceList struct {
@@ -52,12 +59,13 @@ type createGrantRequest struct {
 
 // grantBody is one grant. Exactly one of User and Group is set.
 type grantBody struct {
-	ID        access.GrantID `json:"id" format:"uuid"`
-	Resource  resourceBody   `json:"resource"`
-	User      users.Login    `json:"user,omitzero"`
-	Group     groups.Name    `json:"group,omitzero"`
-	ExpiresAt access.Expiry  `json:"expires_at,omitzero" format:"date-time" doc:"Absent: the grant does not expire."`
-	CreatedAt time.Time      `json:"created_at"`
+	ID        access.GrantID    `json:"id" format:"uuid"`
+	Resource  grantResourceBody `json:"resource"`
+	User      users.Login       `json:"user,omitzero"`
+	Group     groups.Name       `json:"group,omitzero"`
+	ExpiresAt access.Expiry     `json:"expires_at,omitzero" format:"date-time" doc:"Absent: the grant does not expire."`
+	CreatedAt time.Time         `json:"created_at"`
+	Managed   bool              `json:"managed" doc:"True for a grant from MINIAUTH_RESOURCES_FILE. The API refuses to revoke it: 409."`
 }
 
 type grantList struct {
@@ -94,7 +102,11 @@ var accessProblems = []accessProblem{
 	{err: access.ErrResourceNotFound, status: http.StatusNotFound, detail: "The resource is not found."},
 	{err: access.ErrGrantNotFound, status: http.StatusNotFound, detail: "The grant is not found."},
 	{err: access.ErrDuplicateResource, status: http.StatusConflict, detail: "A resource with this name or this URL already exists."},
+	{err: access.ErrUnknownGroup, status: http.StatusNotFound, detail: "The group is not found."},
+	{err: groups.ErrGroupNotFound, status: http.StatusNotFound, detail: "The group is not found."},
 	{err: access.ErrDuplicateGrant, status: http.StatusConflict, detail: "The grant already exists."},
+	{err: access.ErrManagedResource, status: http.StatusConflict, detail: "The resource comes from the resources file. Change the file and restart miniauth."},
+	{err: access.ErrManagedGrant, status: http.StatusConflict, detail: "The grant comes from the resources file. Change the file and restart miniauth."},
 }
 
 func writeAccessError(w http.ResponseWriter, r *http.Request, err error) {
@@ -135,7 +147,7 @@ func (s *service) createResource(w http.ResponseWriter, r *http.Request) {
 		writeAccessError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, resourceBody{Name: created.Name, URL: created.URL})
+	writeJSON(w, http.StatusCreated, resourceReply(created))
 }
 
 func (s *service) listResources(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +161,7 @@ func (s *service) listResources(w http.ResponseWriter, r *http.Request) {
 	}
 	reply := resourceList{Resources: make([]resourceBody, 0, len(resources))}
 	for _, resource := range resources {
-		reply.Resources = append(reply.Resources, resourceBody{Name: resource.Name, URL: resource.URL})
+		reply.Resources = append(reply.Resources, resourceReply(resource))
 	}
 	writeJSON(w, http.StatusOK, reply)
 }
@@ -247,13 +259,18 @@ func (s *service) revokeGrant(w http.ResponseWriter, r *http.Request) {
 func grantReply(entry access.GrantEntry) grantBody {
 	body := grantBody{
 		ID:        entry.Grant.ID,
-		Resource:  resourceBody{Name: entry.Grant.Resource, URL: entry.URL},
+		Resource:  grantResourceBody{Name: entry.Grant.Resource, URL: entry.URL},
 		User:      entry.UserLogin,
 		ExpiresAt: entry.Grant.Expiry,
 		CreatedAt: entry.Grant.CreatedAt,
+		Managed:   entry.Grant.Managed,
 	}
 	if name, ok := entry.Grant.Subject.Group(); ok {
 		body.Group = name
 	}
 	return body
+}
+
+func resourceReply(resource access.Resource) resourceBody {
+	return resourceBody{Name: resource.Name, URL: resource.URL, Managed: resource.Managed}
 }

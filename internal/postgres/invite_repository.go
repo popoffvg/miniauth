@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -37,13 +37,13 @@ func NewInviteRepository(db transactionalDB) (*InviteRepository, error) {
 
 var _ invites.Store = (*InviteRepository)(nil)
 
-// Create returns access.ErrResourceNotFound when the resource is not stored.
+// Create returns groups.ErrGroupNotFound when the group is not stored.
 func (r *InviteRepository) Create(ctx context.Context, invite invites.Invite) error {
 	err := r.q.InsertInvite(ctx, sqlcgen.InsertInviteParams{
-		TokenHash:    invite.Hash[:],
-		ResourceName: invite.Resource.String(),
-		CreatedAt:    pgTime(invite.CreatedAt),
-		ExpiresAt:    pgTime(invite.ExpiresAt),
+		TokenHash: invite.Hash[:],
+		GroupName: invite.Group.String(),
+		CreatedAt: pgTime(invite.CreatedAt),
+		ExpiresAt: pgTime(invite.ExpiresAt),
 	})
 	if err != nil {
 		return inviteError("create invite", err)
@@ -66,14 +66,10 @@ func (r *InviteRepository) Find(ctx context.Context, hash invites.TokenHash) (in
 // InTransaction commits when fn returns nil and rolls back otherwise.
 func (r *InviteRepository) InTransaction(ctx context.Context, fn func(invites.Transaction) error) error {
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
-		grants, err := NewAccessRepository(tx)
-		if err != nil {
-			return err
-		}
 		return fn(&inviteTransaction{
-			q:      sqlcgen.New(tx),
-			users:  NewUserRepository(tx),
-			grants: grants,
+			q:          sqlcgen.New(tx),
+			users:      NewUserRepository(tx),
+			membership: &GroupRepository{q: sqlcgen.New(tx)},
 		})
 	})
 	if err != nil {
@@ -83,9 +79,9 @@ func (r *InviteRepository) InTransaction(ctx context.Context, fn func(invites.Tr
 }
 
 type inviteTransaction struct {
-	q      *sqlcgen.Queries
-	users  *UserRepository
-	grants *AccessRepository
+	q          *sqlcgen.Queries
+	users      *UserRepository
+	membership *GroupRepository
 }
 
 // Claim is one conditional UPDATE. A parallel claim waits for the row lock and then sees used_at set.
@@ -115,21 +111,21 @@ func (t *inviteTransaction) Users() users.Repository {
 	return t.users
 }
 
-func (t *inviteTransaction) Access() access.Repository {
-	return t.grants
+func (t *inviteTransaction) Groups() groups.Writer {
+	return t.membership
 }
 
 func inviteFromRow(row sqlcgen.Invite) (invites.Invite, error) {
 	if len(row.TokenHash) != len(invites.TokenHash{}) || !row.CreatedAt.Valid || !row.ExpiresAt.Valid {
 		return invites.Invite{}, errors.New("postgres: invite row is incomplete")
 	}
-	resource, err := access.ParseResourceName(row.ResourceName)
+	group, err := groups.ParseName(row.GroupName)
 	if err != nil {
 		return invites.Invite{}, fmt.Errorf("postgres: invite row: %w", err)
 	}
 	invite := invites.Invite{
 		Hash:      invites.TokenHash(row.TokenHash),
-		Resource:  resource,
+		Group:     group,
 		CreatedAt: row.CreatedAt.Time.UTC(),
 		ExpiresAt: row.ExpiresAt.Time.UTC(),
 		UsedAt:    optionalTime(row.UsedAt),
@@ -143,8 +139,8 @@ func inviteFromRow(row sqlcgen.Invite) (invites.Invite, error) {
 func inviteError(action string, err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		if pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "invites_resource_name_fkey" {
-			return access.ErrResourceNotFound
+		if pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "invites_group_name_fkey" {
+			return groups.ErrGroupNotFound
 		}
 		return fmt.Errorf("postgres: %s: %s (SQLSTATE %s)", action, pgErr.ConstraintName, pgErr.Code)
 	}

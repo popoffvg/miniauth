@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/sessions"
@@ -22,10 +21,10 @@ const maxUsersFormBody = 4 << 10
 
 const (
 	msgUsersUnavailable pageMessage = "The users page is not available."
-	msgUsersAdminOnly   pageMessage = "Only a member of the admin group can open the users page."
+	msgUsersAdminOnly   pageMessage = "Only a member of the admins group can open the users page."
 	msgUsersStepUp      pageMessage = "Enter your password again to change users."
 	msgUsersFailed      pageMessage = "The user change failed. Try again."
-	msgInviteResource   pageMessage = "Choose a resource that exists."
+	msgInviteGroup      pageMessage = "Choose a group that exists."
 )
 
 // usersPageRequest documents the query of GET /users.
@@ -43,10 +42,10 @@ type userGroupForm struct {
 
 // userInviteForm documents the form of POST /users/invites.
 type userInviteForm struct {
-	Resource string `formData:"resource" required:"true"`
+	Group string `formData:"group" description:"The group of the new account. Empty: users."`
 }
 
-const usersFormDoc = "Only a member of the group admin can send it; any other user is 403. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up instead: the page asks for the password of the session user and returns to GET /users. A refused change shows the page with a message and 400, 404, or 409."
+const usersFormDoc = "Only a member of the group admins can send it; any other user is 403. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up instead: the page asks for the password of the session user and returns to GET /users. A refused change shows the page with a message and 400, 404, or 409."
 
 // usersFormPages are the statuses of a POST of the users page that answer with a page. 200 is the step-up form.
 var usersFormPages = []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError, http.StatusServiceUnavailable}
@@ -101,13 +100,17 @@ func (s *service) makeInviteForm(w http.ResponseWriter, r *http.Request) {
 		s.renderUsers(w, r, http.StatusServiceUnavailable, user, usersPageNote{message: msgInviteOff})
 		return
 	}
-	resource, err := access.ParseResourceName(form.Get("resource"))
+	var group groups.Name
+	var err error
+	if raw := form.Get("group"); raw != "" {
+		group, err = groups.ParseName(raw)
+	}
 	var invite inviteBody
 	if err == nil {
-		invite, err = s.makeInvite(r.Context(), resource)
+		invite, err = s.makeInvite(r.Context(), group)
 	}
-	if errors.Is(err, access.ErrResourceName) || errors.Is(err, access.ErrResourceNotFound) {
-		s.renderUsers(w, r, http.StatusBadRequest, user, usersPageNote{message: msgInviteResource})
+	if errors.Is(err, groups.ErrName) || errors.Is(err, groups.ErrGroupNotFound) {
+		s.renderUsers(w, r, http.StatusBadRequest, user, usersPageNote{message: msgInviteGroup})
 		return
 	}
 	if err != nil {
@@ -143,7 +146,7 @@ func (s *service) changeUsers(w http.ResponseWriter, r *http.Request, done doneF
 	http.Redirect(w, r, s.publicURL.Origin()+withDone(usersPagePath, done), http.StatusSeeOther)
 }
 
-// usersForm runs the checks of a users page POST: Origin, the admin group, then the step-up.
+// usersForm runs the checks of a users page POST: Origin, the admins group, then the step-up.
 // It returns false after it wrote a reply.
 func (s *service) usersForm(w http.ResponseWriter, r *http.Request) (users.User, url.Values, bool) {
 	if !s.sameOrigin(r) {
@@ -190,17 +193,31 @@ func (s *service) renderUsers(w http.ResponseWriter, r *http.Request, status int
 		return
 	}
 	view := newUsersPageView(r, accounts, user.Login)
-	// The caller checked the admin group, so the menu needs no second lookup.
+	// The caller checked the admins group, so the menu needs no second lookup.
 	view.Shell = shellView{Login: user.Login, Admin: true, Current: usersPagePath}
 	view.Message, view.Notice = note.message, note.notice
 	view.InvitesOn = s.invites != nil && s.publicURL.Origin() != ""
-	if view.InvitesOn && s.accessAdmin != nil {
-		if view.Resources, err = s.accessAdmin.ListResources(r.Context()); err != nil {
-			loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: users page", "err", err)
-			renderDenied(w, r, http.StatusInternalServerError, msgUsersFailed)
-			return
-		}
+	if view.Groups, err = s.groupNames(r.Context()); err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: users page", "err", err)
+		renderDenied(w, r, http.StatusInternalServerError, msgUsersFailed)
+		return
 	}
 	view.Invite = note.invite
 	writePage(w, r, status, usersPage(view), pageCSP)
+}
+
+// groupNames returns every group in name order. Without the groups service it is the built-in groups.
+func (s *service) groupNames(ctx context.Context) ([]groups.Name, error) {
+	if s.groupAdmin == nil {
+		return []groups.Name{groups.Admins(), groups.Users()}, nil
+	}
+	found, err := s.groupAdmin.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]groups.Name, 0, len(found))
+	for _, group := range found {
+		names = append(names, group.Name)
+	}
+	return names, nil
 }

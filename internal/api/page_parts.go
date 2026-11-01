@@ -24,6 +24,8 @@ const (
 	toneOff      badgeTone = "off"
 	toneCurrent  badgeTone = "current"
 	toneNeutral  badgeTone = "neutral"
+	// toneConfig marks a row from the resources file.
+	toneConfig badgeTone = "config"
 )
 
 // filterChip is one status filter above a table. An empty Value is the chip that shows every row.

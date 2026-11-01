@@ -48,7 +48,7 @@ func (r *GroupRepository) List(ctx context.Context, userID users.ID) ([]groups.N
 }
 
 // Add returns groups.ErrDuplicate when the pair is already stored.
-// An unknown user returns groups.ErrUnknownUser.
+// An unknown user returns groups.ErrUnknownUser and an unknown group groups.ErrGroupNotFound.
 func (r *GroupRepository) Add(ctx context.Context, userID users.ID, name groups.Name) error {
 	if name.String() == "" {
 		return groups.ErrName
@@ -71,6 +71,8 @@ func groupError(action string, err error) error {
 			return groups.ErrDuplicate
 		case pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "group_memberships_user_id_fkey":
 			return groups.ErrUnknownUser
+		case pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "group_memberships_name_fkey":
+			return groups.ErrGroupNotFound
 		default:
 			return fmt.Errorf("postgres: %s: %s (SQLSTATE %s)", action, pgErr.ConstraintName, pgErr.Code)
 		}

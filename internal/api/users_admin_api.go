@@ -51,9 +51,10 @@ var userAdminProblems = []struct {
 	{err: users.ErrInvalidLogin, status: http.StatusBadRequest, detail: "The login is not valid."},
 	{err: groups.ErrName, status: http.StatusBadRequest, detail: "The group name is not valid."},
 	{err: useradmin.ErrUserNotFound, status: http.StatusNotFound, detail: "The user is not found."},
+	{err: groups.ErrGroupNotFound, status: http.StatusNotFound, detail: "The group is not found. Create it on the groups page first."},
 	{err: useradmin.ErrNotMember, status: http.StatusNotFound, detail: "The user is not in the group."},
 	{err: useradmin.ErrSelfDisable, status: http.StatusConflict, detail: "You cannot disable your own account."},
-	{err: useradmin.ErrSelfAdmin, status: http.StatusConflict, detail: "You cannot remove yourself from the admin group."},
+	{err: useradmin.ErrSelfAdmin, status: http.StatusConflict, detail: "You cannot remove yourself from the admins group."},
 }
 
 // userAdminProblem returns false for an error that is not in userAdminProblems.

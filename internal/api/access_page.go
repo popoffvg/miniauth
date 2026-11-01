@@ -23,7 +23,7 @@ var expiryLocalLayouts = []string{"2006-01-02T15:04", "2006-01-02T15:04:05"}
 
 const (
 	msgAccessUnavailable pageMessage = "The access page is not available."
-	msgAccessAdminOnly   pageMessage = "Only a member of the admin group can open the access page."
+	msgAccessAdminOnly   pageMessage = "Only a member of the admins group can open the access page."
 	msgAccessStepUp      pageMessage = "Enter your password again to change access."
 	msgAccessFailed      pageMessage = "The access change failed. Try again."
 )
@@ -165,7 +165,7 @@ func (s *service) changeAccess(w http.ResponseWriter, r *http.Request, done done
 	http.Redirect(w, r, s.publicURL.Origin()+withDone(accessPagePath, done), http.StatusSeeOther)
 }
 
-// accessPageAdmin returns the session user when the user is in groups.Admin.
+// accessPageAdmin returns the session user when the user is in groups.Admins.
 // It returns false after it wrote a reply: a login redirect, 403 for any other user, or an error page.
 func (s *service) accessPageAdmin(w http.ResponseWriter, r *http.Request) (users.User, sessions.Session, bool) {
 	if s.accessAdmin == nil || s.flows == nil || s.passwords == nil {
@@ -189,7 +189,7 @@ func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	view := newAccessPageView(r, resources, entries, time.Now())
-	// The caller checked the admin group, so the menu needs no second lookup.
+	// The caller checked the admins group, so the menu needs no second lookup.
 	view.Shell = shellView{Login: user.Login, Admin: true, Current: accessPagePath}
 	view.Message, view.Notice = message, notice
 	writePage(w, r, status, accessPage(view), pageCSP)
@@ -237,4 +237,4 @@ func parseExpiryInput(raw string) (access.Expiry, error) {
 // 200 is the step-up form.
 var accessFormPages = []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError, http.StatusServiceUnavailable}
 
-const accessFormDoc = "Only a member of the group admin can send it; any other user is 403. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up instead: the page asks for the password of the session user and returns to GET /access. A refused change shows the page with a message and 400, 404, or 409."
+const accessFormDoc = "Only a member of the group admins can send it; any other user is 403. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up instead: the page asks for the password of the session user and returns to GET /access. A refused change shows the page with a message and 400, 404, or 409."

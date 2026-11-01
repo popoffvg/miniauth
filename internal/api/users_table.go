@@ -3,9 +3,9 @@ package api
 import (
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
-	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/useradmin"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -32,8 +32,19 @@ type userRow struct {
 	Self    bool
 }
 
+// joinable returns the groups of choices that the user is not in.
+func (row userRow) joinable(choices []groups.Name) []groups.Name {
+	var found []groups.Name
+	for _, name := range choices {
+		if !slices.Contains(row.Account.Groups, name) {
+			found = append(found, name)
+		}
+	}
+	return found
+}
+
 func (row userRow) canLeave(name groups.Name) bool {
-	return !row.Self || name != groups.Admin()
+	return !row.Self || name != groups.Admins()
 }
 
 // usersPageView is the data of the users page. Rows pass the search and the filter; Total counts every user.
@@ -46,7 +57,8 @@ type usersPageView struct {
 	Rows      []userRow
 	Total     int
 	InvitesOn bool
-	Resources []access.Resource
+	// Groups is every group, for the add-to-group menu and the invite form.
+	Groups []groups.Name
 	// Invite is set only on the reply of POST /users/invites. The handler MUST set Cache-Control: no-store.
 	Invite inviteBody
 }

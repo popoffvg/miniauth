@@ -932,6 +932,16 @@ a.stat:hover {
   background: var(--accent);
 }
 
+.badge-config {
+  color: var(--info-text);
+  border-color: var(--info-border);
+  background: var(--info-soft);
+}
+
+.badge-config::before {
+  background: var(--info-text);
+}
+
 /* Button */
 
 .btn {
@@ -1648,5 +1658,12 @@ h2.setting-title {
 .menu-form .input {
   min-height: 30px;
   padding: 4px 8px;
+  font-size: var(--text-small);
+}
+
+.menu-note {
+  margin: 0;
+  padding: var(--s2);
+  color: var(--text-subtle);
   font-size: var(--text-small);
 }

@@ -15,7 +15,7 @@ type Repository interface {
 
 // Writer is the side that stores a membership.
 // Add MUST return ErrDuplicate when the membership is already stored.
-// Add MUST return ErrUnknownUser when the user is not stored.
+// Add MUST return ErrUnknownUser when the user is not stored and ErrGroupNotFound when the group is not stored.
 type Writer interface {
 	Add(ctx context.Context, userID users.ID, name Name) error
 }

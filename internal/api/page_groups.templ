@@ -1,0 +1,137 @@
+package api
+
+import (
+	"net/url"
+	"strconv"
+)
+
+templ groupsPage(view groupsPageView) {
+	@shellLayout("Groups", view.Shell) {
+		@pageHeader("Groups", "A group is a set of users and a set of resources. Each member reaches each resource of the group.") {
+			@primaryLink("#new-group", iconPlus, "New group")
+		}
+		@doneAlert(view.Notice, groupsPagePath)
+		@errorAlert(view.Message)
+		<div class="stack-lg">
+			<section class="card" aria-label="Groups">
+				if view.Total > 0 {
+					@searchToolbar(groupsPagePath, view.Query, "Search groups and resources", "", nil)
+				}
+				if len(view.Rows) > 0 {
+					@groupRows(view.Rows)
+				} else if view.Total == 0 {
+					@emptyState(iconGroups, "No groups.", "Create a group, then give it resources.") {
+						@primaryLink("#new-group", iconPlus, "New group")
+					}
+				} else {
+					@emptyState(iconSearch, "No group matches the search.", "") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(groupsPagePath) }>Clear the search</a>
+					}
+				}
+			</section>
+			@groupFormCard()
+		</div>
+	}
+}
+
+templ groupRows(rows []groupRow) {
+	<table class="table">
+		<thead>
+			<tr>
+				<th scope="col">Group</th>
+				<th scope="col">Members</th>
+				<th scope="col">Resources</th>
+				<th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, row := range rows {
+				<tr>
+					<td>
+						<div class="cell-main">
+							{ row.Group.Name.String() }
+							if row.Group.BuiltIn {
+								@badge(toneNeutral, "Built-in")
+							}
+							if row.Group.Managed() {
+								@badge(toneConfig, "From config")
+							}
+						</div>
+						<div class="cell-sub">Created <span class="num">{ timeText(row.Group.CreatedAt).Date() }</span></div>
+					</td>
+					<td class="num" data-label="Members">{ strconv.Itoa(row.Group.Members) }</td>
+					<td data-label="Resources">
+						if len(row.Group.Resources) == 0 {
+							<span class="subtle">No resources</span>
+						} else {
+							<div class="tags">
+								for _, resource := range row.Group.Resources {
+									if resource.Managed {
+										<span class="badge badge-config" title="From config">
+											{ resource.Name.String() }
+											<span class="visually-hidden">(from config)</span>
+										</span>
+									} else {
+										<span class="badge badge-plain">{ resource.Name.String() }</span>
+									}
+								}
+							</div>
+						}
+					</td>
+					<td class="actions">
+						@rowMenu(row.Group.Name.String()) {
+							if len(row.Addable) > 0 {
+								<form class="menu-form" method="post" action={ templ.SafeURL(row.actionPath("resources")) }>
+									<label class="visually-hidden" for={ "resource-" + row.Group.Name.String() }>Resource</label>
+									<select class="input" id={ "resource-" + row.Group.Name.String() } name="resource" required>
+										for _, name := range row.Addable {
+											<option value={ name.String() }>{ name.String() }</option>
+										}
+									</select>
+									<button class="btn btn-secondary btn-sm" type="submit">Add resource</button>
+								</form>
+							}
+							for _, resource := range row.Group.Resources {
+								if !resource.Managed {
+									@confirmPost(row.actionPath("resources/"+url.PathEscape(resource.Name.String())+"/remove"), "Remove "+resource.Name.String(),
+										"Remove “"+resource.Name.String()+"” from “"+row.Group.Name.String()+"”? The members lose it at once, unless another grant gives it.", "Remove resource")
+								}
+							}
+							if row.canDelete() {
+								@confirmPost(row.actionPath("delete"), "Delete group",
+									"Delete “"+row.Group.Name.String()+"”? Its "+countText(row.Group.Members, "member", "members")+" leave it and lose its resources at once. This cannot be undone.", "Delete group")
+							} else if row.Group.BuiltIn {
+								<p class="menu-note">A built-in group cannot be deleted.</p>
+							} else {
+								<p class="menu-note">The resources file names this group.</p>
+							}
+						}
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ groupFormCard() {
+	<section class="card" id="new-group" aria-labelledby="new-group-title">
+		<div class="card-header">
+			<div>
+				<h2 id="new-group-title">New group</h2>
+				<p>A new group has no members and no resources.</p>
+			</div>
+		</div>
+		<form method="post" action="/groups">
+			<div class="card-body">
+				<div class="field">
+					<label for="group-name"><span>Name <span class="required" aria-hidden="true">*</span></span></label>
+					<input id="group-name" name="name" maxlength="64" required aria-describedby="group-name-help"/>
+					<p class="help" id="group-name-help">1 to 64 letters, digits, '.', '_', or '-'. Stored in lower case.</p>
+				</div>
+			</div>
+			<div class="card-footer">
+				<button class="btn btn-primary" type="submit">Create group</button>
+			</div>
+		</form>
+	</section>
+}

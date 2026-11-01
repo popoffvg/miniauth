@@ -134,39 +134,48 @@ const insertUserIdentity = `-- name: InsertUserIdentity :exec
 WITH new_user AS (
     INSERT INTO users (id, login, created_at)
     VALUES (
-        $5,
-        $6,
+        $2,
+        $3,
         $4
     )
     RETURNING id
+),
+new_identity AS (
+    INSERT INTO identities (id, user_id, kind, password_hash, created_at)
+    SELECT
+        $5,
+        new_user.id,
+        $6,
+        $7,
+        $4
+    FROM new_user
+    RETURNING user_id
 )
-INSERT INTO identities (id, user_id, kind, password_hash, created_at)
-SELECT
-    $1,
-    new_user.id,
-    $2,
-    $3,
-    $4
-FROM new_user
+INSERT INTO group_memberships (user_id, name)
+SELECT new_identity.user_id, $1
+FROM new_identity
 `
 
 type InsertUserIdentityParams struct {
+	GroupName    string
+	UserID       pgtype.UUID
+	Login        string
+	CreatedAt    pgtype.Timestamptz
 	IdentityID   pgtype.UUID
 	Kind         string
 	PasswordHash pgtype.Text
-	CreatedAt    pgtype.Timestamptz
-	UserID       pgtype.UUID
-	Login        string
 }
 
+// The account joins the built-in group in the same statement.
 func (q *Queries) InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error {
 	_, err := q.db.Exec(ctx, insertUserIdentity,
+		arg.GroupName,
+		arg.UserID,
+		arg.Login,
+		arg.CreatedAt,
 		arg.IdentityID,
 		arg.Kind,
 		arg.PasswordHash,
-		arg.CreatedAt,
-		arg.UserID,
-		arg.Login,
 	)
 	return err
 }

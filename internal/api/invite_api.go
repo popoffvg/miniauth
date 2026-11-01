@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -29,7 +29,7 @@ func WithInvites(invitations *invites.Service) RouterOption {
 }
 
 type createInviteRequest struct {
-	Resource access.ResourceName `json:"resource" required:"true"`
+	Group groups.Name `json:"group,omitzero" doc:"The group of the new account. Absent: users. The account also joins users."`
 }
 
 // inviteLink is the one-time link of an invite. It holds the token.
@@ -37,9 +37,9 @@ type inviteLink string
 
 // inviteBody is the 201 body. The link is shown once: only the token hash is stored.
 type inviteBody struct {
-	Link      inviteLink          `json:"link" format:"uri" doc:"The public URL, /invite/, and the token. Shown once."`
-	Resource  access.ResourceName `json:"resource"`
-	ExpiresAt time.Time           `json:"expires_at"`
+	Link      inviteLink  `json:"link" format:"uri" doc:"The public URL, /invite/, and the token. Shown once."`
+	Group     groups.Name `json:"group"`
+	ExpiresAt time.Time   `json:"expires_at"`
 }
 
 // inviteFormRequest documents the form of POST /invite/accept.
@@ -77,7 +77,11 @@ func (s *service) createInvite(w http.ResponseWriter, r *http.Request) {
 		writeAccessError(w, r, err)
 		return
 	}
-	invite, err := s.makeInvite(r.Context(), body.Resource)
+	invite, err := s.makeInvite(r.Context(), body.Group)
+	if errors.Is(err, groups.ErrGroupNotFound) {
+		writeProblem(w, http.StatusNotFound, "The group is not found.")
+		return
+	}
 	if err != nil {
 		writeAccessError(w, r, err)
 		return
@@ -100,7 +104,7 @@ func (s *service) invitePage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, r, http.StatusOK, pageInvite, pageView{Invite: token})
 }
 
-// acceptInvite creates the account, grants the resource, starts a session, and opens the resource.
+// acceptInvite creates the account in the group of the invite, starts a session, and opens the overview.
 func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	setInviteHeaders(w)
 	if !s.sameOrigin(r) {
@@ -144,8 +148,7 @@ func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusInternalServerError, msgInviteSignInFailed)
 		return
 	}
-	resource := accepted.Resource.URL
-	http.Redirect(w, r, "https://"+resource.Host.String()+resource.Prefix.String(), http.StatusSeeOther)
+	http.Redirect(w, r, s.publicURL.Origin()+"/", http.StatusSeeOther)
 }
 
 // openInvite renders the gone page and returns false unless raw is the token of an open invite.
@@ -173,14 +176,14 @@ func setInviteHeaders(w http.ResponseWriter) {
 }
 
 // makeInvite stores an invite and returns its link. The link holds the token, so the caller shows it once.
-func (s *service) makeInvite(ctx context.Context, resource access.ResourceName) (inviteBody, error) {
-	token, invite, err := s.invites.Create(ctx, resource)
+func (s *service) makeInvite(ctx context.Context, group groups.Name) (inviteBody, error) {
+	token, invite, err := s.invites.Create(ctx, group)
 	if err != nil {
 		return inviteBody{}, err
 	}
 	return inviteBody{
 		Link:      inviteLink(s.publicURL.Origin() + invitePathPrefix + token.Reveal()),
-		Resource:  invite.Resource,
+		Group:     invite.Group,
 		ExpiresAt: invite.ExpiresAt,
 	}, nil
 }

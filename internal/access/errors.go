@@ -33,4 +33,10 @@ var (
 	ErrGrantNotFound = errors.New("access: grant is not found")
 	// ErrUnknownUser means the user of a grant is not stored.
 	ErrUnknownUser = errors.New("access: user is not known")
+	// ErrManagedResource means the resource comes from the resources file and the change is refused.
+	ErrManagedResource = errors.New("access: resource comes from the resources file")
+	// ErrManagedGrant means the grant comes from the resources file and the change is refused.
+	ErrManagedGrant = errors.New("access: grant comes from the resources file")
+	// ErrUnknownGroup means the group of a grant is not stored.
+	ErrUnknownGroup = errors.New("access: group is not known")
 )

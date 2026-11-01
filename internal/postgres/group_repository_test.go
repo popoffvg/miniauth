@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -9,6 +10,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
+	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -23,10 +25,11 @@ func TestGroupMembershipRoundTrip(t *testing.T) {
 	ada := createAccount(t, accounts, "ada")
 	repo, err := postgres.NewGroupRepository(pool)
 	require.NoError(t, err)
-	editors, err := groups.ParseName("Editors")
+	editors := createGroup(t, pool, "Editors")
+	readers := createGroup(t, pool, "readers")
+	missing, err := groups.ParseName("missing")
 	require.NoError(t, err)
-	readers, err := groups.ParseName("readers")
-	require.NoError(t, err)
+	require.ErrorIs(t, repo.Add(ctx, ada.ID, missing), groups.ErrGroupNotFound)
 	require.NoError(t, repo.Add(ctx, ada.ID, editors))
 	require.NoError(t, repo.Add(ctx, ada.ID, readers))
 	require.ErrorIs(t, repo.Add(ctx, ada.ID, editors), groups.ErrDuplicate)
@@ -34,12 +37,21 @@ func TestGroupMembershipRoundTrip(t *testing.T) {
 
 	got, err := repo.List(ctx, ada.ID)
 	require.NoError(t, err)
-	require.Len(t, got, 2)
-	assert.Equal(t, "editors", got[0].String())
-	assert.Equal(t, "readers", got[1].String())
+	assert.Equal(t, []groups.Name{editors, readers, groups.Users()}, got, "a new account is in users")
 	loaded, err := accounts.Find(ctx, ada.ID)
 	require.NoError(t, err)
 	assert.Equal(t, ada.Login, loaded.Login)
 	_, err = postgres.NewUserRepository(pool).Find(ctx, users.NewID())
 	require.ErrorIs(t, err, users.ErrNotFound)
+}
+
+// createGroup stores a group with the name raw and returns its name.
+func createGroup(t *testing.T, db sqlcgen.DBTX, raw string) groups.Name {
+	t.Helper()
+	name, err := groups.ParseName(raw)
+	require.NoError(t, err)
+	repo, err := postgres.NewGroupAdminRepository(db)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateGroup(t.Context(), name, time.Now()))
+	return name
 }
