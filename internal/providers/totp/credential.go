@@ -18,6 +18,7 @@ type Credential struct {
 	CreatedAt   time.Time
 	ConfirmedAt time.Time
 	Version     EnrollmentVersion
+	Enrollment  EnrollmentID
 }
 
 // Confirmed reports whether the first code was accepted.
@@ -30,7 +31,7 @@ func (c Credential) state() EnrollmentState {
 	if c.Confirmed() {
 		stage = StageConfirmed
 	}
-	return EnrollmentState{Stage: stage, Version: c.Version, CreatedAt: c.CreatedAt}
+	return EnrollmentState{Stage: stage, Version: c.Version, CreatedAt: c.CreatedAt, Enrollment: c.Enrollment}
 }
 
 // Enrollment is what the enrollment page shows once: the secret and its QR code text.

@@ -16,28 +16,26 @@ UPDATE totp_credentials
 SET confirmed_at = $1, last_step = $2, version = $3
 WHERE user_id = $4
     AND confirmed_at IS NULL
-    AND created_at = $5
+    AND enrollment_id = $5
     AND version = $6
 `
 
 type ConfirmTOTPParams struct {
-	ConfirmedAt pgtype.Timestamptz
-	LastStep    int64
-	NextVersion int64
-	UserID      pgtype.UUID
-	CreatedAt   pgtype.Timestamptz
-	PrevVersion int64
+	ConfirmedAt  pgtype.Timestamptz
+	LastStep     int64
+	NextVersion  int64
+	UserID       pgtype.UUID
+	EnrollmentID pgtype.UUID
+	PrevVersion  int64
 }
 
-// created_at names the enrollment. A deleted and new row starts at version 1 again,
-// so the version alone does not keep an older page from confirming a newer enrollment.
 func (q *Queries) ConfirmTOTP(ctx context.Context, arg ConfirmTOTPParams) (int64, error) {
 	result, err := q.db.Exec(ctx, confirmTOTP,
 		arg.ConfirmedAt,
 		arg.LastStep,
 		arg.NextVersion,
 		arg.UserID,
-		arg.CreatedAt,
+		arg.EnrollmentID,
 		arg.PrevVersion,
 	)
 	if err != nil {
@@ -59,16 +57,18 @@ func (q *Queries) DeleteRecoveryCodes(ctx context.Context, userID pgtype.UUID) e
 const deleteTOTP = `-- name: DeleteTOTP :execrows
 DELETE FROM totp_credentials
 WHERE user_id = $1
-    AND version = $2
+    AND enrollment_id = $2
+    AND version = $3
 `
 
 type DeleteTOTPParams struct {
-	UserID  pgtype.UUID
-	Version int64
+	UserID       pgtype.UUID
+	EnrollmentID pgtype.UUID
+	Version      int64
 }
 
 func (q *Queries) DeleteTOTP(ctx context.Context, arg DeleteTOTPParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteTOTP, arg.UserID, arg.Version)
+	result, err := q.db.Exec(ctx, deleteTOTP, arg.UserID, arg.EnrollmentID, arg.Version)
 	if err != nil {
 		return 0, err
 	}
@@ -76,7 +76,7 @@ func (q *Queries) DeleteTOTP(ctx context.Context, arg DeleteTOTPParams) (int64, 
 }
 
 const getTOTPCredential = `-- name: GetTOTPCredential :one
-SELECT user_id, sealed_secret, last_step, created_at, confirmed_at, version
+SELECT user_id, sealed_secret, last_step, created_at, confirmed_at, version, enrollment_id
 FROM totp_credentials
 WHERE user_id = $1
 `
@@ -91,13 +91,14 @@ func (q *Queries) GetTOTPCredential(ctx context.Context, userID pgtype.UUID) (To
 		&i.CreatedAt,
 		&i.ConfirmedAt,
 		&i.Version,
+		&i.EnrollmentID,
 	)
 	return i, err
 }
 
 const insertPendingTOTP = `-- name: InsertPendingTOTP :execrows
-INSERT INTO totp_credentials (user_id, sealed_secret, created_at, version)
-VALUES ($1, $2, $3, $4)
+INSERT INTO totp_credentials (user_id, sealed_secret, created_at, version, enrollment_id)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (user_id) DO NOTHING
 `
 
@@ -106,6 +107,7 @@ type InsertPendingTOTPParams struct {
 	SealedSecret []byte
 	CreatedAt    pgtype.Timestamptz
 	Version      int64
+	EnrollmentID pgtype.UUID
 }
 
 // Zero rows means another request stored a row first.
@@ -115,6 +117,7 @@ func (q *Queries) InsertPendingTOTP(ctx context.Context, arg InsertPendingTOTPPa
 		arg.SealedSecret,
 		arg.CreatedAt,
 		arg.Version,
+		arg.EnrollmentID,
 	)
 	if err != nil {
 		return 0, err
@@ -139,18 +142,22 @@ func (q *Queries) InsertRecoveryCodes(ctx context.Context, arg InsertRecoveryCod
 
 const replacePendingTOTP = `-- name: ReplacePendingTOTP :execrows
 UPDATE totp_credentials
-SET sealed_secret = $1, created_at = $2, last_step = 0, version = $3
-WHERE user_id = $4
+SET sealed_secret = $1, created_at = $2, last_step = 0, version = $3,
+    enrollment_id = $4
+WHERE user_id = $5
     AND confirmed_at IS NULL
-    AND version = $5
+    AND enrollment_id = $6
+    AND version = $7
 `
 
 type ReplacePendingTOTPParams struct {
-	SealedSecret []byte
-	CreatedAt    pgtype.Timestamptz
-	NextVersion  int64
-	UserID       pgtype.UUID
-	PrevVersion  int64
+	SealedSecret     []byte
+	CreatedAt        pgtype.Timestamptz
+	NextVersion      int64
+	NextEnrollmentID pgtype.UUID
+	UserID           pgtype.UUID
+	PrevEnrollmentID pgtype.UUID
+	PrevVersion      int64
 }
 
 // A confirmed row is not replaced.
@@ -159,7 +166,9 @@ func (q *Queries) ReplacePendingTOTP(ctx context.Context, arg ReplacePendingTOTP
 		arg.SealedSecret,
 		arg.CreatedAt,
 		arg.NextVersion,
+		arg.NextEnrollmentID,
 		arg.UserID,
+		arg.PrevEnrollmentID,
 		arg.PrevVersion,
 	)
 	if err != nil {
@@ -195,18 +204,20 @@ const useTOTPStep = `-- name: UseTOTPStep :execrows
 UPDATE totp_credentials
 SET last_step = $1
 WHERE user_id = $2
+    AND enrollment_id = $3
     AND confirmed_at IS NOT NULL
     AND last_step < $1
 `
 
 type UseTOTPStepParams struct {
-	Step   int64
-	UserID pgtype.UUID
+	Step         int64
+	UserID       pgtype.UUID
+	EnrollmentID pgtype.UUID
 }
 
 // Zero rows means a code of this step or a later step was already accepted.
 func (q *Queries) UseTOTPStep(ctx context.Context, arg UseTOTPStepParams) (int64, error) {
-	result, err := q.db.Exec(ctx, useTOTPStep, arg.Step, arg.UserID)
+	result, err := q.db.Exec(ctx, useTOTPStep, arg.Step, arg.UserID, arg.EnrollmentID)
 	if err != nil {
 		return 0, err
 	}

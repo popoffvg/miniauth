@@ -13,8 +13,6 @@ import (
 type Querier interface {
 	ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invite, error)
 	ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error)
-	// created_at names the enrollment. A deleted and new row starts at version 1 again,
-	// so the version alone does not keep an older page from confirming a newer enrollment.
 	ConfirmTOTP(ctx context.Context, arg ConfirmTOTPParams) (int64, error)
 	CountDevices(ctx context.Context) (int64, error)
 	// The IP count includes every kind.

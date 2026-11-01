@@ -33,7 +33,8 @@ func TestTOTPDisableLosesToAConfirm(t *testing.T) {
 	repo := postgres.NewTOTPRepository(pool)
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 	none := totp.EnrollmentState{Stage: totp.StageNone}
-	pending := totp.EnrollmentState{Stage: totp.StagePending, Version: 1, CreatedAt: createdAt, Cause: &totp.EnrollmentEvent{Kind: totp.EventBegin, At: createdAt, Sealed: totp.SealedSecret("sealed")}}
+	enrollment := totp.NewEnrollmentID()
+	pending := totp.EnrollmentState{Stage: totp.StagePending, Version: 1, CreatedAt: createdAt, Enrollment: enrollment, Cause: &totp.EnrollmentEvent{Kind: totp.EventBegin, At: createdAt, Sealed: totp.SealedSecret("sealed"), Enrollment: enrollment}}
 	require.NoError(t, repo.Write(ctx, user.ID, none, pending))
 	userID := pgtype.UUID{Bytes: user.ID.Bytes(), Valid: true}
 	stamp := func(at time.Time) pgtype.Timestamptz { return pgtype.Timestamptz{Time: at.UTC(), Valid: true} }
@@ -42,7 +43,7 @@ func TestTOTPDisableLosesToAConfirm(t *testing.T) {
 	confirm, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	q := sqlcgen.New(pool).WithTx(confirm)
-	n, err := q.ConfirmTOTP(ctx, sqlcgen.ConfirmTOTPParams{ConfirmedAt: stamp(time.Now()), LastStep: 1, NextVersion: 2, UserID: userID, CreatedAt: stamp(createdAt), PrevVersion: 1})
+	n, err := q.ConfirmTOTP(ctx, sqlcgen.ConfirmTOTPParams{ConfirmedAt: stamp(time.Now()), LastStep: 1, NextVersion: 2, UserID: userID, EnrollmentID: pgtype.UUID{Bytes: enrollment.Bytes(), Valid: true}, PrevVersion: 1})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), n)
 
@@ -120,6 +121,40 @@ func TestTOTPConfirmAndDisableOneWins(t *testing.T) {
 		require.ErrorIs(t, err, sfsm.ErrStaleState)
 	}
 	assert.Equal(t, 1, won, "exactly one of confirm and disable MUST win: %v", errs)
+}
+
+// A request that read one enrollment MUST NOT change the next enrollment of the same user.
+func TestTOTPStaleRequestMissesANewEnrollment(t *testing.T) {
+	ctx := t.Context()
+	pool := migratedPool(t)
+	user := createAccount(t, users.NewService(postgres.NewUserRepository(pool)), "ada")
+	repo := postgres.NewTOTPRepository(pool)
+	now := time.Now()
+	service, err := totp.NewServiceWithClock(repo, postgres.NewAttemptRepository(pool), randomKey(t), func() time.Time { return now }, nil)
+	require.NoError(t, err)
+	enroll := func() totp.Credential {
+		enrollment, err := service.Begin(ctx, user)
+		require.NoError(t, err)
+		code, err := totp.ParseCode(rfc6238Code(t, enrollment.Secret.Reveal(), now))
+		require.NoError(t, err)
+		_, err = service.Confirm(ctx, user.ID, code)
+		require.NoError(t, err)
+		credential, err := repo.Find(ctx, user.ID)
+		require.NoError(t, err)
+		return credential
+	}
+	old := enroll()
+	require.NoError(t, service.Disable(ctx, user.ID))
+	fresh := enroll()
+	require.Equal(t, old.Version, fresh.Version, "the test needs a new enrollment at the old version")
+
+	stale := totp.EnrollmentState{Stage: totp.StageConfirmed, Version: old.Version, CreatedAt: old.CreatedAt, Enrollment: old.Enrollment}
+	err = repo.Write(ctx, user.ID, stale, totp.EnrollmentState{Stage: totp.StageDisabled, Version: old.Version + 1, Cause: &totp.EnrollmentEvent{Kind: totp.EventDisable}})
+	require.ErrorIs(t, err, sfsm.ErrStaleState, "a disable of the old enrollment MUST NOT delete the new one")
+
+	used, err := repo.UseStep(ctx, user.ID, old.Enrollment, fresh.LastStep+1)
+	require.NoError(t, err)
+	assert.False(t, used, "a code checked against the old secret MUST NOT move the new credential")
 }
 
 func randomKey(t *testing.T) totp.Key {

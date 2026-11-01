@@ -17,15 +17,16 @@ import (
 // Store keeps the TOTP credential and the recovery code hashes of each user.
 // Find MUST return ErrNotEnrolled when the user has no row.
 // Write stores the transition from prev to next. It MUST wrap sfsm.ErrStaleState when the row is no longer
-// at prev.Version, and for a confirm also when the row is no longer the pending enrollment of prev.CreatedAt.
+// at prev.Version of prev.Enrollment.
 // A confirm replaces the recovery codes in the same transaction. A next stage that is not Stored
 // deletes the row and every recovery code in one transaction.
-// UseStep stores step only when it is later than the stored step, and reports whether it did.
+// UseStep stores step only when the row is still enrollment and step is later than the stored step,
+// and reports whether it did.
 // UseRecoveryCode marks an unused code as used, and reports whether it did.
 type Store interface {
 	Find(ctx context.Context, userID users.ID) (Credential, error)
 	Write(ctx context.Context, userID users.ID, prev, next EnrollmentState) error
-	UseStep(ctx context.Context, userID users.ID, step TimeStep) (bool, error)
+	UseStep(ctx context.Context, userID users.ID, enrollment EnrollmentID, step TimeStep) (bool, error)
 	UseRecoveryCode(ctx context.Context, userID users.ID, hash RecoveryHash, at time.Time) (bool, error)
 }
 
@@ -94,7 +95,7 @@ func (s *Service) Begin(ctx context.Context, user users.User) (Enrollment, error
 	if err != nil {
 		return Enrollment{}, err
 	}
-	err = s.transition(ctx, user.ID, state, EnrollmentEvent{Kind: EventBegin, At: s.clock(), Sealed: sealed})
+	err = s.transition(ctx, user.ID, state, EnrollmentEvent{Kind: EventBegin, At: s.clock(), Sealed: sealed, Enrollment: NewEnrollmentID()})
 	if errors.Is(err, ErrNoTransition) {
 		return Enrollment{}, ErrEnrolled
 	}
@@ -182,7 +183,7 @@ func (s *Service) VerifyCode(ctx context.Context, flow password.Flow, user users
 		if !ok {
 			return false, nil
 		}
-		return s.store.UseStep(ctx, user.ID, step)
+		return s.store.UseStep(ctx, user.ID, credential.Enrollment, step)
 	})
 }
 
@@ -294,7 +295,6 @@ func (e enrollmentStore) Write(ctx context.Context, userID users.ID, prev, next 
 }
 
 // clock returns UTC truncated to microseconds, the precision of a PostgreSQL timestamp.
-// Confirm finds the enrollment by its created_at, so the stored value MUST equal the read one.
 func (s *Service) clock() time.Time {
 	return s.now().UTC().Truncate(time.Microsecond)
 }
