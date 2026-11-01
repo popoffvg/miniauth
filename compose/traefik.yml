@@ -12,7 +12,7 @@ http:
       middlewares: [auth-editors]
       service: whoami
     miniauth:
-      rule: PathPrefix(`/login`) || PathPrefix(`/auth`) || PathPrefix(`/healthz`) || PathPrefix(`/logout`) || PathPrefix(`/api`) || PathPrefix(`/openapi.yaml`)
+      rule: Path(`/`) || PathPrefix(`/login`) || PathPrefix(`/logout`) || PathPrefix(`/auth`) || PathPrefix(`/healthz`) || PathPrefix(`/readyz`) || PathPrefix(`/api`) || PathPrefix(`/openapi.yaml`) || PathPrefix(`/assets`) || PathPrefix(`/tokens`) || PathPrefix(`/sessions`) || PathPrefix(`/passkeys`) || PathPrefix(`/access`) || PathPrefix(`/users`) || PathPrefix(`/groups`) || PathPrefix(`/link`) || PathPrefix(`/recover`) || PathPrefix(`/invite`)
       entryPoints: [web]
       service: miniauth
       priority: 100
