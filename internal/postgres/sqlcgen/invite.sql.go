@@ -16,7 +16,7 @@ UPDATE invites
 SET used_at = $1
 WHERE token_hash = $2
     AND used_at IS NULL
-    AND expires_at > $1
+    AND expires_at > now()
 RETURNING token_hash, created_at, expires_at, used_at, user_id, group_name
 `
 
@@ -25,6 +25,7 @@ type ClaimInviteParams struct {
 	TokenHash []byte
 }
 
+// The expiry uses the database time: the claim can run after a wait for the row lock.
 func (q *Queries) ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invite, error) {
 	row := q.db.QueryRow(ctx, claimInvite, arg.Now, arg.TokenHash)
 	var i Invite
