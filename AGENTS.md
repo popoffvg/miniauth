@@ -9,7 +9,7 @@ The design documents live in the owner's private infrastructure repo, not here. 
 - Password login, with a browser session that persists across restarts and subdomains.
 - Personal access tokens: the user makes a token once, and a client sends it as `Authorization: Bearer <token>`.
 - One forward-auth endpoint that the reverse proxy calls before each protected request.
-- More login methods later: Google, passkey, Telegram. Each new method is a new step of the login flow. It does not change sessions or tokens.
+- More login methods: TOTP, passkey, Google, Telegram. Each method is a step of the login flow. A new method does not change sessions or tokens.
 
 ## Rules
 
@@ -25,6 +25,12 @@ The design documents live in the owner's private infrastructure repo, not here. 
 - Nothing in this repo names a real host, server, or deployment. This repo is public.
 - Commit subject in imperative mood. No co-author lines.
 
+## Documentation
+
+- `README.md` is for people who run the service: what it is, quickstart, deploy, main settings, links.
+- Reference and developer text goes in `docs/`, one concept per file. A fact lives in one file only.
+- A change that adds a route, a setting, or a login method MUST update the matching docs file in the same PR.
+
 ## Commands
 
 Go and task are pinned in `mise.toml`; the linters, gosec, and gocov are pinned as `go tool` entries in `tools/go.mod`. Run every task in the background.
@@ -35,10 +41,13 @@ Go and task are pinned in `mise.toml`; the linters, gosec, and gocov are pinned 
 | Lint (golangci-lint with govet and gosec) | `task lint` |
 | Format | `task fmt` |
 | Generate the pages from `*.templ` | `task templ` |
+| Generate Go from `queries/*.sql` (sqlc) | `task generate` |
 | Tests with the race detector | `task test` |
+| Tests against the local PostgreSQL | `task test:integration` |
 | Coverage report (gocov) | `task cover` |
 | Everything CI runs | `task check` |
-| CodeRabbit review of the uncommitted change | `task review` |
 | Per-rule review of the branch against `.reviewrules/` | `task review:rules` |
 
 The pre-push hook runs `task lint` and `task test`. Fix the failure; never push with `--no-verify`.
+
+The test kinds and the release flow are in `docs/development.md`.
