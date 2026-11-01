@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/devices"
-	"github.com/popoffvg/miniauth/internal/passkeystep"
+	"github.com/popoffvg/miniauth/internal/providers/passkey"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -32,7 +32,7 @@ type sessionsPageView struct {
 	Shell        shellView
 	Notice       pageMessage
 	Devices      []deviceView
-	Passkeys     []passkeystep.Passkey
+	Passkeys     []passkey.Passkey
 	ShowPasskeys bool
 	TwoStep      twoStepView
 }

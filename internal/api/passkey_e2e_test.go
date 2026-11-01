@@ -19,11 +19,11 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passkeystep"
-	"github.com/popoffvg/miniauth/internal/passkeystep/passkeytest"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
+	"github.com/popoffvg/miniauth/internal/providers/passkey"
+	"github.com/popoffvg/miniauth/internal/providers/passkey/passkeytest"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -50,13 +50,13 @@ func TestPasskeyEndToEnd(t *testing.T) {
 	for _, a := range []*account{owner, other} {
 		login, loginErr := users.ParseLogin(a.login)
 		require.NoError(t, loginErr)
-		password, passwordErr := users.NewPassword(a.password)
+		userPassword, passwordErr := users.NewPassword(a.password)
 		require.NoError(t, passwordErr)
-		user, createErr := accounts.Create(ctx, login, password)
+		user, createErr := accounts.Create(ctx, login, userPassword)
 		require.NoError(t, createErr)
 		a.id = user.ID
 	}
-	passwords, err := passwordstep.NewService(accountRepo, postgres.NewAttemptRepository(pool))
+	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 	clock := &testClock{now: time.Now()}
 	domain, err := sessions.ParseDomain("." + passkeyParty)
@@ -66,9 +66,9 @@ func TestPasskeyEndToEnd(t *testing.T) {
 	base := "https://" + server.Listener.Addr().String()
 	// The server listens on an IP address, which a browser never accepts with this id.
 	// The test authenticator does not check the pair, so the party is built without NewRelyingParty.
-	party := passkeystep.RelyingParty{ID: passkeyParty, Origin: passkeystep.Origin(base)}
+	party := passkey.RelyingParty{ID: passkeyParty, Origin: passkey.Origin(base)}
 	flowStore := postgres.NewFlowStore(pool)
-	passkeys, err := passkeystep.NewService(party, postgres.NewPasskeyRepository(pool), flowStore)
+	passkeys, err := passkey.NewService(party, postgres.NewPasskeyRepository(pool), flowStore)
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
@@ -321,7 +321,7 @@ func postJSON(t *testing.T, browser *http.Client, target, origin string, body []
 	return do(t, browser, req)
 }
 
-func listPasskeys(t *testing.T, passkeys *passkeystep.Service, userID users.ID) []passkeystep.Passkey {
+func listPasskeys(t *testing.T, passkeys *passkey.Service, userID users.ID) []passkey.Passkey {
 	t.Helper()
 	list, err := passkeys.List(t.Context(), userID)
 	require.NoError(t, err)

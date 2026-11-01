@@ -9,7 +9,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
-	"github.com/popoffvg/miniauth/internal/telegramstep"
+	"github.com/popoffvg/miniauth/internal/providers/telegram"
 )
 
 func TestTelegramProofRepository(t *testing.T) {
@@ -25,13 +25,13 @@ func TestTelegramProofRepository(t *testing.T) {
 	repo := postgres.NewTelegramProofRepository(pool)
 	queries := sqlcgen.New(pool)
 	now := time.Now().UTC()
-	first := telegramstep.ProofHash(sha256.Sum256([]byte("first")))
-	second := telegramstep.ProofHash(sha256.Sum256([]byte("second")))
+	first := telegram.ProofHash(sha256.Sum256([]byte("first")))
+	second := telegram.ProofHash(sha256.Sum256([]byte("second")))
 
 	if err = repo.Use(ctx, first, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if gotErr := repo.Use(ctx, first, now.Add(time.Hour)); !errors.Is(gotErr, telegramstep.ErrReplay) {
+	if gotErr := repo.Use(ctx, first, now.Add(time.Hour)); !errors.Is(gotErr, telegram.ErrReplay) {
 		t.Fatalf("second Use = %v, want ErrReplay", gotErr)
 	}
 	if err = repo.Use(ctx, second, now); err != nil {
@@ -43,7 +43,7 @@ func TestTelegramProofRepository(t *testing.T) {
 	if n, countErr := queries.CountTelegramLoginProofs(ctx); countErr != nil || n != 1 {
 		t.Fatalf("proofs after cleanup = %d, %v, want 1", n, countErr)
 	}
-	if gotErr := repo.Use(ctx, first, now.Add(time.Hour)); !errors.Is(gotErr, telegramstep.ErrReplay) {
+	if gotErr := repo.Use(ctx, first, now.Add(time.Hour)); !errors.Is(gotErr, telegram.ErrReplay) {
 		t.Fatalf("Use after cleanup = %v, want ErrReplay for a live row", gotErr)
 	}
 	if err = repo.Release(ctx, first); err != nil {

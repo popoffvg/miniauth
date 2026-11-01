@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/popoffvg/miniauth/internal/passwordstep"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -70,25 +70,25 @@ func (m *memStore) Cleanup(context.Context, time.Time) error {
 }
 
 type memAttempts struct {
-	stored []passwordstep.Attempt
+	stored []password.Attempt
 }
 
-func (m *memAttempts) Record(_ context.Context, attempt passwordstep.Attempt) error {
+func (m *memAttempts) Record(_ context.Context, attempt password.Attempt) error {
 	m.stored = append(m.stored, attempt)
 	return nil
 }
 
-func (m *memAttempts) CountFailures(_ context.Context, _ passwordstep.AttemptKind, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
-	var recent passwordstep.RecentFailures
+func (m *memAttempts) CountFailures(_ context.Context, _ password.AttemptKind, login users.Login, ip password.ClientIP, since time.Time) (password.RecentFailures, error) {
+	var recent password.RecentFailures
 	for _, a := range m.stored {
 		if a.AttemptedAt.Before(since) {
 			continue
 		}
 		if a.Login == login {
-			recent.Login = passwordstep.FailureCount{Failures: recent.Login.Failures + 1, LastFailure: a.AttemptedAt}
+			recent.Login = password.FailureCount{Failures: recent.Login.Failures + 1, LastFailure: a.AttemptedAt}
 		}
 		if a.IP == ip {
-			recent.IP = passwordstep.FailureCount{Failures: recent.IP.Failures + 1, LastFailure: a.AttemptedAt}
+			recent.IP = password.FailureCount{Failures: recent.IP.Failures + 1, LastFailure: a.AttemptedAt}
 		}
 	}
 	return recent, nil
@@ -165,9 +165,9 @@ func (f *serviceFixture) drain(t *testing.T) {
 	}
 }
 
-func clientIP(t *testing.T, raw string) passwordstep.ClientIP {
+func clientIP(t *testing.T, raw string) password.ClientIP {
 	t.Helper()
-	ip, err := passwordstep.NewClientIP(netip.MustParseAddr(raw))
+	ip, err := password.NewClientIP(netip.MustParseAddr(raw))
 	require.NoError(t, err)
 	return ip
 }
@@ -198,28 +198,28 @@ func TestRequestMailsOnlyAnActiveKnownAccount(t *testing.T) {
 func TestRequestBackoffPerAddress(t *testing.T) {
 	f := newServiceFixture(t)
 	email := f.addAccount(t, "ada@example.test", false)
-	for i := range passwordstep.FreeFailures {
+	for i := range password.FreeFailures {
 		ip := clientIP(t, netip.AddrFrom4([4]byte{192, 0, 2, byte(i + 1)}).String())
 		require.NoError(t, f.svc.Request(t.Context(), email, ip))
 	}
 	err := f.svc.Request(t.Context(), email, clientIP(t, "198.51.100.1"))
-	var tooSoon *passwordstep.TooSoonError
+	var tooSoon *password.TooSoonError
 	require.ErrorAs(t, err, &tooSoon)
-	assert.Equal(t, f.now.Add(passwordstep.FirstDelay), tooSoon.RetryAt)
+	assert.Equal(t, f.now.Add(password.FirstDelay), tooSoon.RetryAt)
 	f.drain(t)
-	assert.Len(t, f.mailer.sent, passwordstep.FreeFailures)
+	assert.Len(t, f.mailer.sent, password.FreeFailures)
 }
 
 func TestRequestBackoffPerIP(t *testing.T) {
 	f := newServiceFixture(t)
 	ip := clientIP(t, "192.0.2.1")
-	for i := range passwordstep.FreeFailures {
+	for i := range password.FreeFailures {
 		email, err := users.ParseEmail("guess" + string(rune('a'+i)) + "@example.test")
 		require.NoError(t, err)
 		require.NoError(t, f.svc.Request(t.Context(), email, ip))
 	}
 	email := f.addAccount(t, "ada@example.test", false)
-	require.ErrorIs(t, f.svc.Request(t.Context(), email, ip), passwordstep.ErrTooSoon)
+	require.ErrorIs(t, f.svc.Request(t.Context(), email, ip), password.ErrTooSoon)
 }
 
 func TestRequestQueueFull(t *testing.T) {
@@ -237,12 +237,12 @@ func TestResetOnceAndMailsTheChange(t *testing.T) {
 	require.NoError(t, err)
 	account := f.store.accounts[email.Login()]
 	require.NoError(t, f.store.Create(t.Context(), Reset{Hash: token.Hash(), UserID: account.ID, ExpiresAt: f.now.Add(LinkLifetime)}))
-	password, err := users.NewPassword("a new password")
+	userPassword, err := users.NewPassword("a new password")
 	require.NoError(t, err)
 
 	require.NoError(t, f.svc.Check(t.Context(), token))
-	require.NoError(t, f.svc.Reset(t.Context(), token, password))
-	require.ErrorIs(t, f.svc.Reset(t.Context(), token, password), ErrInvalidToken)
+	require.NoError(t, f.svc.Reset(t.Context(), token, userPassword))
+	require.ErrorIs(t, f.svc.Reset(t.Context(), token, userPassword), ErrInvalidToken)
 	require.ErrorIs(t, f.svc.Check(t.Context(), token), ErrInvalidToken)
 	f.drain(t)
 	require.Len(t, f.mailer.sent, 1)
@@ -259,9 +259,9 @@ func TestResetRefusesAnExpiredLink(t *testing.T) {
 	account := f.store.accounts[email.Login()]
 	require.NoError(t, f.store.Create(t.Context(), Reset{Hash: token.Hash(), UserID: account.ID, ExpiresAt: f.now.Add(LinkLifetime)}))
 	f.now = f.now.Add(LinkLifetime)
-	password, err := users.NewPassword("a new password")
+	userPassword, err := users.NewPassword("a new password")
 	require.NoError(t, err)
-	require.ErrorIs(t, f.svc.Reset(t.Context(), token, password), ErrInvalidToken)
+	require.ErrorIs(t, f.svc.Reset(t.Context(), token, userPassword), ErrInvalidToken)
 }
 
 func TestRunStopsWithTheContext(t *testing.T) {

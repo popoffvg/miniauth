@@ -9,7 +9,7 @@ import (
 	"github.com/popoffvg/sfsm"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passkeystep"
+	"github.com/popoffvg/miniauth/internal/providers/passkey"
 )
 
 const (
@@ -83,9 +83,9 @@ func (s *service) passkeyLogin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	userID, err := s.passkeys.Verify(r.Context(), machine, passkeystep.AssertionResponse(response))
+	userID, err := s.passkeys.Verify(r.Context(), machine, passkey.AssertionResponse(response))
 	switch {
-	case errors.Is(err, passkeystep.ErrClonedAuthenticator):
+	case errors.Is(err, passkey.ErrClonedAuthenticator):
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: passkey counter did not increase")
 		writeProblem(w, http.StatusBadRequest, msgPasskeyRefused)
 		return
@@ -172,15 +172,15 @@ func readPasskeyBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 // passkeyRefused reports whether err is a ceremony the user can try again.
 // Each case shares one message, so a reply does not tell which credentials exist.
 func passkeyRefused(err error) bool {
-	return errors.Is(err, passkeystep.ErrCeremony) ||
+	return errors.Is(err, passkey.ErrCeremony) ||
 		errors.Is(err, loginflow.ErrChallengeNotFound) ||
-		errors.Is(err, passkeystep.ErrUserNotVerified) ||
-		errors.Is(err, passkeystep.ErrUnknownCredential) ||
-		errors.Is(err, passkeystep.ErrDuplicate)
+		errors.Is(err, passkey.ErrUserNotVerified) ||
+		errors.Is(err, passkey.ErrUnknownCredential) ||
+		errors.Is(err, passkey.ErrDuplicate)
 }
 
 // WithPasskeys serves the passkey step and the passkey routes. Without them, those routes answer 503.
-func WithPasskeys(passkeys *passkeystep.Service) RouterOption {
+func WithPasskeys(passkeys *passkey.Service) RouterOption {
 	return func(s *service) {
 		s.passkeys = passkeys
 	}

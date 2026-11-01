@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/popoffvg/miniauth/internal/passwordstep"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -39,7 +39,7 @@ type mailJob func(ctx context.Context) error
 // Service sends reset links and sets a new password through one.
 type Service struct {
 	store   Store
-	limiter *passwordstep.Limiter
+	limiter *password.Limiter
 	mailer  Mailer
 	links   Links
 	now     func() time.Time
@@ -58,11 +58,11 @@ func WithClock(now func() time.Time) Option {
 
 // NewService returns a service with an empty queue. Run MUST run for a mail to go out.
 // attempts keeps the recovery requests; the password step backoff applies to them.
-func NewService(store Store, attempts passwordstep.AttemptStore, mailer Mailer, links Links, options ...Option) (*Service, error) {
+func NewService(store Store, attempts password.AttemptStore, mailer Mailer, links Links, options ...Option) (*Service, error) {
 	if store == nil || attempts == nil || mailer == nil || links == nil {
 		return nil, errors.New("recovery: store, attempt store, mailer, or links is missing")
 	}
-	limiter, err := passwordstep.NewLimiter(attempts, passwordstep.KindRecovery)
+	limiter, err := password.NewLimiter(attempts, password.KindRecovery)
 	if err != nil {
 		return nil, err
 	}
@@ -102,14 +102,14 @@ func (s *Service) Run(ctx context.Context, logger *slog.Logger) {
 
 // Request queues a reset link for email.
 // The reply is the same for a known and an unknown address: the lookup runs in the queue.
-// It returns a *passwordstep.TooSoonError while the backoff of the address or of ip lasts,
+// It returns a *password.TooSoonError while the backoff of the address or of ip lasts,
 // and ErrQueueFull when the queue has no free slot.
-func (s *Service) Request(ctx context.Context, email users.Email, ip passwordstep.ClientIP) error {
+func (s *Service) Request(ctx context.Context, email users.Email, ip password.ClientIP) error {
 	if email == (users.Email{}) {
 		return users.ErrInvalidLogin
 	}
-	if ip == (passwordstep.ClientIP{}) {
-		return passwordstep.ErrInvalidClientIP
+	if ip == (password.ClientIP{}) {
+		return password.ErrInvalidClientIP
 	}
 	now := s.clock()
 	if err := s.limiter.Wait(ctx, email.Login(), ip, now); err != nil {

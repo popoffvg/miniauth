@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
-	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -26,10 +26,10 @@ func NewTOTPRepository(db sqlcgen.DBTX) *TOTPRepository {
 	return &TOTPRepository{q: sqlcgen.New(db), begin: begin}
 }
 
-var _ totpstep.Store = (*TOTPRepository)(nil)
+var _ totp.Store = (*TOTPRepository)(nil)
 
 // SavePending stores sealed as the enrollment of userID that waits for its first code.
-func (r *TOTPRepository) SavePending(ctx context.Context, userID users.ID, sealed totpstep.SealedSecret, createdAt time.Time) error {
+func (r *TOTPRepository) SavePending(ctx context.Context, userID users.ID, sealed totp.SealedSecret, createdAt time.Time) error {
 	n, err := r.q.UpsertPendingTOTP(ctx, sqlcgen.UpsertPendingTOTPParams{
 		UserID:       pgUUIDBytes(userID.Bytes()),
 		SealedSecret: sealed,
@@ -39,34 +39,34 @@ func (r *TOTPRepository) SavePending(ctx context.Context, userID users.ID, seale
 		return fmt.Errorf("postgres: save TOTP enrollment: %w", err)
 	}
 	if n == 0 {
-		return totpstep.ErrEnrolled
+		return totp.ErrEnrolled
 	}
 	return nil
 }
 
 // Find returns the credential of userID.
-func (r *TOTPRepository) Find(ctx context.Context, userID users.ID) (totpstep.Credential, error) {
+func (r *TOTPRepository) Find(ctx context.Context, userID users.ID) (totp.Credential, error) {
 	row, err := r.q.GetTOTPCredential(ctx, pgUUIDBytes(userID.Bytes()))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return totpstep.Credential{}, totpstep.ErrNotEnrolled
+		return totp.Credential{}, totp.ErrNotEnrolled
 	}
 	if err != nil {
-		return totpstep.Credential{}, fmt.Errorf("postgres: load TOTP: %w", err)
+		return totp.Credential{}, fmt.Errorf("postgres: load TOTP: %w", err)
 	}
 	if !row.CreatedAt.Valid {
-		return totpstep.Credential{}, errors.New("postgres: TOTP created_at is null")
+		return totp.Credential{}, errors.New("postgres: TOTP created_at is null")
 	}
-	return totpstep.Credential{
+	return totp.Credential{
 		UserID:      users.IDFromBytes(row.UserID.Bytes),
 		Sealed:      row.SealedSecret,
-		LastStep:    totpstep.TimeStep(row.LastStep),
+		LastStep:    totp.TimeStep(row.LastStep),
 		CreatedAt:   row.CreatedAt.Time.UTC(),
 		ConfirmedAt: optionalTime(row.ConfirmedAt),
 	}, nil
 }
 
 // Confirm turns on the enrollment created at createdAt and replaces the recovery codes in one transaction.
-func (r *TOTPRepository) Confirm(ctx context.Context, userID users.ID, createdAt time.Time, step totpstep.TimeStep, codes []totpstep.RecoveryHash, at time.Time) error {
+func (r *TOTPRepository) Confirm(ctx context.Context, userID users.ID, createdAt time.Time, step totp.TimeStep, codes []totp.RecoveryHash, at time.Time) error {
 	if r.begin == nil {
 		return errors.New("postgres: TOTP repository cannot begin a transaction")
 	}
@@ -87,7 +87,7 @@ func (r *TOTPRepository) Confirm(ctx context.Context, userID users.ID, createdAt
 			return fmt.Errorf("postgres: update TOTP: %w", err)
 		}
 		if n == 0 {
-			return totpstep.ErrNoEnrollment
+			return totp.ErrNoEnrollment
 		}
 		if err = q.DeleteRecoveryCodes(ctx, id); err != nil {
 			return fmt.Errorf("postgres: delete recovery codes: %w", err)
@@ -104,7 +104,7 @@ func (r *TOTPRepository) Confirm(ctx context.Context, userID users.ID, createdAt
 }
 
 // UseStep stores step when it is later than the stored step.
-func (r *TOTPRepository) UseStep(ctx context.Context, userID users.ID, step totpstep.TimeStep) (bool, error) {
+func (r *TOTPRepository) UseStep(ctx context.Context, userID users.ID, step totp.TimeStep) (bool, error) {
 	n, err := r.q.UseTOTPStep(ctx, sqlcgen.UseTOTPStepParams{Step: int64(step), UserID: pgUUIDBytes(userID.Bytes())})
 	if err != nil {
 		return false, fmt.Errorf("postgres: use TOTP step: %w", err)
@@ -113,7 +113,7 @@ func (r *TOTPRepository) UseStep(ctx context.Context, userID users.ID, step totp
 }
 
 // UseRecoveryCode marks the unused code with hash as used at at.
-func (r *TOTPRepository) UseRecoveryCode(ctx context.Context, userID users.ID, hash totpstep.RecoveryHash, at time.Time) (bool, error) {
+func (r *TOTPRepository) UseRecoveryCode(ctx context.Context, userID users.ID, hash totp.RecoveryHash, at time.Time) (bool, error) {
 	n, err := r.q.UseRecoveryCode(ctx, sqlcgen.UseRecoveryCodeParams{
 		UsedAt:   pgTime(at),
 		UserID:   pgUUIDBytes(userID.Bytes()),

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
-	"github.com/popoffvg/miniauth/internal/telegramstep"
+	"github.com/popoffvg/miniauth/internal/providers/telegram"
 )
 
 // TelegramProofRepository is the PostgreSQL adapter for used Telegram widget logins.
@@ -19,10 +19,10 @@ func NewTelegramProofRepository(db sqlcgen.DBTX) *TelegramProofRepository {
 	return &TelegramProofRepository{q: sqlcgen.New(db)}
 }
 
-var _ telegramstep.ProofStore = (*TelegramProofRepository)(nil)
+var _ telegram.ProofStore = (*TelegramProofRepository)(nil)
 
-// Use inserts hash. A hash that is already stored is telegramstep.ErrReplay.
-func (r *TelegramProofRepository) Use(ctx context.Context, hash telegramstep.ProofHash, expiresAt time.Time) error {
+// Use inserts hash. A hash that is already stored is telegram.ErrReplay.
+func (r *TelegramProofRepository) Use(ctx context.Context, hash telegram.ProofHash, expiresAt time.Time) error {
 	n, err := r.q.InsertTelegramLoginProof(ctx, sqlcgen.InsertTelegramLoginProofParams{
 		ProofHash: hash[:],
 		ExpiresAt: pgTime(expiresAt),
@@ -31,7 +31,7 @@ func (r *TelegramProofRepository) Use(ctx context.Context, hash telegramstep.Pro
 		return fmt.Errorf("postgres: insert telegram login proof: %w", err)
 	}
 	if n == 0 {
-		return telegramstep.ErrReplay
+		return telegram.ErrReplay
 	}
 	return nil
 }
@@ -45,7 +45,7 @@ func (r *TelegramProofRepository) Cleanup(ctx context.Context, now time.Time) er
 }
 
 // Release deletes hash, so the same data can sign in again.
-func (r *TelegramProofRepository) Release(ctx context.Context, hash telegramstep.ProofHash) error {
+func (r *TelegramProofRepository) Release(ctx context.Context, hash telegram.ProofHash) error {
 	if err := r.q.DeleteTelegramLoginProof(ctx, hash[:]); err != nil {
 		return fmt.Errorf("postgres: delete telegram login proof: %w", err)
 	}

@@ -12,18 +12,18 @@ import (
 	"github.com/swaggest/openapi-go/openapi3"
 
 	"github.com/popoffvg/miniauth/internal/access"
-	"github.com/popoffvg/miniauth/internal/googlestep"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passkeystep"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
+	"github.com/popoffvg/miniauth/internal/providers/google"
+	"github.com/popoffvg/miniauth/internal/providers/passkey"
+	"github.com/popoffvg/miniauth/internal/providers/password"
+	"github.com/popoffvg/miniauth/internal/providers/telegram"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/sessions"
-	"github.com/popoffvg/miniauth/internal/telegramstep"
 	"github.com/popoffvg/miniauth/internal/tokens"
-	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/useradmin"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -75,13 +75,13 @@ type service struct {
 	tokens      *tokens.Service
 	ready       Readiness
 	flows       *loginflow.LoginFlows
-	passwords   *passwordstep.Service
+	passwords   *password.Service
 	recovery    *recovery.Service
-	google      *googlestep.Step
-	telegram    *telegramstep.Step
+	google      *google.Step
+	telegram    *telegram.Step
 	links       *identitylink.Service
-	passkeys    *passkeystep.Service
-	totp        *totpstep.Service
+	passkeys    *passkey.Service
+	totp        *totp.Service
 	spec        []byte
 
 	// invites is nil unless WithInvites sets it.
@@ -91,7 +91,7 @@ type service struct {
 }
 
 // WithLogin serves the login page. Without it, the login routes answer 503.
-func WithLogin(flows *loginflow.LoginFlows, passwords *passwordstep.Service) RouterOption {
+func WithLogin(flows *loginflow.LoginFlows, passwords *password.Service) RouterOption {
 	return func(s *service) {
 		s.flows = flows
 		s.passwords = passwords

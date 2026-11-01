@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passkeystep"
+	"github.com/popoffvg/miniauth/internal/providers/passkey"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -98,7 +98,7 @@ func (s *service) passkeyAdd(w http.ResponseWriter, r *http.Request) {
 		writeDecodeError(w, err)
 		return
 	}
-	name, err := passkeystep.ParseName(body.Name)
+	name, err := passkey.ParseName(body.Name)
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest, msgPasskeyName)
 		return
@@ -125,9 +125,9 @@ func (s *service) passkeyAdd(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, string(msgFlowExpired))
 		return
 	}
-	_, err = s.passkeys.Register(r.Context(), flow.ID, user, name, passkeystep.AttestationResponse(body.Credential))
+	_, err = s.passkeys.Register(r.Context(), flow.ID, user, name, passkey.AttestationResponse(body.Credential))
 	switch {
-	case errors.Is(err, passkeystep.ErrDuplicate):
+	case errors.Is(err, passkey.ErrDuplicate):
 		writeProblem(w, http.StatusConflict, msgPasskeyTaken)
 		return
 	case passkeyRefused(err):
@@ -202,11 +202,11 @@ func (s *service) deletePasskey(w http.ResponseWriter, r *http.Request) {
 		s.askStepUp(w, r, user, loginflow.ReturnURL(s.publicURL.Origin()+sessionsPagePath), msgPasskeyStepUp)
 		return
 	}
-	id, err := passkeystep.ParseID(r.PathValue("id"))
+	id, err := passkey.ParseID(r.PathValue("id"))
 	if err == nil {
 		err = s.passkeys.Delete(r.Context(), user.ID, id)
 	}
-	if errors.Is(err, passkeystep.ErrNotFound) {
+	if errors.Is(err, passkey.ErrNotFound) {
 		renderDenied(w, r, http.StatusNotFound, msgPasskeyNotFound)
 		return
 	}

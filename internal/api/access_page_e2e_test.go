@@ -16,9 +16,9 @@ import (
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -42,16 +42,16 @@ func TestAccessPageEndToEnd(t *testing.T) {
 	for _, a := range []*account{admin, member} {
 		login, loginErr := users.ParseLogin(a.login)
 		require.NoError(t, loginErr)
-		password, passwordErr := users.NewPassword(a.password)
+		userPassword, passwordErr := users.NewPassword(a.password)
 		require.NoError(t, passwordErr)
-		user, createErr := accounts.Create(ctx, login, password)
+		user, createErr := accounts.Create(ctx, login, userPassword)
 		require.NoError(t, createErr)
 		a.id = user.ID
 	}
 	groupRepo, err := postgres.NewGroupRepository(pool)
 	require.NoError(t, err)
 	require.NoError(t, groupRepo.Add(ctx, admin.id, groups.Admin()))
-	passwords, err := passwordstep.NewService(accountRepo, postgres.NewAttemptRepository(pool))
+	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)

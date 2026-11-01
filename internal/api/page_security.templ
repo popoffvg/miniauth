@@ -1,6 +1,6 @@
 package api
 
-import "github.com/popoffvg/miniauth/internal/passkeystep"
+import "github.com/popoffvg/miniauth/internal/providers/passkey"
 
 templ securityPage(view sessionsPageView) {
 	@shellLayout("Security", view.Shell) {
@@ -130,7 +130,7 @@ templ deviceRows(rows []deviceView) {
 	</table>
 }
 
-templ passkeyRows(rows []passkeystep.Passkey) {
+templ passkeyRows(rows []passkey.Passkey) {
 	<table class="table">
 		<thead>
 			<tr>

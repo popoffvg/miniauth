@@ -8,7 +8,7 @@ import (
 	"github.com/popoffvg/sfsm"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -31,7 +31,7 @@ func (s *service) askStepUp(w http.ResponseWriter, r *http.Request, user users.U
 
 // stepUp checks the password of the flow user. The login in the form is not read,
 // so a password of another login cannot pass. A complete flow renews AuthAt of the session.
-func (s *service) stepUp(w http.ResponseWriter, r *http.Request, machine loginMachine, ip passwordstep.ClientIP) {
+func (s *service) stepUp(w http.ResponseWriter, r *http.Request, machine loginMachine, ip password.ClientIP) {
 	flow := machine.Get()
 	user, err := s.accounts.Find(r.Context(), flow.UserID)
 	if errors.Is(err, users.ErrNotFound) || err == nil && user.Disabled() {
@@ -47,12 +47,12 @@ func (s *service) stepUp(w http.ResponseWriter, r *http.Request, machine loginMa
 	retry := func(status int, message pageMessage) {
 		renderPage(w, r, status, pageStepUp, pageView{Login: user.Login, Message: message})
 	}
-	password, err := users.NewPassword(r.PostForm.Get("password"))
+	userPassword, err := users.NewPassword(r.PostForm.Get("password"))
 	if err != nil {
 		retry(http.StatusOK, msgWrongCredentials)
 		return
 	}
-	userID, err := s.passwords.Verify(r.Context(), machine, user.Login, password, ip)
+	userID, err := s.passwords.Verify(r.Context(), machine, user.Login, userPassword, ip)
 	if stepFailed(w, r, err, retry) {
 		return
 	}

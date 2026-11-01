@@ -22,11 +22,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
+	"github.com/popoffvg/miniauth/internal/providers/password"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/sessions"
-	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -51,9 +51,9 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 	accounts := users.NewService(accountRepo)
 	login, err := users.ParseLogin(owner.login)
 	require.NoError(t, err)
-	password, err := users.NewPassword(owner.password)
+	userPassword, err := users.NewPassword(owner.password)
 	require.NoError(t, err)
-	user, err := accounts.Create(ctx, login, password)
+	user, err := accounts.Create(ctx, login, userPassword)
 	require.NoError(t, err)
 	owner.id = user.ID
 
@@ -62,9 +62,9 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 	clock := &testClock{now: time.Now().Add(-time.Hour)}
 	attempts := postgres.NewAttemptRepository(pool)
 	totpRepo := postgres.NewTOTPRepository(pool)
-	totp, err := totpstep.NewServiceWithClock(totpRepo, attempts, randomTOTPKey(t), clock.Now)
+	totpService, err := totp.NewServiceWithClock(totpRepo, attempts, randomTOTPKey(t), clock.Now)
 	require.NoError(t, err)
-	passwords, err := passwordstep.NewService(accountRepo, attempts, passwordstep.WithSecondFactors(totp))
+	passwords, err := password.NewService(accountRepo, attempts, password.WithSecondFactors(totpService))
 	require.NoError(t, err)
 
 	server := httptest.NewUnstartedServer(nil)
@@ -79,7 +79,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 		&readyState{ok: true},
 		slog.New(slog.DiscardHandler),
 		WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
-		WithTOTP(totp),
+		WithTOTP(totpService),
 	)
 	require.NoError(t, err)
 	server.Config.Handler = router
@@ -152,7 +152,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 
 	t.Run("a wrong code does not turn on two-step login", func(t *testing.T) {
 		require.NotEmpty(t, secret)
-		wrong := totpCode(t, secret, clock.Now().Add(10*totpstep.Period))
+		wrong := totpCode(t, secret, clock.Now().Add(10*totp.Period))
 		resp := postForm(t, owned, base+totpConfirmPath, base, url.Values{"code": {wrong}})
 		require.Equal(t, http.StatusOK, resp.status)
 		assert.Contains(t, resp.body, string(msgWrongCode))
@@ -168,7 +168,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 		for _, match := range recoveryCodePattern.FindAllStringSubmatch(resp.body, -1) {
 			recoveryCodes = append(recoveryCodes, match[1])
 		}
-		require.Len(t, recoveryCodes, totpstep.RecoveryCodeCount)
+		require.Len(t, recoveryCodes, totp.RecoveryCodeCount)
 
 		page := get(t, owned, devicesPage)
 		require.Equal(t, http.StatusOK, page.status)
@@ -190,7 +190,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 	t.Run("password and TOTP open a session", func(t *testing.T) {
 		require.NotEmpty(t, secret)
 		// The confirming code used the current step.
-		clock.Advance(totpstep.Period)
+		clock.Advance(totp.Period)
 		browser, resp := passwordOnly(t)
 		require.Contains(t, resp.body, totpFormSentinel)
 		code := totpCode(t, secret, clock.Now())
@@ -202,7 +202,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 		require.NotEmpty(t, secret)
 		browser, resp := passwordOnly(t)
 		require.Contains(t, resp.body, totpFormSentinel)
-		for _, at := range []time.Time{clock.Now(), clock.Now().Add(-totpstep.Period)} {
+		for _, at := range []time.Time{clock.Now(), clock.Now().Add(-totp.Period)} {
 			again := postForm(t, browser, base+loginTOTPPath, base, url.Values{"code": {totpCode(t, secret, at)}})
 			require.Equal(t, http.StatusOK, again.status)
 			assert.Contains(t, again.body, string(msgWrongCode))
@@ -211,7 +211,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 	})
 
 	t.Run("a step page of one flow does not change the page of the next flow", func(t *testing.T) {
-		require.Len(t, recoveryCodes, totpstep.RecoveryCodeCount)
+		require.Len(t, recoveryCodes, totp.RecoveryCodeCount)
 		early := newBrowser(t, server)
 		openLogin(t, early, base, base+"/app")
 		closed := get(t, early, base+loginRecoveryCodePath)
@@ -225,7 +225,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 	})
 
 	t.Run("a recovery code works once", func(t *testing.T) {
-		require.Len(t, recoveryCodes, totpstep.RecoveryCodeCount)
+		require.Len(t, recoveryCodes, totp.RecoveryCodeCount)
 		browser, _ := passwordOnly(t)
 		form := get(t, browser, base+loginRecoveryCodePath)
 		require.Equal(t, http.StatusOK, form.status)
@@ -244,11 +244,11 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 	t.Run("wrong codes start the backoff of the second factor", func(t *testing.T) {
 		require.NotEmpty(t, secret)
 		// The earlier failures leave the backoff window.
-		clock.Advance(passwordstep.BackoffWindow + time.Minute)
+		clock.Advance(password.BackoffWindow + time.Minute)
 		browser, resp := passwordOnly(t)
 		require.Contains(t, resp.body, totpFormSentinel)
-		wrong := totpCode(t, secret, clock.Now().Add(10*totpstep.Period))
-		for range passwordstep.FreeFailures {
+		wrong := totpCode(t, secret, clock.Now().Add(10*totp.Period))
+		for range password.FreeFailures {
 			failed := postForm(t, browser, base+loginTOTPPath, base, url.Values{"code": {wrong}})
 			require.Equal(t, http.StatusOK, failed.status)
 		}
@@ -258,7 +258,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 		assert.NotEmpty(t, blocked.header.Get("Retry-After"))
 		assertNotSignedIn(t, browser, blocked)
 
-		clock.Advance(passwordstep.MaxDelay)
+		clock.Advance(password.MaxDelay)
 		assertSignedIn(t, postForm(t, browser, base+loginTOTPPath, base, url.Values{"code": {totpCode(t, secret, clock.Now())}}))
 	})
 
@@ -292,12 +292,12 @@ func totpCode(t *testing.T, secret string, at time.Time) string {
 	return fmt.Sprintf("%06d", value%1_000_000)
 }
 
-func randomTOTPKey(t *testing.T) totpstep.Key {
+func randomTOTPKey(t *testing.T) totp.Key {
 	t.Helper()
 	raw := make([]byte, 32)
 	_, err := rand.Read(raw)
 	require.NoError(t, err)
-	key, err := totpstep.ParseKey(base64.StdEncoding.EncodeToString(raw))
+	key, err := totp.ParseKey(base64.StdEncoding.EncodeToString(raw))
 	require.NoError(t, err)
 	return key
 }

@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
-	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/providers/password"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -51,8 +51,8 @@ func (s *service) stepPage(factor loginflow.Factor) http.HandlerFunc {
 
 // loginTOTP checks a TOTP code for the user of the flow in the flow cookie.
 func (s *service) loginTOTP(w http.ResponseWriter, r *http.Request) {
-	s.secondStep(w, r, loginflow.FactorTOTP, func(ctx context.Context, machine loginMachine, user users.User, ip passwordstep.ClientIP) error {
-		code, err := totpstep.ParseCode(r.PostForm.Get("code"))
+	s.secondStep(w, r, loginflow.FactorTOTP, func(ctx context.Context, machine loginMachine, user users.User, ip password.ClientIP) error {
+		code, err := totp.ParseCode(r.PostForm.Get("code"))
 		if err != nil {
 			return err
 		}
@@ -62,8 +62,8 @@ func (s *service) loginTOTP(w http.ResponseWriter, r *http.Request) {
 
 // loginRecoveryCode spends a recovery code of the user of the flow in the flow cookie.
 func (s *service) loginRecoveryCode(w http.ResponseWriter, r *http.Request) {
-	s.secondStep(w, r, loginflow.FactorRecovery, func(ctx context.Context, machine loginMachine, user users.User, ip passwordstep.ClientIP) error {
-		code, err := totpstep.ParseRecoveryCode(r.PostForm.Get("code"))
+	s.secondStep(w, r, loginflow.FactorRecovery, func(ctx context.Context, machine loginMachine, user users.User, ip password.ClientIP) error {
+		code, err := totp.ParseRecoveryCode(r.PostForm.Get("code"))
 		if err != nil {
 			return err
 		}
@@ -73,7 +73,7 @@ func (s *service) loginRecoveryCode(w http.ResponseWriter, r *http.Request) {
 
 // secondStep runs verify for the step of factor after the password of a user with TOTP.
 // A complete flow starts a session and redirects to the return URL of the flow.
-func (s *service) secondStep(w http.ResponseWriter, r *http.Request, factor loginflow.Factor, verify func(context.Context, loginMachine, users.User, passwordstep.ClientIP) error) {
+func (s *service) secondStep(w http.ResponseWriter, r *http.Request, factor loginflow.Factor, verify func(context.Context, loginMachine, users.User, password.ClientIP) error) {
 	machine, ip, ok := s.openLoginForm(w, r, s.totp != nil)
 	if !ok {
 		return

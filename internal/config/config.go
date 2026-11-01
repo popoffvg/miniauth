@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/popoffvg/miniauth/internal/api"
-	"github.com/popoffvg/miniauth/internal/googlestep"
+	"github.com/popoffvg/miniauth/internal/providers/google"
+	"github.com/popoffvg/miniauth/internal/providers/telegram"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/sessions"
-	"github.com/popoffvg/miniauth/internal/telegramstep"
-	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -56,29 +56,29 @@ type Config struct {
 	Google     GoogleClient
 	Telegram   TelegramBot
 	// TOTPKey seals each TOTP secret. Without it, TOTP enrollment is off.
-	TOTPKey totpstep.Key
+	TOTPKey totp.Key
 }
 
 // GoogleClient is the OAuth client of the Google step. The zero value turns the step off.
 type GoogleClient struct {
-	ID     googlestep.ClientID
-	Secret googlestep.ClientSecret
+	ID     google.ClientID
+	Secret google.ClientSecret
 }
 
 // Enabled reports whether the Google step is configured.
 func (g GoogleClient) Enabled() bool {
-	return g.ID != (googlestep.ClientID{})
+	return g.ID != (google.ClientID{})
 }
 
 // TelegramBot is the bot of the Telegram step. The zero value turns the step off.
 type TelegramBot struct {
-	Name  telegramstep.BotName
-	Token telegramstep.BotToken
+	Name  telegram.BotName
+	Token telegram.BotToken
 }
 
 // Enabled reports whether the Telegram step is configured.
 func (t TelegramBot) Enabled() bool {
-	return t.Name != (telegramstep.BotName{})
+	return t.Name != (telegram.BotName{})
 }
 
 // LogValue keeps the database URL and the admin token hash out of a log.
@@ -133,8 +133,8 @@ func Load(getenv func(string) string) (Config, error) {
 	cookie, cookieErr := parseCookie(getenv(envCookie))
 	public, publicErr := parsePublic(getenv(envPublic))
 	mail, mailErr := parseMail(getenv)
-	google, googleErr := parseGoogle(getenv(envGoogleID), getenv(envGoogleSecret), public)
-	telegram, telegramErr := parseTelegram(getenv(envTelegramBot), getenv(envTelegramToken), public)
+	googleConfig, googleErr := parseGoogle(getenv(envGoogleID), getenv(envGoogleSecret), public)
+	telegramConfig, telegramErr := parseTelegram(getenv(envTelegramBot), getenv(envTelegramToken), public)
 	totpKey, totpKeyErr := parseTOTPKey(getenv(envTOTPKey))
 	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr, googleErr, telegramErr, totpKeyErr); err != nil {
 		return Config{}, err
@@ -146,8 +146,8 @@ func Load(getenv func(string) string) (Config, error) {
 		Cookie:     cookie,
 		PublicURL:  public,
 		Mail:       mail,
-		Google:     google,
-		Telegram:   telegram,
+		Google:     googleConfig,
+		Telegram:   telegramConfig,
 		TOTPKey:    totpKey,
 	}, nil
 }
@@ -207,12 +207,12 @@ func parsePublic(raw string) (api.PublicURL, error) {
 
 // parseGoogle accepts both values or neither. The Google redirect URL is built from the public URL.
 func parseGoogle(rawID, rawSecret string, public api.PublicURL) (GoogleClient, error) {
-	id := googlestep.ParseClientID(rawID)
-	secret := googlestep.ParseClientSecret(rawSecret)
-	if id == (googlestep.ClientID{}) && secret.Empty() {
+	id := google.ParseClientID(rawID)
+	secret := google.ParseClientSecret(rawSecret)
+	if id == (google.ClientID{}) && secret.Empty() {
 		return GoogleClient{}, nil
 	}
-	if id == (googlestep.ClientID{}) || secret.Empty() || public.Origin() == "" {
+	if id == (google.ClientID{}) || secret.Empty() || public.Origin() == "" {
 		return GoogleClient{}, errGoogle
 	}
 	return GoogleClient{ID: id, Secret: secret}, nil
@@ -220,28 +220,28 @@ func parseGoogle(rawID, rawSecret string, public api.PublicURL) (GoogleClient, e
 
 // parseTelegram accepts both values or neither. The widget callback URL is built from the public URL.
 func parseTelegram(rawName, rawToken string, public api.PublicURL) (TelegramBot, error) {
-	name, nameErr := telegramstep.ParseBotName(rawName)
-	token := telegramstep.ParseBotToken(rawToken)
+	name, nameErr := telegram.ParseBotName(rawName)
+	token := telegram.ParseBotToken(rawToken)
 	if nameErr != nil {
 		return TelegramBot{}, errTelegram
 	}
-	if name == (telegramstep.BotName{}) && token.Empty() {
+	if name == (telegram.BotName{}) && token.Empty() {
 		return TelegramBot{}, nil
 	}
-	if name == (telegramstep.BotName{}) || token.Empty() || public.Origin() == "" {
+	if name == (telegram.BotName{}) || token.Empty() || public.Origin() == "" {
 		return TelegramBot{}, errTelegram
 	}
 	return TelegramBot{Name: name, Token: token}, nil
 }
 
 // parseTOTPKey reads an empty value as no key.
-func parseTOTPKey(raw string) (totpstep.Key, error) {
+func parseTOTPKey(raw string) (totp.Key, error) {
 	if strings.TrimSpace(raw) == "" {
-		return totpstep.Key{}, nil
+		return totp.Key{}, nil
 	}
-	key, err := totpstep.ParseKey(raw)
+	key, err := totp.ParseKey(raw)
 	if err != nil {
-		return totpstep.Key{}, errTOTPKey
+		return totp.Key{}, errTOTPKey
 	}
 	return key, nil
 }

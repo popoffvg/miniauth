@@ -17,9 +17,9 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -66,13 +66,13 @@ func TestTokenPageEndToEnd(t *testing.T) {
 	for _, a := range []*account{owner, other} {
 		login, loginErr := users.ParseLogin(a.login)
 		require.NoError(t, loginErr)
-		password, passwordErr := users.NewPassword(a.password)
+		userPassword, passwordErr := users.NewPassword(a.password)
 		require.NoError(t, passwordErr)
-		user, createErr := accounts.Create(ctx, login, password)
+		user, createErr := accounts.Create(ctx, login, userPassword)
 		require.NoError(t, createErr)
 		a.id = user.ID
 	}
-	passwords, err := passwordstep.NewService(accountRepo, postgres.NewAttemptRepository(pool))
+	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 	accessTokens := tokens.NewService(postgres.NewTokenRepository(pool))
 	clock := &testClock{now: time.Now()}
@@ -257,9 +257,9 @@ func submitRevoke(t *testing.T, browser *http.Client, base, origin, id string) r
 }
 
 // submitStepUp sends login too, so the test shows that the step-up does not read it.
-func submitStepUp(t *testing.T, browser *http.Client, base, login, password string) reply {
+func submitStepUp(t *testing.T, browser *http.Client, base, login, userPassword string) reply {
 	t.Helper()
-	form := url.Values{"password": {password}}
+	form := url.Values{"password": {userPassword}}
 	if login != "" {
 		form.Set("login", login)
 	}

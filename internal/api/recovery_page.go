@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/popoffvg/miniauth/internal/passwordstep"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -71,7 +71,7 @@ func (s *service) requestRecovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = s.recovery.Request(r.Context(), email, ip)
-	var tooSoon *passwordstep.TooSoonError
+	var tooSoon *password.TooSoonError
 	switch {
 	case errors.As(err, &tooSoon):
 		w.Header().Set("Retry-After", retryAfter(tooSoon.RetryAt))
@@ -133,12 +133,12 @@ func (s *service) reset(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusBadRequest, msgResetLinkInvalid)
 		return
 	}
-	password, err := users.NewPassword(r.PostForm.Get("password"))
+	userPassword, err := users.NewPassword(r.PostForm.Get("password"))
 	if err != nil {
 		renderPage(w, r, http.StatusBadRequest, pageReset, pageView{Message: msgNewPasswordInvalid, ResetToken: token})
 		return
 	}
-	err = s.recovery.Reset(r.Context(), token, password)
+	err = s.recovery.Reset(r.Context(), token, userPassword)
 	if errors.Is(err, recovery.ErrQueueFull) {
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: reset password", "err", err)
 		err = nil

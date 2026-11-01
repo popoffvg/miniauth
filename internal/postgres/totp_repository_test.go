@@ -12,7 +12,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
-	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -31,7 +31,7 @@ func TestTOTPDisableWaitsForAConfirm(t *testing.T) {
 	require.NoError(t, err)
 	repo := postgres.NewTOTPRepository(pool)
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
-	require.NoError(t, repo.SavePending(ctx, user.ID, totpstep.SealedSecret("sealed"), createdAt))
+	require.NoError(t, repo.SavePending(ctx, user.ID, totp.SealedSecret("sealed"), createdAt))
 	userID := pgtype.UUID{Bytes: user.ID.Bytes(), Valid: true}
 	stamp := func(at time.Time) pgtype.Timestamptz { return pgtype.Timestamptz{Time: at.UTC(), Valid: true} }
 
@@ -61,5 +61,5 @@ func TestTOTPDisableWaitsForAConfirm(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM recovery_codes").Scan(&codes))
 	assert.Zero(t, codes, "the recovery codes of a disabled TOTP MUST be gone")
 	_, err = repo.Find(ctx, user.ID)
-	require.ErrorIs(t, err, totpstep.ErrNotEnrolled)
+	require.ErrorIs(t, err, totp.ErrNotEnrolled)
 }
