@@ -55,6 +55,23 @@ func (r *UserAdminRepository) ListAccounts(ctx context.Context) ([]useradmin.Acc
 	return accounts, nil
 }
 
+// ListGroupNames returns every group in name order.
+func (r *UserAdminRepository) ListGroupNames(ctx context.Context) ([]groups.Name, error) {
+	rows, err := r.q.ListGroupNames(ctx)
+	if err != nil {
+		return nil, groupError("list group names", err)
+	}
+	names := make([]groups.Name, 0, len(rows))
+	for _, raw := range rows {
+		name, err := groups.ParseName(raw)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: list group names: %w", err)
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
 // Write stores one account transition. Zero rows changed is sfsm.ErrStaleState.
 // A disable deletes every session of the user in the same transaction.
 // Its UPDATE locks the user row, so a StartOnDevice in progress commits its session first.

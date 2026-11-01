@@ -103,6 +103,7 @@ type Querier interface {
 	ListAllResources(ctx context.Context) ([]Resource, error)
 	ListDevices(ctx context.Context, userID pgtype.UUID) ([]ListDevicesRow, error)
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
+	ListGroupNames(ctx context.Context) ([]string, error)
 	ListGroupSummaries(ctx context.Context, name pgtype.Text) ([]ListGroupSummariesRow, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)

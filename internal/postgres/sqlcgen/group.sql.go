@@ -131,6 +131,31 @@ func (q *Queries) ListGroupMemberships(ctx context.Context, userID pgtype.UUID) 
 	return items, nil
 }
 
+const listGroupNames = `-- name: ListGroupNames :many
+SELECT name FROM groups
+ORDER BY name
+`
+
+func (q *Queries) ListGroupNames(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listGroupNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGroupSummaries = `-- name: ListGroupSummaries :many
 SELECT
     groups.name,

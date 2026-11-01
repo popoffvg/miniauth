@@ -14,13 +14,14 @@ import (
 )
 
 // Store keeps the accounts.
-// ListAccounts returns every user in login order.
+// ListAccounts returns every user in login order. ListGroupNames returns every group in name order.
 // Write stores the transition from prev to next. It MUST wrap sfsm.ErrStaleState when the stored status is no longer prev.Status.
 // A write to StatusDisabled MUST also delete every session of the user in the same transaction.
 // AddMember MUST return ErrUserNotFound for a user that is not stored.
 // AddMember MUST return groups.ErrGroupNotFound for a group that is not stored. AddMember of a pair that is stored changes nothing. RemoveMember MUST return ErrNotMember when the pair is not stored.
 type Store interface {
 	ListAccounts(ctx context.Context) ([]Account, error)
+	ListGroupNames(ctx context.Context) ([]groups.Name, error)
 	Write(ctx context.Context, id users.ID, prev, next AccountState) error
 	AddMember(ctx context.Context, id users.ID, name groups.Name) error
 	RemoveMember(ctx context.Context, id users.ID, name groups.Name) error
@@ -56,6 +57,11 @@ func NewService(store Store, accounts accountFinder, logger *slog.Logger) *Servi
 // List returns every account, a disabled one too.
 func (s *Service) List(ctx context.Context) ([]Account, error) {
 	return s.store.ListAccounts(ctx)
+}
+
+// Groups returns every group an account can join, in name order.
+func (s *Service) Groups(ctx context.Context) ([]groups.Name, error) {
+	return s.store.ListGroupNames(ctx)
 }
 
 // Disable signs the user out everywhere and refuses every next login of the user.

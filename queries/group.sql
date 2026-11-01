@@ -47,3 +47,7 @@ SELECT
 FROM groups
 WHERE sqlc.narg(name)::text IS NULL OR groups.name = sqlc.narg(name)
 ORDER BY groups.name;
+
+-- name: ListGroupNames :many
+SELECT name FROM groups
+ORDER BY name;

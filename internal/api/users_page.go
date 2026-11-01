@@ -198,27 +198,11 @@ func (s *service) renderUsers(w http.ResponseWriter, r *http.Request, status int
 	view.Shell = views.Shell{Login: user.Login, Admin: true, Current: usersPagePath}
 	view.Message, view.Notice = note.message, note.notice
 	view.InvitesOn = s.invites != nil && s.publicURL.Origin() != ""
-	if view.Groups, err = s.groupNames(r.Context()); err != nil {
+	if view.Groups, err = s.userAdmin.Groups(r.Context()); err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: users page", "err", err)
 		renderDenied(w, r, http.StatusInternalServerError, msgUsersFailed)
 		return
 	}
 	view.Invite = views.Invite{Link: views.InviteLink(note.invite.Link), Group: note.invite.Group, ExpiresAt: note.invite.ExpiresAt}
 	writePage(w, r, status, views.UsersPage(view), pageCSP)
-}
-
-// groupNames returns every group in name order. Without the groups service it is the built-in groups.
-func (s *service) groupNames(ctx context.Context) ([]groups.Name, error) {
-	if s.groupAdmin == nil {
-		return []groups.Name{groups.Admins(), groups.Users()}, nil
-	}
-	found, err := s.groupAdmin.List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]groups.Name, 0, len(found))
-	for _, group := range found {
-		names = append(names, group.Name)
-	}
-	return names, nil
 }
