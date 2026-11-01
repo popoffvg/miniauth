@@ -66,3 +66,18 @@ The process writes JSON logs to standard output, one line per request.
 These variables hold secrets: `MINIAUTH_DATABASE_URL` (it can hold a password), `MINIAUTH_SMTP_PASSWORD`, `MINIAUTH_GOOGLE_CLIENT_SECRET`, `MINIAUTH_TELEGRAM_BOT_TOKEN`, and `MINIAUTH_TOTP_KEY`. Keep them in a secret store. `MINIAUTH_ADMIN_TOKEN_SHA256` is a hash; keep the admin token itself in a secret store.
 
 `MINIAUTH_MAIL=log` writes live reset links to the log. Use it only for local work.
+
+## Known limits
+
+These are known and accepted. Each has a low impact or is the design.
+
+- The TOTP key URI holds the TOTP secret. The setup page shows it once as a QR code: that is how an authenticator app gets the secret.
+- `MINIAUTH_MAIL=log` writes live reset links to the log. It is for local work only, never for real users.
+- The passkey challenge is in the page and in the request. It is a public nonce, not a secret.
+- Forward-auth tells a browser from another client by `Sec-Fetch-*` and `Accept`. A client that sends other headers gets 401 instead of a redirect to the login page.
+- A double click on the passkey button can start two ceremonies. One of them fails, and the user tries again.
+- Concurrent wrong passwords can all pass the backoff check before the first failure is stored, so a burst gets a few more tries than the limit.
+- A recovery code is spent even when a later step of the same login fails.
+- A session can expire between the check and its use in the same request, and a logout can race with an extension of the same session.
+- Two failed tries with the same timestamp count as one for the backoff.
+- A token that expires within one microsecond of a check can pass that check.
