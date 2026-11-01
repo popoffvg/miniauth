@@ -304,7 +304,7 @@ func (s *service) routes() []route {
 			request: new(groupResourcePath),
 			status:  http.StatusNoContent,
 			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
-			doc:     "Gives the group the resource: a group grant with no expiry. A group that has the resource keeps it: the request is idempotent. An unknown group or resource is 404.",
+			doc:     "Gives the group the resource: a group grant with no expiry. A group with an active grant keeps it: the request is idempotent. An expired grant is replaced by one with no expiry. An unknown group or resource is 404.",
 		},
 		{
 			method:  http.MethodDelete,

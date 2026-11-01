@@ -12,6 +12,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/access/accesstest"
 	"github.com/popoffvg/miniauth/internal/groupadmin"
 	"github.com/popoffvg/miniauth/internal/groups"
+	"github.com/popoffvg/miniauth/internal/users"
 )
 
 // memoryGroups reads the resources of a group from the grants of repo, the way the SQL query does.
@@ -140,4 +141,28 @@ func TestManagedGrantsAreReadOnly(t *testing.T) {
 	found, err := store.FindGroup(ctx, ops)
 	require.NoError(t, err)
 	assert.Equal(t, []groupadmin.GroupResource{{Name: dash, Managed: true}}, found.Resources)
+}
+
+func TestAddResourceRenewsAnExpiredGrant(t *testing.T) {
+	ctx := t.Context()
+	repo := accesstest.NewRepository()
+	grants := access.NewService(repo, nil)
+	service, err := groupadmin.NewService(&memoryGroups{repo: repo}, grants)
+	require.NoError(t, err)
+	dashURL, err := access.ParseResourceURL("https://dash.example.test/")
+	require.NoError(t, err)
+	dash, err := access.ParseResourceName("dash")
+	require.NoError(t, err)
+	_, err = grants.CreateResource(ctx, dash, dashURL)
+	require.NoError(t, err)
+	ops := mustName(t, "ops")
+	_, err = service.Create(ctx, ops)
+	require.NoError(t, err)
+	expired := access.ExpiresAt(time.Now().Add(-time.Hour))
+	require.NoError(t, repo.CreateGrant(ctx, access.Grant{ID: access.NewGrantID(), Resource: dash, Subject: access.GroupSubject(ops), Expiry: expired}))
+
+	require.NoError(t, service.AddResource(ctx, ops, dash))
+	target, err := access.ParseRequestURL("https", "dash.example.test", "/")
+	require.NoError(t, err)
+	assert.NoError(t, grants.Check(ctx, users.NewID(), []groups.Name{ops}, target), "the group MUST have access after AddResource")
 }
