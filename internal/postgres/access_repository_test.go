@@ -25,8 +25,7 @@ func TestAccessRepositoryRoundTrip(t *testing.T) {
 	repo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
 	service := access.NewService(repo, nil)
-	editors, err := groups.ParseName("editors")
-	require.NoError(t, err)
+	editors := createGroup(t, pool, "editors")
 
 	root := accessResource(t, "root", "dash.example.test", "/")
 	mcp := accessResource(t, "mcp", "dash.example.test", "/mcp/")
@@ -115,8 +114,7 @@ func TestAccessRepositoryListsGrantEntries(t *testing.T) {
 	repo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
 	service := access.NewService(repo, accounts)
-	editors, err := groups.ParseName("editors")
-	require.NoError(t, err)
+	editors := createGroup(t, pool, "editors")
 
 	root := accessResource(t, "root", "dash.example.test", "/")
 	mcp := accessResource(t, "mcp", "dash.example.test", "/mcp")

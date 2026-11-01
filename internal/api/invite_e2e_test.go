@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groupadmin"
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
@@ -35,7 +37,7 @@ func TestInviteEndToEnd(t *testing.T) {
 	clock := func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }
 	inviteRepo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
-	invitations, err := invites.NewService(inviteRepo, clock)
+	invitations, err := invites.NewService(inviteRepo, clock, nil)
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
@@ -45,13 +47,24 @@ func TestInviteEndToEnd(t *testing.T) {
 	server := httptest.NewUnstartedServer(nil)
 	host := server.Listener.Addr().String()
 	base := "https://" + host
-	createResource(t, grants, "app", host, "/app")
+	app := createResource(t, grants, "app", host, "/app")
 	createResource(t, grants, "other", host, "/other")
+	groupRepo, err := postgres.NewGroupRepository(pool)
+	require.NoError(t, err)
+	groupStore, err := postgres.NewGroupAdminRepository(pool)
+	require.NoError(t, err)
+	groupAdmin, err := groupadmin.NewService(groupStore, grants)
+	require.NoError(t, err)
+	ops, err := groups.ParseName("ops")
+	require.NoError(t, err)
+	_, err = groupAdmin.Create(ctx, ops)
+	require.NoError(t, err)
+	require.NoError(t, groupAdmin.AddResource(ctx, ops, app))
 	logs := &lockedBuffer{}
 	router, err := NewRouter(
 		accounts,
 		sessions.NewService(postgres.NewSessionRepository(pool)),
-		nil,
+		groupRepo,
 		sessions.Domain{},
 		mustPublicURL(t, base),
 		hashToken(t, adminToken),
@@ -77,14 +90,14 @@ func TestInviteEndToEnd(t *testing.T) {
 	}
 	createInvite := func() (link, token string) {
 		t.Helper()
-		resp := admin("/api/v1/invites", `{"resource":"app"}`)
+		resp := admin("/api/v1/invites", `{"group":"ops"}`)
 		require.Equal(t, http.StatusCreated, resp.status, resp.body)
 		created := decodeReply[struct {
 			Link      string    `json:"link"`
-			Resource  string    `json:"resource"`
+			Group     string    `json:"group"`
 			ExpiresAt time.Time `json:"expires_at"`
 		}](t, strings.NewReader(resp.body))
-		assert.Equal(t, "app", created.Resource)
+		assert.Equal(t, "ops", created.Group)
 		assert.WithinDuration(t, clock().Add(invites.Lifetime), created.ExpiresAt, time.Minute)
 		token, ok := strings.CutPrefix(created.Link, base+"/invite/")
 		require.True(t, ok, created.Link)
@@ -100,7 +113,8 @@ func TestInviteEndToEnd(t *testing.T) {
 		return do(t, browser, req)
 	}
 
-	require.Equal(t, http.StatusNotFound, admin("/api/v1/invites", `{"resource":"missing"}`).status)
+	require.Equal(t, http.StatusNotFound, admin("/api/v1/invites", `{"group":"missing"}`).status)
+	require.Equal(t, http.StatusBadRequest, admin("/api/v1/invites", `{"group":"-bad-"}`).status)
 	link, token := createInvite()
 
 	page := get(t, browser, link)
@@ -124,7 +138,7 @@ func TestInviteEndToEnd(t *testing.T) {
 
 	accepted := accept(base, token, "newcomer")
 	require.Equal(t, http.StatusSeeOther, accepted.status, accepted.body)
-	assert.Equal(t, base+"/app", accepted.header.Get("Location"))
+	assert.Equal(t, base+"/", accepted.header.Get("Location"))
 	require.Len(t, sessionCookies(accepted), 1)
 
 	granted := forwardedCheck(t, browser, base, host, "/app/page")
@@ -180,7 +194,7 @@ func TestInviteWithoutAPublicURLOrASession(t *testing.T) {
 	require.NoError(t, postgres.Migrate(ctx, pool))
 	inviteRepo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
-	invitations, err := invites.NewService(inviteRepo, time.Now)
+	invitations, err := invites.NewService(inviteRepo, time.Now, nil)
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
@@ -197,7 +211,7 @@ func TestInviteWithoutAPublicURLOrASession(t *testing.T) {
 		return router
 	}
 	createInvite := func(router http.Handler) *httptest.ResponseRecorder {
-		req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/invites", strings.NewReader(`{"resource":"app"}`))
+		req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/invites", strings.NewReader(`{}`))
 		req.Header.Set("Authorization", "Bearer "+adminToken)
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()

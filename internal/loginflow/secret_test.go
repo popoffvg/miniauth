@@ -123,3 +123,21 @@ func TestNewReturnURL(t *testing.T) {
 		t.Fatalf("empty return URL error = %v", err)
 	}
 }
+
+func TestCallbackNonceBindsOneFlow(t *testing.T) {
+	first, err := NewFlowSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewFlowSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonce := first.CallbackNonce()
+	if !nonce.Matches(first.CallbackNonce().String()) {
+		t.Fatal("the nonce does not match its own flow")
+	}
+	if nonce.Matches(second.CallbackNonce().String()) || nonce.Matches("") {
+		t.Fatal("the nonce matches another flow")
+	}
+}

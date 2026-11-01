@@ -6,73 +6,32 @@ import (
 	"time"
 
 	"github.com/popoffvg/miniauth/internal/tokens"
-)
-
-// tokenFilter is the status filter of the token table. Empty shows every token.
-type tokenFilter string
-
-const (
-	tokenFilterActive  tokenFilter = "active"
-	tokenFilterExpired tokenFilter = "expired"
-	tokenFilterRevoked tokenFilter = "revoked"
-)
-
-var tokenChips = []filterChip{
-	{Value: "", Label: "All"},
-	{Value: string(tokenFilterActive), Label: "Active"},
-	{Value: string(tokenFilterExpired), Label: "Expired"},
-	{Value: string(tokenFilterRevoked), Label: "Revoked"},
-}
-
-// tokenStatus is the state badge of one token row.
-type tokenStatus struct {
-	Filter tokenFilter
-	Tone   badgeTone
-	Label  string
-}
-
-var (
-	tokenActive  = tokenStatus{Filter: tokenFilterActive, Tone: toneActive, Label: "Active"}
-	tokenExpired = tokenStatus{Filter: tokenFilterExpired, Tone: toneExpired, Label: "Expired"}
-	tokenRevoked = tokenStatus{Filter: tokenFilterRevoked, Tone: toneRevoked, Label: "Revoked"}
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // statusOf ranks a revoke above an expiry: a revoked token never works again.
-func statusOf(token tokens.Token, now time.Time) tokenStatus {
+func statusOf(token tokens.Token, now time.Time) views.TokenStatus {
 	switch {
 	case token.Revoked():
-		return tokenRevoked
+		return views.TokenRevoked
 	case token.Expired(now):
-		return tokenExpired
+		return views.TokenExpired
 	default:
-		return tokenActive
+		return views.TokenActive
 	}
 }
 
-type tokenRow struct {
-	Token  tokens.Token
-	Status tokenStatus
-}
-
-// tokenTable is the rows that pass the search and the filter. Total counts every token of the user.
-type tokenTable struct {
-	Rows   []tokenRow
-	Total  int
-	Query  string
-	Filter tokenFilter
-}
-
-func newTokenTable(r *http.Request, list []tokens.Token, now time.Time) tokenTable {
+func newTokenTable(r *http.Request, list []tokens.Token, now time.Time) views.TokenTable {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	filter := tokenFilter(r.URL.Query().Get("status"))
+	filter := views.TokenFilter(r.URL.Query().Get("status"))
 	known := false
-	for _, chip := range tokenChips {
+	for _, chip := range views.TokenChips {
 		known = known || chip.Value == string(filter)
 	}
 	if !known {
 		filter = ""
 	}
-	table := tokenTable{Total: len(list), Query: query, Filter: filter}
+	table := views.TokenTable{Total: len(list), Query: query, Filter: filter}
 	for _, token := range list {
 		status := statusOf(token, now)
 		if filter != "" && status.Filter != filter {
@@ -81,42 +40,24 @@ func newTokenTable(r *http.Request, list []tokens.Token, now time.Time) tokenTab
 		if !matchesQuery(query, append(token.Scopes.Strings(), token.Name.String(), token.Prefix.String())...) {
 			continue
 		}
-		table.Rows = append(table.Rows, tokenRow{Token: token, Status: status})
+		table.Rows = append(table.Rows, views.TokenRow{Token: token, Status: status})
 	}
 	return table
 }
 
-// tokenField is the form field that a refused POST /tokens names.
-type tokenField string
-
-const (
-	tokenFieldName    tokenField = "name"
-	tokenFieldScopes  tokenField = "scopes"
-	tokenFieldExpires tokenField = "expires"
-)
-
 // tokenFieldOf is the field of each form message. A message that is not here names no field.
-var tokenFieldOf = map[pageMessage]tokenField{
-	msgTokenName:      tokenFieldName,
-	msgScopeNotValid:  tokenFieldScopes,
-	msgExpiryNotValid: tokenFieldExpires,
+var tokenFieldOf = map[views.Message]views.TokenField{
+	msgTokenName:      views.TokenFieldName,
+	msgScopeNotValid:  views.TokenFieldScopes,
+	msgExpiryNotValid: views.TokenFieldExpires,
 }
 
-// tokenForm is the sent form again, so the user corrects one field and keeps the others.
-type tokenForm struct {
-	Name    string
-	Scopes  string
-	Expires string
-	Field   tokenField
-	Message pageMessage
-}
-
-func refusedTokenForm(r *http.Request, message pageMessage) tokenForm {
+func refusedTokenForm(r *http.Request, message views.Message) views.TokenForm {
 	field, ok := tokenFieldOf[message]
 	if !ok {
-		return tokenForm{}
+		return views.TokenForm{}
 	}
-	return tokenForm{
+	return views.TokenForm{
 		Name:    r.PostForm.Get("name"),
 		Scopes:  r.PostForm.Get("scopes"),
 		Expires: r.PostForm.Get("expires"),

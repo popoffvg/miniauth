@@ -4,37 +4,28 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/popoffvg/sfsm"
+
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 const (
-	totpEnrollPath  = "/sessions/totp/enroll"
-	totpConfirmPath = "/sessions/totp/confirm"
-	totpDisablePath = "/sessions/totp/disable"
+	totpEnrollPath  = views.TOTPEnrollPath
+	totpConfirmPath = views.TOTPConfirmPath
+	totpDisablePath = views.TOTPDisablePath
 )
 
 const (
-	msgTwoStepUnavailable pageMessage = "Two-step login is not available."
-	msgTwoStepStepUp      pageMessage = "Enter your password again to change two-step login."
-	msgTwoStepExpired     pageMessage = "The two-step login setup expired. Start it again from your devices page."
-	msgTwoStepFailed      pageMessage = "The two-step login change failed. Try again."
-	msgWrongCode          pageMessage = "The code is wrong or was used before."
+	msgTwoStepUnavailable views.Message = "Two-step login is not available."
+	msgTwoStepStepUp      views.Message = "Enter your password again to change two-step login."
+	msgTwoStepExpired     views.Message = "The two-step login setup expired. Start it again from your devices page."
+	msgTwoStepFailed      views.Message = "The two-step login change failed. Try again."
+	msgWrongCode          views.Message = "The code is wrong or was used before."
+	msgTwoStepRace        views.Message = "Two-step login changed in another tab or window. Open your devices page and try again."
 )
-
-// enrollmentView is the secret of a TOTP enrollment. The handler MUST set Cache-Control: no-store.
-type enrollmentView struct {
-	Secret totp.Secret
-	QR     qrImage
-}
-
-// twoStepView is the two-step login part of the sessions page.
-type twoStepView struct {
-	Shown     bool
-	On        bool
-	CanEnroll bool
-}
 
 // WithTOTP serves the TOTP step, the recovery code step, and TOTP enrollment.
 // The password step MUST report the users of totp as needing a second factor.
@@ -89,7 +80,7 @@ func (s *service) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The codes are in this body only. They MUST NOT reach a URL, a log, or a cache.
 	w.Header().Set("Cache-Control", "no-store")
-	renderPage(w, r, http.StatusOK, pageRecoveryCodes, pageView{Shell: s.shellFor(r, user, sessionsPagePath), RecoveryCodes: codes})
+	renderPage(w, r, http.StatusOK, views.PageRecoveryCodes, views.Page{Shell: s.shellFor(r, user, sessionsPagePath), RecoveryCodes: codes})
 }
 
 // disableTOTP turns off TOTP and deletes the recovery codes.
@@ -134,26 +125,26 @@ func (s *service) twoStepUser(w http.ResponseWriter, r *http.Request) (users.Use
 }
 
 // twoStepView reads the two-step login state of userID for the sessions page.
-func (s *service) twoStepView(r *http.Request, userID users.ID) (twoStepView, error) {
+func (s *service) twoStepView(r *http.Request, userID users.ID) (views.TwoStep, error) {
 	if s.totp == nil {
-		return twoStepView{}, nil
+		return views.TwoStep{}, nil
 	}
 	on, err := s.totp.HasSecondFactor(r.Context(), userID)
 	if err != nil {
-		return twoStepView{}, err
+		return views.TwoStep{}, err
 	}
-	return twoStepView{Shown: true, On: on, CanEnroll: !on && s.totp.EnrollmentOn()}, nil
+	return views.TwoStep{Shown: true, On: on, CanEnroll: !on && s.totp.EnrollmentOn()}, nil
 }
 
-func (s *service) renderEnrollment(w http.ResponseWriter, r *http.Request, user users.User, enrollment totp.Enrollment, message pageMessage) {
-	image, err := newQRImage(enrollment.URI)
+func (s *service) renderEnrollment(w http.ResponseWriter, r *http.Request, user users.User, enrollment totp.Enrollment, message views.Message) {
+	image, err := views.NewQRImage(enrollment.URI)
 	if err != nil {
 		s.twoStepFailed(w, r, err)
 		return
 	}
 	// The secret is in this body only. It MUST NOT reach a URL, a log, or a cache.
 	w.Header().Set("Cache-Control", "no-store")
-	renderPage(w, r, http.StatusOK, pageTOTPEnroll, pageView{Shell: s.shellFor(r, user, sessionsPagePath), Message: message, Enrollment: &enrollmentView{Secret: enrollment.Secret, QR: image}})
+	renderPage(w, r, http.StatusOK, views.PageTOTPEnroll, views.Page{Shell: s.shellFor(r, user, sessionsPagePath), Message: message, Enrollment: &views.Enrollment{Secret: enrollment.Secret, QR: image}})
 }
 
 // twoStepFailed answers an error of an enrollment step.
@@ -165,6 +156,8 @@ func (s *service) twoStepFailed(w http.ResponseWriter, r *http.Request, err erro
 		renderDenied(w, r, http.StatusBadRequest, msgTwoStepExpired)
 	case errors.Is(err, totp.ErrKeyMissing):
 		renderDenied(w, r, http.StatusServiceUnavailable, msgTwoStepUnavailable)
+	case errors.Is(err, sfsm.ErrStaleState):
+		renderDenied(w, r, http.StatusConflict, msgTwoStepRace)
 	default:
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: two-step login", "err", err)
 		renderDenied(w, r, http.StatusInternalServerError, msgTwoStepFailed)

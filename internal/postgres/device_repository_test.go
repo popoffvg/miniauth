@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -159,4 +160,30 @@ func count(t *testing.T, query func(ctx context.Context) (int64, error)) int64 {
 		t.Fatal(err)
 	}
 	return n
+}
+
+func TestNoSessionForADisabledUser(t *testing.T) {
+	ctx := t.Context()
+	pool, err := postgres.Open(ctx, postgrestest.NewDatabase(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	if err = postgres.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	repo := postgres.NewUserRepository(pool)
+	ada := createAccount(t, users.NewService(repo), "ada")
+	if err = repo.Disable(ctx, ada.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	svc := sessions.NewService(postgres.NewSessionRepository(pool))
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/login", nil)
+	_, _, err = svc.StartOnDevice(ctx, httptest.NewRecorder(), req, sessions.Domain{}, ada.ID, loginflow.Factors(loginflow.FactorPassword))
+	if !errors.Is(err, sessions.ErrUnknownUser) {
+		t.Fatalf("StartOnDevice() of a disabled user = %v, want ErrUnknownUser", err)
+	}
+	if n := count(t, sqlcgen.New(pool).CountSessions); n != 0 {
+		t.Fatalf("sessions = %d, want 0", n)
+	}
 }

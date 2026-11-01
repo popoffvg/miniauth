@@ -98,6 +98,28 @@ func TestForwardAuth(t *testing.T) {
 			want:      http.StatusForbidden,
 		},
 		{
+			name:        "a URL in the query passes",
+			login:       "ada",
+			factors:     loginflow.Factors(loginflow.FactorPassword),
+			hasCookie:   true,
+			isForwarded: true,
+			host:        "app.example.test",
+			uri:         "/dash?next=https://example.test/",
+			want:        http.StatusOK,
+			user:        "ada",
+			method:      "password",
+		},
+		{
+			name:        "a URL in the path is refused",
+			login:       "ada",
+			factors:     loginflow.Factors(loginflow.FactorPassword),
+			hasCookie:   true,
+			isForwarded: true,
+			host:        "app.example.test",
+			uri:         "/dash/https://example.test/",
+			want:        http.StatusForbidden,
+		},
+		{
 			name:        "user in group",
 			login:       "ada",
 			groups:      []string{"editors"},
@@ -590,4 +612,41 @@ func grantResource(t *testing.T, grants *access.Service, resource access.Resourc
 	grant, err := grants.Grant(t.Context(), resource, subject, access.Expiry{})
 	require.NoError(t, err)
 	return grant.ID
+}
+
+// The database session slides on use. The browser cookie MUST slide with it, or an active user is signed out after Lifetime.
+func TestForwardAuthExtendsTheSessionCookie(t *testing.T) {
+	stored := &memRepo{}
+	user := users.User{ID: users.NewID(), Login: mustLogin(t, "ada"), CreatedAt: time.Now().UTC()}
+	stored.put(user)
+	grants := access.NewService(accesstest.NewRepository(), nil)
+	grantResource(t, grants, createResource(t, grants, "app", "app.example.test", "/"), access.UserSubject(user.ID))
+	rows := newMemSessions()
+	browser := sessions.NewService(rows)
+	id, _, err := browser.Start(t.Context(), user.ID, loginflow.Factors(loginflow.FactorPassword))
+	require.NoError(t, err)
+	for hash, session := range rows.rows {
+		session.ExpiresAt = time.Now().Add(sessions.Lifetime - 2*sessions.ExtendEvery)
+		rows.rows[hash] = session
+	}
+	router := forwardRouter(t, stored, browser, newMemGroups(), mustDomain(t, ".example.test"), mustPublicURL(t, "https://id.example.test"), WithURLGrants(grants))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/check", nil)
+	req.AddCookie(&http.Cookie{Name: sessions.CookieName, Value: id.CookieValue()})
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "app.example.test")
+	req.Header.Set("X-Forwarded-Uri", "/dash")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	cookie := mustParseSetCookie(t, rec)
+	assert.Equal(t, sessions.CookieName, cookie.Name)
+	assert.Equal(t, id.CookieValue(), cookie.Value)
+	assert.Equal(t, int(sessions.Lifetime.Seconds()), cookie.MaxAge)
+	assert.Equal(t, "example.test", cookie.Domain)
+
+	again := httptest.NewRecorder()
+	router.ServeHTTP(again, req)
+	require.Equal(t, http.StatusOK, again.Code)
+	assert.Empty(t, again.Header().Get("Set-Cookie"), "a session that did not move needs no cookie")
 }

@@ -11,6 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deferConstraints = `-- name: DeferConstraints :exec
+SET CONSTRAINTS ALL DEFERRED
+`
+
+// resources_url_unique is the one deferrable constraint.
+func (q *Queries) DeferConstraints(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deferConstraints)
+	return err
+}
+
 const deleteAccessGrant = `-- name: DeleteAccessGrant :execrows
 DELETE FROM access_grants
 WHERE id = $1
@@ -37,8 +47,63 @@ func (q *Queries) DeleteResource(ctx context.Context, name string) (int64, error
 	return result.RowsAffected(), nil
 }
 
+const deleteStaleManagedGrants = `-- name: DeleteStaleManagedGrants :execrows
+DELETE FROM access_grants
+WHERE managed
+    AND (resource_name, group_name) NOT IN (
+        SELECT unnest($1::text[]), unnest($2::text[])
+    )
+`
+
+type DeleteStaleManagedGrantsParams struct {
+	KeepResources []string
+	KeepGroups    []string
+}
+
+func (q *Queries) DeleteStaleManagedGrants(ctx context.Context, arg DeleteStaleManagedGrantsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteStaleManagedGrants, arg.KeepResources, arg.KeepGroups)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteStaleManagedResources = `-- name: DeleteStaleManagedResources :execrows
+DELETE FROM resources
+WHERE managed AND NOT (name = ANY($1::text[]))
+`
+
+func (q *Queries) DeleteStaleManagedResources(ctx context.Context, keep []string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteStaleManagedResources, keep)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getAccessGrant = `-- name: GetAccessGrant :one
+SELECT id, resource_name, user_id, group_name, expires_at, created_at, managed
+FROM access_grants
+WHERE id = $1
+`
+
+func (q *Queries) GetAccessGrant(ctx context.Context, id pgtype.UUID) (AccessGrant, error) {
+	row := q.db.QueryRow(ctx, getAccessGrant, id)
+	var i AccessGrant
+	err := row.Scan(
+		&i.ID,
+		&i.ResourceName,
+		&i.UserID,
+		&i.GroupName,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.Managed,
+	)
+	return i, err
+}
+
 const getResource = `-- name: GetResource :one
-SELECT name, host, path_prefix
+SELECT name, host, path_prefix, managed
 FROM resources
 WHERE name = $1
 `
@@ -46,7 +111,12 @@ WHERE name = $1
 func (q *Queries) GetResource(ctx context.Context, name string) (Resource, error) {
 	row := q.db.QueryRow(ctx, getResource, name)
 	var i Resource
-	err := row.Scan(&i.Name, &i.Host, &i.PathPrefix)
+	err := row.Scan(
+		&i.Name,
+		&i.Host,
+		&i.PathPrefix,
+		&i.Managed,
+	)
 	return i, err
 }
 
@@ -108,6 +178,7 @@ SELECT
     access_grants.group_name,
     access_grants.expires_at,
     access_grants.created_at,
+    access_grants.managed,
     resources.host,
     resources.path_prefix,
     users.login AS user_login
@@ -132,6 +203,7 @@ type ListAccessGrantEntriesRow struct {
 	GroupName    pgtype.Text
 	ExpiresAt    pgtype.Timestamptz
 	CreatedAt    pgtype.Timestamptz
+	Managed      bool
 	Host         string
 	PathPrefix   string
 	UserLogin    pgtype.Text
@@ -153,6 +225,7 @@ func (q *Queries) ListAccessGrantEntries(ctx context.Context, arg ListAccessGran
 			&i.GroupName,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.Managed,
 			&i.Host,
 			&i.PathPrefix,
 			&i.UserLogin,
@@ -168,7 +241,7 @@ func (q *Queries) ListAccessGrantEntries(ctx context.Context, arg ListAccessGran
 }
 
 const listAccessGrants = `-- name: ListAccessGrants :many
-SELECT id, resource_name, user_id, group_name, expires_at, created_at
+SELECT id, resource_name, user_id, group_name, expires_at, created_at, managed
 FROM access_grants
 WHERE resource_name = $1
 ORDER BY created_at, id
@@ -190,6 +263,7 @@ func (q *Queries) ListAccessGrants(ctx context.Context, resourceName string) ([]
 			&i.GroupName,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.Managed,
 		); err != nil {
 			return nil, err
 		}
@@ -202,7 +276,7 @@ func (q *Queries) ListAccessGrants(ctx context.Context, resourceName string) ([]
 }
 
 const listAllResources = `-- name: ListAllResources :many
-SELECT name, host, path_prefix
+SELECT name, host, path_prefix, managed
 FROM resources
 ORDER BY name
 `
@@ -216,7 +290,12 @@ func (q *Queries) ListAllResources(ctx context.Context) ([]Resource, error) {
 	var items []Resource
 	for rows.Next() {
 		var i Resource
-		if err := rows.Scan(&i.Name, &i.Host, &i.PathPrefix); err != nil {
+		if err := rows.Scan(
+			&i.Name,
+			&i.Host,
+			&i.PathPrefix,
+			&i.Managed,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -228,7 +307,7 @@ func (q *Queries) ListAllResources(ctx context.Context) ([]Resource, error) {
 }
 
 const listResourcesByHost = `-- name: ListResourcesByHost :many
-SELECT name, host, path_prefix
+SELECT name, host, path_prefix, managed
 FROM resources
 WHERE host = $1
 ORDER BY name
@@ -243,7 +322,12 @@ func (q *Queries) ListResourcesByHost(ctx context.Context, host string) ([]Resou
 	var items []Resource
 	for rows.Next() {
 		var i Resource
-		if err := rows.Scan(&i.Name, &i.Host, &i.PathPrefix); err != nil {
+		if err := rows.Scan(
+			&i.Name,
+			&i.Host,
+			&i.PathPrefix,
+			&i.Managed,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -252,4 +336,66 @@ func (q *Queries) ListResourcesByHost(ctx context.Context, host string) ([]Resou
 		return nil, err
 	}
 	return items, nil
+}
+
+const unmanagedResourceHasURL = `-- name: UnmanagedResourceHasURL :one
+SELECT EXISTS (
+    SELECT 1 FROM resources
+    WHERE host = $1 AND path_prefix = $2 AND name <> $3 AND NOT managed
+) AS taken
+`
+
+type UnmanagedResourceHasURLParams struct {
+	Host       string
+	PathPrefix string
+	Name       string
+}
+
+func (q *Queries) UnmanagedResourceHasURL(ctx context.Context, arg UnmanagedResourceHasURLParams) (bool, error) {
+	row := q.db.QueryRow(ctx, unmanagedResourceHasURL, arg.Host, arg.PathPrefix, arg.Name)
+	var taken bool
+	err := row.Scan(&taken)
+	return taken, err
+}
+
+const upsertManagedGroupGrant = `-- name: UpsertManagedGroupGrant :exec
+INSERT INTO access_grants (id, resource_name, group_name, created_at, managed)
+VALUES ($1, $2, $3, $4, true)
+ON CONFLICT (resource_name, group_name) WHERE group_name IS NOT NULL DO UPDATE
+SET managed = true, expires_at = NULL
+`
+
+type UpsertManagedGroupGrantParams struct {
+	ID           pgtype.UUID
+	ResourceName string
+	GroupName    pgtype.Text
+	CreatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertManagedGroupGrant(ctx context.Context, arg UpsertManagedGroupGrantParams) error {
+	_, err := q.db.Exec(ctx, upsertManagedGroupGrant,
+		arg.ID,
+		arg.ResourceName,
+		arg.GroupName,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const upsertManagedResource = `-- name: UpsertManagedResource :exec
+INSERT INTO resources (name, host, path_prefix, managed)
+VALUES ($1, $2, $3, true)
+ON CONFLICT (name) DO UPDATE
+SET host = excluded.host, path_prefix = excluded.path_prefix, managed = true
+`
+
+type UpsertManagedResourceParams struct {
+	Name       string
+	Host       string
+	PathPrefix string
+}
+
+func (q *Queries) UpsertManagedResource(ctx context.Context, arg UpsertManagedResourceParams) error {
+	_, err := q.db.Exec(ctx, upsertManagedResource, arg.Name, arg.Host, arg.PathPrefix)
+	return err
 }

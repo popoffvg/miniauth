@@ -1,14 +1,16 @@
 package postgres_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/popoffvg/sfsm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
@@ -24,16 +26,17 @@ func TestInviteAcceptance(t *testing.T) {
 
 	accounts := users.NewService(postgres.NewUserRepository(pool))
 	createAccount(t, accounts, "taken")
-	grantRepo, err := postgres.NewAccessRepository(pool)
+	groupRepo, err := postgres.NewGroupRepository(pool)
 	require.NoError(t, err)
-	grants := access.NewService(grantRepo, accounts)
-	app := accessResource(t, "app", "app.example.test", "/")
-	_, err = grants.CreateResource(ctx, app.Name, app.URL)
+	groupAdmin, err := postgres.NewGroupAdminRepository(pool)
 	require.NoError(t, err)
+	ops, err := groups.ParseName("ops")
+	require.NoError(t, err)
+	require.NoError(t, groupAdmin.CreateGroup(ctx, ops, time.Now()))
 	repo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
 	now := time.Now()
-	service, err := invites.NewService(repo, func() time.Time { return now })
+	service, err := invites.NewService(repo, func() time.Time { return now }, nil)
 	require.NoError(t, err)
 	password, err := users.NewPassword("invite-password-1")
 	require.NoError(t, err)
@@ -43,13 +46,21 @@ func TestInviteAcceptance(t *testing.T) {
 		return parsed
 	}
 
-	t.Run("an unknown resource is refused", func(t *testing.T) {
-		_, _, err := service.Create(ctx, accessResource(t, "missing", "x.example.test", "/").Name)
-		require.ErrorIs(t, err, access.ErrResourceNotFound)
+	t.Run("an unknown group is refused", func(t *testing.T) {
+		missing, err := groups.ParseName("missing")
+		require.NoError(t, err)
+		_, _, err = service.Create(ctx, missing)
+		require.ErrorIs(t, err, groups.ErrGroupNotFound)
+	})
+
+	t.Run("a zero group invites to users", func(t *testing.T) {
+		_, invite, err := service.Create(ctx, groups.Name{})
+		require.NoError(t, err)
+		assert.Equal(t, groups.Users(), invite.Group)
 	})
 
 	t.Run("a taken login keeps the invite unused", func(t *testing.T) {
-		token, _, err := service.Create(ctx, app.Name)
+		token, _, err := service.Create(ctx, ops)
 		require.NoError(t, err)
 		_, err = service.Accept(ctx, token, login("taken"), password)
 		require.ErrorIs(t, err, users.ErrLoginTaken)
@@ -61,7 +72,7 @@ func TestInviteAcceptance(t *testing.T) {
 	})
 
 	t.Run("two parallel acceptances create one account", func(t *testing.T) {
-		token, _, err := service.Create(ctx, app.Name)
+		token, _, err := service.Create(ctx, ops)
 		require.NoError(t, err)
 		logins := []users.Login{login("first"), login("second")}
 		errs := make([]error, len(logins))
@@ -85,12 +96,10 @@ func TestInviteAcceptance(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, stored.UsedAt.IsZero())
 		require.NotZero(t, stored.UserID)
-		entries, err := grants.ListGrants(ctx, access.GrantFilter{Resource: app.Name})
+		user := stored.UserID
+		names, err := groupRepo.List(ctx, user)
 		require.NoError(t, err)
-		require.Len(t, entries, 1)
-		user, ok := entries[0].Grant.Subject.User()
-		require.True(t, ok)
-		assert.Equal(t, stored.UserID, user)
+		assert.Equal(t, []groups.Name{ops, groups.Users()}, names, "the account joins the group of the invite and users")
 		var created []users.ID
 		for _, name := range logins {
 			account, err := accounts.FindByLogin(ctx, name)
@@ -104,9 +113,9 @@ func TestInviteAcceptance(t *testing.T) {
 	})
 
 	t.Run("an expired invite is refused", func(t *testing.T) {
-		token, invite, err := service.Create(ctx, app.Name)
+		token, invite, err := service.Create(ctx, ops)
 		require.NoError(t, err)
-		later, err := invites.NewService(repo, func() time.Time { return invite.ExpiresAt })
+		later, err := invites.NewService(repo, func() time.Time { return invite.ExpiresAt }, nil)
 		require.NoError(t, err)
 		_, err = later.Open(ctx, token)
 		require.ErrorIs(t, err, invites.ErrInviteGone)
@@ -115,4 +124,84 @@ func TestInviteAcceptance(t *testing.T) {
 		_, err = accounts.FindByLogin(ctx, login("late"))
 		require.ErrorIs(t, err, users.ErrNotFound)
 	})
+}
+
+// raceInviteStore makes the first two invite reads wait for each other, so both acceptances read an open invite.
+type raceInviteStore struct {
+	*postgres.InviteRepository
+	reads *sync.WaitGroup
+}
+
+func (s raceInviteStore) InTransaction(ctx context.Context, fn func(invites.Transaction) error) error {
+	return s.InviteRepository.InTransaction(ctx, func(tx invites.Transaction) error {
+		return fn(raceInviteTransaction{Transaction: tx, reads: s.reads})
+	})
+}
+
+type raceInviteTransaction struct {
+	invites.Transaction
+	reads *sync.WaitGroup
+}
+
+func (t raceInviteTransaction) Find(ctx context.Context, hash invites.TokenHash) (invites.Invite, error) {
+	invite, err := t.Transaction.Find(ctx, hash)
+	t.reads.Done()
+	t.reads.Wait()
+	return invite, err
+}
+
+func TestInviteAcceptanceRaceOneWins(t *testing.T) {
+	ctx := t.Context()
+	pool := migratedPool(t)
+	repo, err := postgres.NewInviteRepository(pool)
+	require.NoError(t, err)
+	reads := &sync.WaitGroup{}
+	reads.Add(2)
+	service, err := invites.NewService(raceInviteStore{InviteRepository: repo, reads: reads}, nil, nil)
+	require.NoError(t, err)
+	token, _, err := service.Create(ctx, groups.Name{})
+	require.NoError(t, err)
+	password, err := users.NewPassword("invite-password-1")
+	require.NoError(t, err)
+
+	results := make(chan error, 2)
+	for _, raw := range []string{"first", "second"} {
+		name, err := users.ParseLogin(raw)
+		require.NoError(t, err)
+		go func() {
+			_, err := service.Accept(ctx, token, name, password)
+			results <- err
+		}()
+	}
+	errs := []error{<-results, <-results}
+	won := 0
+	for _, err := range errs {
+		if err == nil {
+			won++
+			continue
+		}
+		require.ErrorIs(t, err, sfsm.ErrStaleState)
+		require.ErrorIs(t, err, invites.ErrInviteGone)
+	}
+	assert.Equal(t, 1, won, "exactly one acceptance MUST win: %v", errs)
+}
+
+// An acceptance that read its clock before the invite expired MUST still fail once the database time is past the expiry.
+func TestInviteClaimChecksTheExpiryWithTheDatabaseTime(t *testing.T) {
+	ctx := t.Context()
+	pool := migratedPool(t)
+	repo, err := postgres.NewInviteRepository(pool)
+	require.NoError(t, err)
+	late := time.Now().Add(-invites.Lifetime - time.Minute)
+	service, err := invites.NewService(repo, func() time.Time { return late }, nil)
+	require.NoError(t, err)
+	token, _, err := service.Create(ctx, groups.Name{})
+	require.NoError(t, err)
+	password, err := users.NewPassword("invite-password-1")
+	require.NoError(t, err)
+	login, err := users.ParseLogin("bea")
+	require.NoError(t, err)
+
+	_, err = service.Accept(ctx, token, login, password)
+	require.ErrorIs(t, err, invites.ErrInviteGone)
 }

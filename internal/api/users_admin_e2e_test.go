@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groupadmin"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
@@ -60,7 +61,12 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 	}
 	groupRepo, err := postgres.NewGroupRepository(pool)
 	require.NoError(t, err)
-	require.NoError(t, groupRepo.Add(t.Context(), admin.id, groups.Admin()))
+	require.NoError(t, groupRepo.Add(t.Context(), admin.id, groups.Admins()))
+	groupStore, err := postgres.NewGroupAdminRepository(pool)
+	require.NoError(t, err)
+	editors, err := groups.ParseName("editors")
+	require.NoError(t, err)
+	require.NoError(t, groupStore.CreateGroup(t.Context(), editors, time.Now()))
 	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
@@ -68,7 +74,7 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 	grants := access.NewService(accessRepo, accounts)
 	inviteRepo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
-	inviteService, err := invites.NewService(inviteRepo, nil)
+	inviteService, err := invites.NewService(inviteRepo, nil, nil)
 	require.NoError(t, err)
 	adminRepo, err := postgres.NewUserAdminRepository(pool)
 	require.NoError(t, err)
@@ -90,7 +96,8 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 		WithURLGrants(grants),
 		WithAccessAdmin(grants),
 		WithInvites(inviteService),
-		WithUserAdmin(useradmin.NewService(adminRepo, accounts)),
+		WithUserAdmin(useradmin.NewService(adminRepo, accounts, nil)),
+		WithGroupAdmin(mustGroupAdmin(t, groupStore, grants)),
 	)
 	require.NoError(t, err)
 	server.Config.Handler = router
@@ -139,8 +146,8 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(resp.body), &body))
 		require.Len(t, body.Users, 3)
 		assert.Equal(t, "ada", body.Users[0].Login)
-		assert.Equal(t, []string{"admin"}, body.Users[0].Groups)
-		assert.Equal(t, []string{}, body.Users[2].Groups)
+		assert.Equal(t, []string{"admins", "users"}, body.Users[0].Groups)
+		assert.Equal(t, []string{"users"}, body.Users[2].Groups)
 		assert.Equal(t, 1, body.Users[1].Devices)
 		assert.False(t, body.Users[1].Disabled)
 	})
@@ -151,10 +158,11 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 		}
 		names, listErr := groupRepo.List(t.Context(), bob.id)
 		require.NoError(t, listErr)
-		assert.Len(t, names, 1)
+		assert.Equal(t, []groups.Name{editors, groups.Users()}, names)
 		assert.Equal(t, http.StatusNoContent, adminCall(t, client, http.MethodDelete, base+"/api/v1/groups/editors/members/bob", usersAdminToken).status)
 		assert.Equal(t, http.StatusNotFound, adminCall(t, client, http.MethodDelete, base+"/api/v1/groups/editors/members/bob", usersAdminToken).status)
 		assert.Equal(t, http.StatusNotFound, adminCall(t, client, http.MethodPut, base+"/api/v1/groups/editors/members/nobody", usersAdminToken).status)
+		assert.Equal(t, http.StatusNotFound, adminCall(t, client, http.MethodPut, base+"/api/v1/groups/ghosts/members/bob", usersAdminToken).status)
 		assert.Equal(t, http.StatusBadRequest, adminCall(t, client, http.MethodPut, base+"/api/v1/groups/-bad-/members/bob", usersAdminToken).status)
 		assert.Equal(t, http.StatusNotFound, adminCall(t, client, http.MethodPost, base+"/api/v1/users/nobody/enable", usersAdminToken).status)
 	})
@@ -168,17 +176,17 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 		bobBrowser = signIn(t, bob, base+"/")
 	})
 
-	t.Run("a user outside the admin group gets 403 on the page and on each POST", func(t *testing.T) {
+	t.Run("a user outside the admins group gets 403 on the page and on each POST", func(t *testing.T) {
 		page := get(t, bobBrowser, base+usersPagePath)
 		assert.Equal(t, http.StatusForbidden, page.status)
 		assert.Contains(t, page.body, string(msgUsersAdminOnly))
-		for _, path := range []string{"/carol/disable", "/carol/enable", "/carol/groups", "/ada/groups/admin/remove", "/invites"} {
-			resp := postForm(t, bobBrowser, base+usersPagePath+path, base, url.Values{"group": {"admin"}, "resource": {"app"}})
+		for _, path := range []string{"/carol/disable", "/carol/enable", "/carol/groups", "/ada/groups/admins/remove", "/invites"} {
+			resp := postForm(t, bobBrowser, base+usersPagePath+path, base, url.Values{"group": {"admins"}})
 			assert.Equal(t, http.StatusForbidden, resp.status, path)
 		}
 		names, listErr := groupRepo.List(t.Context(), carol.id)
 		require.NoError(t, listErr)
-		assert.Empty(t, names)
+		assert.Equal(t, []groups.Name{groups.Users()}, names)
 	})
 
 	t.Run("the admin page lists the users", func(t *testing.T) {
@@ -188,7 +196,7 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 			assert.Contains(t, page.body, `action="/users/`+a.login+`/groups"`)
 		}
 		assert.NotContains(t, page.body, `action="/users/ada/disable"`, "the page offers no self disable")
-		assert.NotContains(t, page.body, `action="/users/ada/groups/admin/remove"`, "the page offers no self admin removal")
+		assert.NotContains(t, page.body, `action="/users/ada/groups/admins/remove"`, "the page offers no self admin removal")
 		filtered := get(t, adminBrowser, base+usersPagePath+"?q=car")
 		assert.Contains(t, filtered.body, `action="/users/carol/groups"`)
 		assert.NotContains(t, filtered.body, `action="/users/bob/groups"`)
@@ -229,30 +237,30 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 		assert.Equal(t, base+withDone(usersPagePath, doneUserEnabled), enabled.header.Get("Location"))
 	})
 
-	t.Run("the admin cannot disable itself or leave the admin group", func(t *testing.T) {
+	t.Run("the admin cannot disable itself or leave the admins group", func(t *testing.T) {
 		self := postForm(t, adminBrowser, base+usersPagePath+"/ada/disable", base, url.Values{})
 		assert.Equal(t, http.StatusConflict, self.status)
 		assert.Contains(t, self.body, "You cannot disable your own account.")
-		leave := postForm(t, adminBrowser, base+usersPagePath+"/ada/groups/admin/remove", base, url.Values{})
+		leave := postForm(t, adminBrowser, base+usersPagePath+"/ada/groups/admins/remove", base, url.Values{})
 		assert.Equal(t, http.StatusConflict, leave.status)
-		assert.Contains(t, leave.body, "You cannot remove yourself from the admin group.")
+		assert.Contains(t, leave.body, "You cannot remove yourself from the admins group.")
 		names, listErr := groupRepo.List(t.Context(), admin.id)
 		require.NoError(t, listErr)
-		assert.Equal(t, []groups.Name{groups.Admin()}, names)
+		assert.Equal(t, []groups.Name{groups.Admins(), groups.Users()}, names)
 	})
 
 	t.Run("the admin adds carol to admin and carol opens the access page", func(t *testing.T) {
 		carolBrowser := signIn(t, carol, base+"/")
 		assert.Equal(t, http.StatusForbidden, get(t, carolBrowser, base+accessPagePath).status)
-		resp := postForm(t, adminBrowser, base+usersPagePath+"/carol/groups", base, url.Values{"group": {"Admin"}})
+		resp := postForm(t, adminBrowser, base+usersPagePath+"/carol/groups", base, url.Values{"group": {"Admins"}})
 		require.Equal(t, http.StatusSeeOther, resp.status, resp.body)
 		assert.Equal(t, base+withDone(usersPagePath, doneMemberAdded), resp.header.Get("Location"))
 		assert.Equal(t, http.StatusOK, get(t, carolBrowser, base+accessPagePath).status)
 
-		removed := postForm(t, adminBrowser, base+usersPagePath+"/carol/groups/admin/remove", base, url.Values{})
+		removed := postForm(t, adminBrowser, base+usersPagePath+"/carol/groups/admins/remove", base, url.Values{})
 		require.Equal(t, http.StatusSeeOther, removed.status, removed.body)
 		assert.Equal(t, http.StatusForbidden, get(t, carolBrowser, base+accessPagePath).status)
-		again := postForm(t, adminBrowser, base+usersPagePath+"/carol/groups/admin/remove", base, url.Values{})
+		again := postForm(t, adminBrowser, base+usersPagePath+"/carol/groups/admins/remove", base, url.Values{})
 		assert.Equal(t, http.StatusNotFound, again.status)
 		assert.Contains(t, again.body, "The user is not in the group.")
 		bad := postForm(t, adminBrowser, base+usersPagePath+"/carol/groups", base, url.Values{"group": {"-bad-"}})
@@ -260,7 +268,7 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 	})
 
 	t.Run("the admin makes an invite link that the page shows once", func(t *testing.T) {
-		resp := postForm(t, adminBrowser, base+usersPagePath+"/invites", base, url.Values{"resource": {"app"}})
+		resp := postForm(t, adminBrowser, base+usersPagePath+"/invites", base, url.Values{"group": {"editors"}})
 		require.Equal(t, http.StatusOK, resp.status, resp.body)
 		assert.Equal(t, "no-store", resp.header.Get("Cache-Control"))
 		_, rest, found := strings.Cut(resp.body, `id="invite-link">`)
@@ -270,8 +278,46 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 		assert.NotContains(t, get(t, adminBrowser, base+usersPagePath).body, link)
 		assert.Equal(t, http.StatusOK, get(t, newBrowser(t, server), link).status)
 
-		unknown := postForm(t, adminBrowser, base+usersPagePath+"/invites", base, url.Values{"resource": {"nothing"}})
+		unknown := postForm(t, adminBrowser, base+usersPagePath+"/invites", base, url.Values{"group": {"nothing"}})
 		assert.Equal(t, http.StatusBadRequest, unknown.status)
-		assert.Contains(t, unknown.body, string(msgInviteResource))
+		assert.Contains(t, unknown.body, string(msgInviteGroup))
 	})
+
+	t.Run("the page offers every group without the groups service", func(t *testing.T) {
+		bare := httptest.NewUnstartedServer(nil)
+		bareBase := "https://" + bare.Listener.Addr().String()
+		bareRouter, err := NewRouter(
+			accounts,
+			sessions.NewServiceWithClock(postgres.NewSessionRepository(pool), clock.Now),
+			groupRepo,
+			sessions.Domain{},
+			mustPublicURL(t, bareBase),
+			hashToken(t, usersAdminToken),
+			&readyState{ok: true},
+			slog.New(slog.DiscardHandler),
+			WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
+			WithUserAdmin(useradmin.NewService(adminRepo, accounts, nil)),
+		)
+		require.NoError(t, err)
+		bare.Config.Handler = bareRouter
+		bare.StartTLS()
+		t.Cleanup(bare.Close)
+		page := get(t, adminBrowser, bareBase+usersPagePath)
+		require.Equal(t, http.StatusOK, page.status, page.body)
+		assert.Contains(t, page.body, `value="editors"`)
+	})
+}
+
+func mustGroupAdmin(t *testing.T, store groupadmin.Store, grants *access.Service) *groupadmin.Service {
+	t.Helper()
+	admin, err := groupadmin.NewService(store, grants)
+	require.NoError(t, err)
+	return admin
+}
+
+func mustGroupName(t *testing.T, raw string) groups.Name {
+	t.Helper()
+	name, err := groups.ParseName(raw)
+	require.NoError(t, err)
+	return name
 }

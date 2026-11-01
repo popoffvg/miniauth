@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/sfsm"
+
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // invitePathPrefix starts each invite link. The rest of the path is the invite token, a secret.
@@ -29,7 +32,7 @@ func WithInvites(invitations *invites.Service) RouterOption {
 }
 
 type createInviteRequest struct {
-	Resource access.ResourceName `json:"resource" required:"true"`
+	Group groups.Name `json:"group,omitzero" doc:"The group of the new account. Absent: users. The account also joins users."`
 }
 
 // inviteLink is the one-time link of an invite. It holds the token.
@@ -37,9 +40,9 @@ type inviteLink string
 
 // inviteBody is the 201 body. The link is shown once: only the token hash is stored.
 type inviteBody struct {
-	Link      inviteLink          `json:"link" format:"uri" doc:"The public URL, /invite/, and the token. Shown once."`
-	Resource  access.ResourceName `json:"resource"`
-	ExpiresAt time.Time           `json:"expires_at"`
+	Link      inviteLink  `json:"link" format:"uri" doc:"The public URL, /invite/, and the token. Shown once."`
+	Group     groups.Name `json:"group"`
+	ExpiresAt time.Time   `json:"expires_at"`
 }
 
 // inviteFormRequest documents the form of POST /invite/accept.
@@ -54,12 +57,13 @@ type invitePath struct {
 }
 
 const (
-	msgInviteGone         pageMessage = "This invite link does not work. It was used, it expired, or it is wrong."
-	msgInviteLogin        pageMessage = "The login or the password does not match the rules."
-	msgInviteLoginUsed    pageMessage = "This login is taken. Choose another login."
-	msgInviteFailed       pageMessage = "The account was not created. Try again."
-	msgInviteOff          pageMessage = "Invites are not available."
-	msgInviteSignInFailed pageMessage = "Your account was created, but the sign-in failed. Sign in with your new login and password."
+	msgInviteGone         views.Message = "This invite link does not work. It was used, it expired, or it is wrong."
+	msgInviteRace         views.Message = "Another request used this invite link at the same moment."
+	msgInviteLogin        views.Message = "The login or the password does not match the rules."
+	msgInviteLoginUsed    views.Message = "This login is taken. Choose another login."
+	msgInviteFailed       views.Message = "The account was not created. Try again."
+	msgInviteOff          views.Message = "Invites are not available."
+	msgInviteSignInFailed views.Message = "Your account was created, but the sign-in failed. Sign in with your new login and password."
 )
 
 func (s *service) createInvite(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +81,11 @@ func (s *service) createInvite(w http.ResponseWriter, r *http.Request) {
 		writeAccessError(w, r, err)
 		return
 	}
-	invite, err := s.makeInvite(r.Context(), body.Resource)
+	invite, err := s.makeInvite(r.Context(), body.Group)
+	if errors.Is(err, groups.ErrGroupNotFound) {
+		writeProblem(w, http.StatusNotFound, "The group is not found.")
+		return
+	}
 	if err != nil {
 		writeAccessError(w, r, err)
 		return
@@ -97,10 +105,10 @@ func (s *service) invitePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	renderPage(w, r, http.StatusOK, pageInvite, pageView{Invite: token})
+	renderPage(w, r, http.StatusOK, views.PageInvite, views.Page{Invite: token})
 }
 
-// acceptInvite creates the account, grants the resource, starts a session, and opens the resource.
+// acceptInvite creates the account in the group of the invite, starts a session, and opens the overview.
 func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	setInviteHeaders(w)
 	if !s.sameOrigin(r) {
@@ -123,16 +131,19 @@ func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
 	password, passwordErr := users.NewPassword(r.PostForm.Get("password"))
 	if loginErr != nil || passwordErr != nil {
-		renderPage(w, r, http.StatusBadRequest, pageInvite, pageView{Invite: token, Message: msgInviteLogin})
+		renderPage(w, r, http.StatusBadRequest, views.PageInvite, views.Page{Invite: token, Message: msgInviteLogin})
 		return
 	}
 	accepted, err := s.invites.Accept(r.Context(), token, login, password)
 	switch {
+	case errors.Is(err, sfsm.ErrStaleState):
+		renderDenied(w, r, http.StatusGone, msgInviteRace)
+		return
 	case errors.Is(err, invites.ErrInviteGone):
 		renderDenied(w, r, http.StatusGone, msgInviteGone)
 		return
 	case errors.Is(err, users.ErrLoginTaken):
-		renderPage(w, r, http.StatusConflict, pageInvite, pageView{Invite: token, Message: msgInviteLoginUsed})
+		renderPage(w, r, http.StatusConflict, views.PageInvite, views.Page{Invite: token, Message: msgInviteLoginUsed})
 		return
 	case err != nil:
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: accept invite", "err", err)
@@ -144,8 +155,7 @@ func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusInternalServerError, msgInviteSignInFailed)
 		return
 	}
-	resource := accepted.Resource.URL
-	http.Redirect(w, r, "https://"+resource.Host.String()+resource.Prefix.String(), http.StatusSeeOther)
+	http.Redirect(w, r, s.publicURL.Origin()+"/", http.StatusSeeOther)
 }
 
 // openInvite renders the gone page and returns false unless raw is the token of an open invite.
@@ -173,14 +183,14 @@ func setInviteHeaders(w http.ResponseWriter) {
 }
 
 // makeInvite stores an invite and returns its link. The link holds the token, so the caller shows it once.
-func (s *service) makeInvite(ctx context.Context, resource access.ResourceName) (inviteBody, error) {
-	token, invite, err := s.invites.Create(ctx, resource)
+func (s *service) makeInvite(ctx context.Context, group groups.Name) (inviteBody, error) {
+	token, invite, err := s.invites.Create(ctx, group)
 	if err != nil {
 		return inviteBody{}, err
 	}
 	return inviteBody{
 		Link:      inviteLink(s.publicURL.Origin() + invitePathPrefix + token.Reveal()),
-		Resource:  invite.Resource,
+		Group:     invite.Group,
 		ExpiresAt: invite.ExpiresAt,
 	}, nil
 }

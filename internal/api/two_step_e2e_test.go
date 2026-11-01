@@ -62,7 +62,7 @@ func TestTwoStepLoginEndToEnd(t *testing.T) {
 	clock := &testClock{now: time.Now().Add(-time.Hour)}
 	attempts := postgres.NewAttemptRepository(pool)
 	totpRepo := postgres.NewTOTPRepository(pool)
-	totpService, err := totp.NewServiceWithClock(totpRepo, attempts, randomTOTPKey(t), clock.Now)
+	totpService, err := totp.NewServiceWithClock(totpRepo, attempts, randomTOTPKey(t), clock.Now, nil)
 	require.NoError(t, err)
 	passwords, err := password.NewService(accountRepo, attempts, password.WithSecondFactors(totpService))
 	require.NoError(t, err)

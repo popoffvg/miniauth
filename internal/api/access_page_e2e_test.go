@@ -50,7 +50,10 @@ func TestAccessPageEndToEnd(t *testing.T) {
 	}
 	groupRepo, err := postgres.NewGroupRepository(pool)
 	require.NoError(t, err)
-	require.NoError(t, groupRepo.Add(ctx, admin.id, groups.Admin()))
+	require.NoError(t, groupRepo.Add(ctx, admin.id, groups.Admins()))
+	groupStore, err := postgres.NewGroupAdminRepository(pool)
+	require.NoError(t, err)
+	require.NoError(t, groupStore.CreateGroup(ctx, mustGroupName(t, "editors"), time.Now()))
 	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
@@ -103,7 +106,7 @@ func TestAccessPageEndToEnd(t *testing.T) {
 		assert.Contains(t, page.body, "No resources.")
 	})
 
-	t.Run("a user outside the admin group gets 403 on the page and on each POST", func(t *testing.T) {
+	t.Run("a user outside the admins group gets 403 on the page and on each POST", func(t *testing.T) {
 		openLogin(t, memberBrowser, base, base+accessPagePath)
 		login := submitLogin(t, memberBrowser, base, base, member.login, member.password)
 		require.Equal(t, http.StatusSeeOther, login.status)

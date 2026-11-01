@@ -3,7 +3,7 @@ package invites
 import (
 	"time"
 
-	"github.com/popoffvg/miniauth/internal/access"
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -14,7 +14,7 @@ const Lifetime = 7 * 24 * time.Hour
 // UserID is the account the acceptance created. It is zero until then.
 type Invite struct {
 	Hash      TokenHash
-	Resource  access.ResourceName
+	Group     groups.Name
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	UsedAt    time.Time
@@ -26,8 +26,16 @@ func (i Invite) OpenAt(now time.Time) bool {
 	return i.UsedAt.IsZero() && i.ExpiresAt.After(now)
 }
 
+// State is the stored stage. An unused invite is open even after its expiry: the service sends EventExpire.
+func (i Invite) State() InviteState {
+	if i.UsedAt.IsZero() {
+		return StateOpen
+	}
+	return StateUsed
+}
+
 // Acceptance is the result of one accepted invite.
 type Acceptance struct {
-	User     users.User
-	Resource access.Resource
+	User  users.User
+	Group groups.Name
 }

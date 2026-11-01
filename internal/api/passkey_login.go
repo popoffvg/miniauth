@@ -1,7 +1,6 @@
 package api
 
 import (
-	_ "embed"
 	"errors"
 	"io"
 	"net/http"
@@ -10,11 +9,12 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/providers/passkey"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 const (
 	passkeyLoginPath  = "/login/passkey"
-	passkeyScriptPath = "/assets/passkey.js"
+	passkeyScriptPath = views.PasskeyScriptPath
 	// maxPasskeyBody is large enough for one WebAuthn credential JSON with a name.
 	maxPasskeyBody = 64 << 10
 )
@@ -23,9 +23,6 @@ const (
 	msgPasskeyUnavailable = "Passkeys are not available."
 	msgPasskeyRefused     = "The passkey was not accepted."
 )
-
-//go:embed assets/passkey.js
-var passkeyScript []byte
 
 // passkeyOptions documents the reply of an options route: the argument of navigator.credentials.get or create.
 type passkeyOptions struct {
@@ -46,14 +43,6 @@ type passkeyDone struct {
 }
 
 // servePasskeyScript serves the one script of the service.
-func servePasskeyScript(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(passkeyScript)
-}
-
 // passkeyLoginOptions stores a new challenge on the login flow in the flow cookie.
 func (s *service) passkeyLoginOptions(w http.ResponseWriter, r *http.Request) {
 	machine, ok := s.openPasskeyLogin(w, r)
@@ -92,7 +81,7 @@ func (s *service) passkeyLogin(w http.ResponseWriter, r *http.Request) {
 	case passkeyRefused(err):
 		writeProblem(w, http.StatusBadRequest, msgPasskeyRefused)
 		return
-	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
+	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition), errors.Is(err, loginflow.ErrFlowNotFound):
 		clearFlowCookie(w)
 		writeProblem(w, http.StatusBadRequest, string(msgFlowExpired))
 		return

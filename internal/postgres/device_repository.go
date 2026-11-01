@@ -16,6 +16,8 @@ import (
 
 // StartOnDevice upserts the device and replaces the session of (user, device) in one transaction.
 // The device cookie hash and the session hash are stored. The cookie values are not.
+// A user that is missing or disabled is sessions.ErrUnknownUser. The user row stays locked FOR SHARE
+// until commit, so a disable either waits and then deletes this session, or commits first and this fails.
 func (r *SessionRepository) StartOnDevice(ctx context.Context, session sessions.Session, hash sessions.Hash, visit devices.Visit) (devices.ID, error) {
 	if r.begin == nil {
 		return devices.ID{}, errors.New("postgres: session repository cannot begin a transaction")
@@ -24,7 +26,13 @@ func (r *SessionRepository) StartOnDevice(ctx context.Context, session sessions.
 	var deviceID pgtype.UUID
 	err := pgx.BeginFunc(ctx, r.begin, func(tx pgx.Tx) error {
 		q := r.q.WithTx(tx)
-		var err error
+		active, err := q.LockActiveUser(ctx, userID)
+		if err != nil {
+			return sessionError("lock user", err)
+		}
+		if active == 0 {
+			return sessions.ErrUnknownUser
+		}
 		deviceID, err = q.UpsertDevice(ctx, sqlcgen.UpsertDeviceParams{
 			ID:         pgUUIDBytes(visit.NewID.Bytes()),
 			UserID:     userID,

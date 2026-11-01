@@ -32,7 +32,8 @@ func TestSecondFactorPolicy(t *testing.T) {
 		{name: "google then telegram is one factor", flow: login, events: []Event{passed(FactorGoogle, ada, true), passed(FactorTelegram, ada, true)}, want: StateAwaitingSecond},
 		{name: "google then TOTP completes", flow: login, events: []Event{passed(FactorGoogle, ada, true), passed(FactorTOTP, ada, false)}, want: StateComplete},
 		{name: "telegram then a recovery code completes", flow: login, events: []Event{passed(FactorTelegram, ada, true), passed(FactorRecovery, ada, false)}, want: StateComplete},
-		{name: "TOTP then a recovery code without a first factor waits", flow: login, events: []Event{passed(FactorTOTP, ada, false), passed(FactorRecovery, ada, false)}, want: StateAwaiting},
+		{name: "TOTP without a first factor is refused", flow: login, events: []Event{passed(FactorTOTP, ada, false)}, want: StateAwaiting, wantErr: ErrNoTransition},
+		{name: "a recovery code without a first factor is refused", flow: login, events: []Event{passed(FactorRecovery, ada, false)}, want: StateAwaiting, wantErr: ErrNoTransition},
 		{name: "a passkey alone completes", flow: login, events: []Event{passed(FactorPasskey, ada, true)}, want: StateComplete},
 		{name: "a passkey after the password completes", flow: login, events: []Event{passed(FactorPassword, ada, true), passed(FactorPasskey, ada, true)}, want: StateComplete},
 		{name: "TOTP of another user is refused", flow: login, events: []Event{passed(FactorPassword, ada, true), passed(FactorTOTP, bea, false)}, want: StateAwaitingSecond, wantErr: ErrNoTransition},
@@ -48,7 +49,10 @@ func TestSecondFactorPolicy(t *testing.T) {
 		{name: "an unknown factor is refused", flow: login, events: []Event{passed(FactorTelegram<<1, ada, false)}, want: StateAwaiting, wantErr: ErrNoTransition},
 		{name: "a pending link then the password still needs TOTP", flow: login, events: []Event{unknown(FactorGoogle), passed(FactorPassword, ada, true)}, want: StateAwaitingSecond},
 		{name: "a pending link then the password and TOTP completes", flow: login, events: []Event{unknown(FactorTelegram), passed(FactorPassword, ada, true), passed(FactorTOTP, ada, false)}, want: StateComplete},
-		{name: "step-up google of its user completes", flow: stepUp, events: []Event{passed(FactorGoogle, ada, true)}, want: StateComplete},
+		{name: "step-up google of its user is refused", flow: stepUp, events: []Event{passed(FactorGoogle, ada, true)}, want: StateAwaiting, wantErr: ErrNoTransition},
+		{name: "step-up telegram of its user is refused", flow: stepUp, events: []Event{passed(FactorTelegram, ada, false)}, want: StateAwaiting, wantErr: ErrNoTransition},
+		{name: "step-up passkey of its user is refused", flow: stepUp, events: []Event{passed(FactorPasskey, ada, false)}, want: StateAwaiting, wantErr: ErrNoTransition},
+		{name: "step-up TOTP of its user is refused", flow: stepUp, events: []Event{passed(FactorTOTP, ada, false)}, want: StateAwaiting, wantErr: ErrNoTransition},
 		{name: "step-up telegram of another user is refused", flow: stepUp, events: []Event{passed(FactorTelegram, bea, false)}, want: StateAwaiting, wantErr: ErrNoTransition},
 		{name: "step-up google without a user is refused", flow: stepUp, events: []Event{passed(FactorGoogle, users.ID{}, false)}, want: StateAwaiting, wantErr: ErrNoTransition},
 	}
@@ -69,5 +73,18 @@ func TestSecondFactorPolicy(t *testing.T) {
 				t.Fatalf("state = %s, want %s", flow.State, tt.want)
 			}
 		})
+	}
+}
+
+func TestSecondFactorBeforeFirstDoesNotCount(t *testing.T) {
+	ada := users.NewID()
+	flow := LoginFlow{ReturnURL: "https://example.test/", State: StateAwaiting, Kind: KindLogin}
+	flow, _ = flow.Next(Event{Kind: EventStepPassed, Factor: FactorTOTP, UserID: ada})
+	got, err := flow.Next(Event{Kind: EventStepPassed, Factor: FactorPassword, UserID: ada, NeedsSecond: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateAwaitingSecond {
+		t.Fatalf("state = %s, want %s", got.State, StateAwaitingSecond)
 	}
 }

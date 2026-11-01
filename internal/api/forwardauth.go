@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/sessions"
@@ -38,7 +39,7 @@ func (s *service) forwardAuth(w http.ResponseWriter, r *http.Request) {
 		s.forwardAuthToken(w, r, need, bearer)
 		return
 	}
-	session, err := s.openBrowserSession(r)
+	session, err := s.openBrowserSession(w, r)
 	if errors.Is(err, sessions.ErrNotFound) {
 		s.unauthenticated(w, r)
 		return
@@ -224,11 +225,16 @@ func mediaQuality(params string) float64 {
 	return quality
 }
 
-func (s *service) openBrowserSession(r *http.Request) (sessions.Session, error) {
+// openBrowserSession opens the first valid session cookie of r.
+// When Open moves the expiry, the cookie is set again, so the browser keeps it as long as the database.
+func (s *service) openBrowserSession(w http.ResponseWriter, r *http.Request) (sessions.Session, error) {
 	var failure error
 	for _, id := range sessions.IDsFromRequest(r) {
-		session, _, err := s.browser.Open(r.Context(), id)
+		session, extended, err := s.browser.Open(r.Context(), id)
 		if err == nil {
+			if extended {
+				sessions.SetCookie(w, id, s.domain, time.Now())
+			}
 			return session, nil
 		}
 		if errors.Is(err, sessions.ErrNotFound) {
@@ -287,7 +293,7 @@ func forwardedURL(r *http.Request, domain sessions.Domain, publicURL PublicURL) 
 		return forwardedRequest{}, false
 	}
 	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if !forwardedHostAllowed(host, domain, publicURL) {
+	if !forwardedHostAllowed(proto, host, domain, publicURL) {
 		return forwardedRequest{}, false
 	}
 	uri := r.Header.Get("X-Forwarded-Uri")
@@ -297,7 +303,8 @@ func forwardedURL(r *http.Request, domain sessions.Domain, publicURL PublicURL) 
 	return forwardedRequest{proto: proto, host: host, uri: uri}, true
 }
 
-func forwardedHostAllowed(host string, domain sessions.Domain, publicURL PublicURL) bool {
+// forwardedHostAllowed compares a host with no cookie domain to the public host without the default port of each scheme.
+func forwardedHostAllowed(scheme, host string, domain sessions.Domain, publicURL PublicURL) bool {
 	if host == "" || strings.ContainsAny(host, "\r\n/\\@ ?#") {
 		return false
 	}
@@ -311,7 +318,18 @@ func forwardedHostAllowed(host string, domain sessions.Domain, publicURL PublicU
 		return name == parent || strings.HasSuffix(name, "."+parent)
 	}
 	allowed := publicURL.Host()
-	return allowed != "" && strings.EqualFold(host, allowed)
+	publicScheme, _, _ := strings.Cut(publicURL.Origin(), "://")
+	return allowed != "" && strings.EqualFold(withoutDefaultPort(scheme, host), withoutDefaultPort(publicScheme, allowed))
+}
+
+// defaultPorts is the port that a URL of each scheme has when it names none.
+var defaultPorts = map[string]string{"http": ":80", "https": ":443"}
+
+func withoutDefaultPort(scheme, host string) string {
+	if port, ok := defaultPorts[strings.ToLower(scheme)]; ok {
+		return strings.TrimSuffix(host, port)
+	}
+	return host
 }
 
 func forwardedHostname(hostport string) (string, bool) {
@@ -359,12 +377,12 @@ func validPort(port string) bool {
 	return err == nil && number >= 1 && number <= 65535
 }
 
+// safeForwardedURI refuses a "://" in the path only: a query such as ?next=https://example.test/ is common.
 func safeForwardedURI(uri string) bool {
 	if !strings.HasPrefix(uri, "/") || strings.HasPrefix(uri, "//") {
 		return false
 	}
-	if strings.ContainsAny(uri, "\r\n\\") || strings.Contains(uri, "://") {
-		return false
-	}
-	return true
+	path, _, _ := strings.Cut(uri, "?")
+	path, _, _ = strings.Cut(path, "#")
+	return !strings.ContainsAny(uri, "\r\n\\") && !strings.Contains(path, "://")
 }

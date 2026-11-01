@@ -10,10 +10,11 @@ import (
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // tokensPath is the token page. The step-up returns here.
-const tokensPath = "/tokens"
+const tokensPath = views.TokensPath
 
 // maxTokenFormBody is large enough for a name, many scopes, and a date, form-encoded.
 const maxTokenFormBody = 64 << 10
@@ -22,13 +23,13 @@ const maxTokenFormBody = 64 << 10
 const expiryDateLayout = "2006-01-02"
 
 const (
-	msgTokensUnavailable pageMessage = "Personal access tokens are not available."
-	msgTokenStepUp       pageMessage = "Enter your password again to make a token."
-	msgTokenName         pageMessage = "The name must have 1 to 64 characters."
-	msgScopeNotValid     pageMessage = "Each scope must be an http or https URL with no query."
-	msgExpiryNotValid    pageMessage = "The expiry must be a date in the future."
-	msgTokenNotFound     pageMessage = "The token is not found."
-	msgTokenFailed       pageMessage = "The token operation failed. Try again."
+	msgTokensUnavailable views.Message = "Personal access tokens are not available."
+	msgTokenStepUp       views.Message = "Enter your password again to make a token."
+	msgTokenName         views.Message = "The name must have 1 to 64 characters."
+	msgScopeNotValid     views.Message = "Each scope must be an http or https URL with no query."
+	msgExpiryNotValid    views.Message = "The expiry must be a date in the future."
+	msgTokenNotFound     views.Message = "The token is not found."
+	msgTokenFailed       views.Message = "The token operation failed. Try again."
 )
 
 // tokenFormRequest documents the form of POST /tokens.
@@ -102,7 +103,7 @@ func (s *service) createToken(w http.ResponseWriter, r *http.Request) {
 	}
 	// The clear token is in this body only. It MUST NOT reach a URL, a log, or a cache.
 	w.Header().Set("Cache-Control", "no-store")
-	renderPage(w, r, http.StatusOK, pageTokenCreated, pageView{Shell: s.shellFor(r, user, tokensPath), NewToken: &secret})
+	renderPage(w, r, http.StatusOK, views.PageTokenCreated, views.Page{Shell: s.shellFor(r, user, tokensPath), NewToken: &secret})
 }
 
 // revokeToken revokes one token of the session user. A token of another user is 404.
@@ -134,21 +135,21 @@ func (s *service) revokeToken(w http.ResponseWriter, r *http.Request) {
 // tokenPageUser returns the active user of the browser session for the token page.
 // It returns false after it wrote a reply.
 func (s *service) tokenPageUser(w http.ResponseWriter, r *http.Request) (users.User, sessions.Session, bool) {
-	if s.tokens == nil || s.flows == nil || s.passwords == nil {
+	if !s.tokensOn() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgTokensUnavailable)
 		return users.User{}, sessions.Session{}, false
 	}
 	return s.browserPageUser(w, r, tokensPath, msgTokenFailed)
 }
 
-func (s *service) renderTokens(w http.ResponseWriter, r *http.Request, status int, user users.User, message pageMessage) {
+func (s *service) renderTokens(w http.ResponseWriter, r *http.Request, status int, user users.User, message views.Message) {
 	list, err := s.tokens.List(r.Context(), user.ID)
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: list tokens", "err", err)
 		renderDenied(w, r, http.StatusInternalServerError, msgTokenFailed)
 		return
 	}
-	view := pageView{Shell: s.shellFor(r, user, tokensPath), Message: message, Tokens: newTokenTable(r, list, time.Now())}
+	view := views.Page{Shell: s.shellFor(r, user, tokensPath), Message: message, Tokens: newTokenTable(r, list, time.Now())}
 	if s.oauth != nil {
 		view.ShowConsents = true
 		view.Consents, err = s.oauth.ListConsents(r.Context(), user.ID)
@@ -163,11 +164,11 @@ func (s *service) renderTokens(w http.ResponseWriter, r *http.Request, status in
 	} else {
 		view.TokenForm = refusedTokenForm(r, message)
 	}
-	renderPage(w, r, status, pageTokens, view)
+	renderPage(w, r, status, views.PageTokens, view)
 }
 
 // parseTokenForm returns a message for the first field that is not valid, or an empty message.
-func parseTokenForm(r *http.Request) (tokens.Name, tokens.Scopes, time.Time, pageMessage) {
+func parseTokenForm(r *http.Request) (tokens.Name, tokens.Scopes, time.Time, views.Message) {
 	name, err := tokens.ParseName(r.PostForm.Get("name"))
 	if err != nil {
 		return tokens.Name{}, nil, time.Time{}, msgTokenName

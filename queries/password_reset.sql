@@ -12,12 +12,13 @@ WHERE password_resets.token_hash = sqlc.arg(token_hash)
     AND users.disabled_at IS NULL;
 
 -- name: LockOpenPasswordReset :one
+-- The expiry uses the database time: the reset runs after the password hash and can wait for the row lock.
 SELECT password_resets.user_id
 FROM password_resets
 JOIN users ON users.id = password_resets.user_id
 WHERE password_resets.token_hash = sqlc.arg(token_hash)
     AND password_resets.used_at IS NULL
-    AND password_resets.expires_at > sqlc.arg(now)::timestamptz
+    AND password_resets.expires_at > now()
     AND users.disabled_at IS NULL
 FOR UPDATE OF password_resets;
 

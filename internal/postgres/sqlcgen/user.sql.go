@@ -22,6 +22,26 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return n, err
 }
 
+const disableActiveUser = `-- name: DisableActiveUser :execrows
+UPDATE users
+SET disabled_at = $1
+WHERE id = $2 AND disabled_at IS NULL
+`
+
+type DisableActiveUserParams struct {
+	DisabledAt pgtype.Timestamptz
+	ID         pgtype.UUID
+}
+
+// Zero rows means the user is not stored or is disabled already.
+func (q *Queries) DisableActiveUser(ctx context.Context, arg DisableActiveUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, disableActiveUser, arg.DisabledAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const disableUser = `-- name: DisableUser :execrows
 UPDATE users
 SET disabled_at = COALESCE(disabled_at, $1)
@@ -41,14 +61,15 @@ func (q *Queries) DisableUser(ctx context.Context, arg DisableUserParams) (int64
 	return result.RowsAffected(), nil
 }
 
-const enableUser = `-- name: EnableUser :execrows
+const enableDisabledUser = `-- name: EnableDisabledUser :execrows
 UPDATE users
 SET disabled_at = NULL
-WHERE id = $1
+WHERE id = $1 AND disabled_at IS NOT NULL
 `
 
-func (q *Queries) EnableUser(ctx context.Context, id pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, enableUser, id)
+// Zero rows means the user is not stored or is active already.
+func (q *Queries) EnableDisabledUser(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, enableDisabledUser, id)
 	if err != nil {
 		return 0, err
 	}
@@ -134,39 +155,48 @@ const insertUserIdentity = `-- name: InsertUserIdentity :exec
 WITH new_user AS (
     INSERT INTO users (id, login, created_at)
     VALUES (
-        $5,
-        $6,
+        $2,
+        $3,
         $4
     )
     RETURNING id
+),
+new_identity AS (
+    INSERT INTO identities (id, user_id, kind, password_hash, created_at)
+    SELECT
+        $5,
+        new_user.id,
+        $6,
+        $7,
+        $4
+    FROM new_user
+    RETURNING user_id
 )
-INSERT INTO identities (id, user_id, kind, password_hash, created_at)
-SELECT
-    $1,
-    new_user.id,
-    $2,
-    $3,
-    $4
-FROM new_user
+INSERT INTO group_memberships (user_id, name)
+SELECT new_identity.user_id, $1
+FROM new_identity
 `
 
 type InsertUserIdentityParams struct {
+	GroupName    string
+	UserID       pgtype.UUID
+	Login        string
+	CreatedAt    pgtype.Timestamptz
 	IdentityID   pgtype.UUID
 	Kind         string
 	PasswordHash pgtype.Text
-	CreatedAt    pgtype.Timestamptz
-	UserID       pgtype.UUID
-	Login        string
 }
 
+// The account joins the built-in group in the same statement.
 func (q *Queries) InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error {
 	_, err := q.db.Exec(ctx, insertUserIdentity,
+		arg.GroupName,
+		arg.UserID,
+		arg.Login,
+		arg.CreatedAt,
 		arg.IdentityID,
 		arg.Kind,
 		arg.PasswordHash,
-		arg.CreatedAt,
-		arg.UserID,
-		arg.Login,
 	)
 	return err
 }
@@ -223,4 +253,20 @@ func (q *Queries) ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, 
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockActiveUser = `-- name: LockActiveUser :execrows
+SELECT id FROM users
+WHERE id = $1 AND disabled_at IS NULL
+FOR SHARE
+`
+
+// FOR SHARE waits for a disable in progress, and the disable waits for this transaction.
+// Zero rows means the user is not stored or is disabled.
+func (q *Queries) LockActiveUser(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, lockActiveUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

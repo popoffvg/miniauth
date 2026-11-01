@@ -8,6 +8,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // urlAccess decides whether a user may reach the forwarded URL.
@@ -75,5 +76,5 @@ func writeAccessDenied(w http.ResponseWriter, r *http.Request, origin string, lo
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusForbidden)
 	// Another host serves this page, so the stylesheet and the links name the public origin of miniauth.
-	_ = urlDeniedPage(origin, login, target).Render(r.Context(), w)
+	_ = views.URLDeniedPage(origin, login, target).Render(r.Context(), w)
 }

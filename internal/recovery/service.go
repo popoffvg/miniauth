@@ -16,6 +16,8 @@ const (
 	QueueSize = 64
 	// sendTimeout bounds one queued job.
 	sendTimeout = 30 * time.Second
+	// drainTimeout bounds the jobs that are still queued when Run stops.
+	drainTimeout = 30 * time.Second
 )
 
 // Store keeps reset links.
@@ -80,7 +82,8 @@ func NewService(store Store, attempts password.AttemptStore, mailer Mailer, link
 	return s, nil
 }
 
-// Run sends the queued mails one at a time until ctx ends. Jobs still in the queue are dropped.
+// Run sends the queued mails one at a time until ctx ends. Then it sends the jobs still queued
+// within drainTimeout, so a mail accepted while the server drains goes out.
 // A failed job is logged; the error MUST NOT hold a token, and it does not.
 func (s *Service) Run(ctx context.Context, logger *slog.Logger) {
 	if logger == nil {
@@ -89,14 +92,33 @@ func (s *Service) Run(ctx context.Context, logger *slog.Logger) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.drain(context.WithoutCancel(ctx), logger)
 			return
 		case job := <-s.jobs:
-			jobCtx, cancel := context.WithTimeout(ctx, sendTimeout)
-			if err := job(jobCtx); err != nil {
-				logger.ErrorContext(ctx, "miniauth: recovery mail", "err", err)
-			}
-			cancel()
+			runJob(ctx, job, logger)
 		}
+	}
+}
+
+// drain runs the queued jobs until the queue is empty or drainTimeout ends.
+func (s *Service) drain(ctx context.Context, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(ctx, drainTimeout)
+	defer cancel()
+	for ctx.Err() == nil {
+		select {
+		case job := <-s.jobs:
+			runJob(ctx, job, logger)
+		default:
+			return
+		}
+	}
+}
+
+func runJob(ctx context.Context, job mailJob, logger *slog.Logger) {
+	jobCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	if err := job(jobCtx); err != nil {
+		logger.ErrorContext(ctx, "miniauth: recovery mail", "err", err)
 	}
 }
 

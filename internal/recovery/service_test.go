@@ -283,6 +283,22 @@ func TestRunStopsWithTheContext(t *testing.T) {
 	<-done
 }
 
+func TestRunSendsTheQueueBeforeItStops(t *testing.T) {
+	f := newServiceFixture(t)
+	const queued = 10
+	sent := 0
+	for range queued {
+		require.NoError(t, f.svc.enqueue(func(context.Context) error {
+			sent++
+			return nil
+		}))
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	f.svc.Run(ctx, nil)
+	assert.Equal(t, queued, sent, "every mail queued before the stop MUST go out")
+}
+
 func TestTokenRoundTripAndRedaction(t *testing.T) {
 	token, err := NewToken()
 	require.NoError(t, err)

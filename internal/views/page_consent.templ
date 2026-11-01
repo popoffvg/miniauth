@@ -1,0 +1,76 @@
+package views
+
+import "github.com/popoffvg/miniauth/internal/oauth"
+
+templ consentPage(view Page) {
+	@authLayout("Connect an app") {
+		@authHeading("Connect an app", "Let "+view.ClientName.String()+" use "+view.Resource.String()+" as "+view.Login.String()+"?")
+		<div class="auth-body">
+			<dl class="facts link-facts">
+				<dt>App</dt>
+				<dd><span class="cell-main">{ view.ClientName.String() }</span></dd>
+				<dt>Returns to</dt>
+				<dd><code>{ view.RedirectHost }</code></dd>
+				<dt>Resource</dt>
+				<dd><code>{ view.Resource.String() }</code></dd>
+				<dt>Your login</dt>
+				<dd>{ view.Login.String() }</dd>
+			</dl>
+			<div class="alert alert-warning" role="note">
+				@icon(IconWarning)
+				<div class="alert-body">Allow it only if you started this connection yourself. The app acts as you on this resource until you disconnect it on the tokens page.</div>
+			</div>
+			<form method="post" action={ templ.SafeURL(OAuthAuthorizePath) }>
+				for _, field := range view.Fields {
+					<input type="hidden" name={ field.Name } value={ field.Value }/>
+				}
+				<div class="providers">
+					<button class="btn btn-primary btn-block" type="submit" name="action" value="allow">Allow</button>
+					<button class="btn btn-secondary btn-block" type="submit" name="action" value="deny">Deny</button>
+				</div>
+			</form>
+		</div>
+	}
+}
+
+templ consentTable(consents []oauth.ConsentEntry) {
+	<section class="card" aria-labelledby="apps-title">
+		<div class="card-header">
+			<div>
+				<h2 id="apps-title">Connected apps</h2>
+				<p>Apps you allowed to sign in as you. Each app reaches one resource. Disconnect ends its tokens at once.</p>
+			</div>
+		</div>
+		if len(consents) == 0 {
+			@emptyState(IconKey, "No connected apps.", "An app connects when you allow it on the consent page.")
+		} else {
+			<table class="table">
+				<thead>
+					<tr>
+						<th scope="col">App</th>
+						<th scope="col">Resource</th>
+						<th scope="col">Connected</th>
+						<th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, consent := range consents {
+						<tr>
+							<td><div class="cell-main">{ consent.ClientName.String() }</div></td>
+							<td data-label="Resource"><code>{ consent.Consent.Resource.String() }</code></td>
+							<td class="num" data-label="Connected">
+								@timeCell(Timestamp(consent.Consent.CreatedAt))
+							</td>
+							<td class="actions">
+								@rowMenu(consent.ClientName.String()) {
+									@confirmPost(ConsentsPath+"/"+consent.Consent.ID.String()+"/revoke", "Disconnect app",
+										"Disconnect “"+consent.ClientName.String()+"”? Its tokens stop working. It asks again at the next connection.", "Disconnect")
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</section>
+}

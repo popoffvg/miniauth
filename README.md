@@ -1,85 +1,137 @@
 # miniauth
 
-A small identity server in Go and PostgreSQL: password login, persistent browser sessions, personal access tokens, and a forward-auth endpoint for a reverse proxy such as Traefik.
+miniauth is a small identity server for your own sites. It signs people in, keeps their browser sessions, and tells a reverse proxy such as Traefik who may open which URL. It is one Go binary, and it keeps its state in PostgreSQL.
 
-Status: early. `GET /openapi.yaml` and `api/openapi.yaml` list every route.
+## Features
 
-`GET /healthz` reports that the process is up. `GET /readyz` returns 200 only when the process is ready to serve. It returns 503 when PostgreSQL does not answer, and while the process is shutting down. The process pings PostgreSQL every 5 seconds. A SIGTERM moves the process to draining and then shuts the HTTP server down.
+- Password login, with an optional second step: a TOTP code or a recovery code.
+- Passkeys (WebAuthn) that sign in alone.
+- Sign-in with Google and with Telegram, linked to an existing account.
+- A browser session per device. A user can see each device and sign it out.
+- Personal access tokens for scripts and API clients.
+- A forward-auth endpoint for Traefik.
+- URL grants: a user or a group gets access to a host and a path prefix.
+- Groups: each group has members and a set of resources. Every account is in the group `users`.
+- Predefined resources and group grants from a JSON file, applied at each start.
+- Invite links: a new person makes an account in one group.
+- An admin panel for users, groups, resources, and grants.
+- Password recovery by mail.
+- OAuth for MCP clients. A registered public client signs in with PKCE, and the access token reaches one resource. See [docs/oauth.md](docs/oauth.md).
 
-Configuration comes from the `MINIAUTH_*` environment. The process checks it before it serves. `MINIAUTH_LISTEN` is the HTTP address. The default is `127.0.0.1:8080`. The container image sets `0.0.0.0:8080`. `MINIAUTH_DATABASE_URL` is the PostgreSQL connection string.
+## Quickstart
 
-`GET /auth/check` is the Traefik `forwardAuth` target. A valid session answers 200 and sets `X-Auth-User`, `X-Auth-Email`, `X-Auth-Groups`, and `X-Auth-Method`. `X-Auth-Email` is the login when the login contains `@`. `?group=` requires that group. The URL in `X-Forwarded-Proto`, `X-Forwarded-Host`, and `X-Forwarded-Uri` also needs a grant. A resource is a host and a path prefix, such as `dash.example.test` and `/mcp`. The resource with the longest prefix on the same host wins. A prefix ends on a segment border: `/mcp` does not cover `/mcpx`. A grant gives one user or one group one resource, with an optional expiry. A URL with no resource, no active grant, or no forwarded headers is 403. The 403 names the URL, without its query, and the login: an HTML page for a browser, `application/problem+json` for other clients. Each check reads the grants again, so a revoke applies to the next request. A browser with no session is redirected to `{MINIAUTH_PUBLIC_URL}/login?return=`. Any other request with no session is 401 with `WWW-Authenticate: Bearer`. `?scope=` does not limit a session.
-
-A personal access token is `idp_` and 43 base62 characters. A client sends it as `Authorization: Bearer idp_...`. The table `access_tokens` stores its SHA-256 and its first 8 characters, never the token. On `GET /auth/check` a valid token answers 200 with the same `X-Auth-*` headers as a session and `X-Auth-Method: token`. `?group=` still applies. A malformed, unknown, revoked, or expired token, or a token of a disabled user, is 401 with `WWW-Authenticate: Bearer error="invalid_token"`. A scope is a URL prefix: scheme, host, and path. The URL from `X-Forwarded-Proto`, `X-Forwarded-Host`, and `X-Forwarded-Uri` MUST be under one scope of the token, on a path segment border: `/mcp` covers `/mcp` and `/mcp/x`, not `/mcpx`. A URL under no scope is 403. The URL also needs a grant for the token user or one of the user's groups, as for a session. A token with no scope reaches every URL its user has a grant for. `last_used_at` moves at most once a minute.
-
-`MINIAUTH_PUBLIC_URL` is the origin of the login page, for example `https://id.example.test`. `MINIAUTH_COOKIE_DOMAIN` is the parent domain of the session cookie `__Secure-id_session`. An empty value is a host-only cookie. The return URL is kept only when its host is under that domain. With an empty domain, the host must match `MINIAUTH_PUBLIC_URL`. The cookie is HttpOnly, Secure, and SameSite=Lax. It lasts 30 days. The database stores the SHA-256 of the cookie, not the cookie.
-
-Each browser also gets the device cookie `__Secure-id_device`. It has the same Domain and flags as the session cookie, lasts 2 years, and stays after logout. The database stores its SHA-256, the user, a short name from the User-Agent such as "Firefox on macOS", and the first and last time it was seen. A device has at most one session: a new login on a known device replaces its session. `GET /sessions` is an HTML page with the devices of the session user. A browser with no session is redirected to the login page. `POST /sessions/{device}/signout` deletes the session of that device and keeps the device. `POST /sessions/{device}/forget` deletes the device and its session. `{device}` is the device id, not the cookie. Each POST needs an `Origin` header equal to the `MINIAUTH_PUBLIC_URL` origin, else it is 403. A device of another user is 404.
-
-`GET /login?return=<url>` starts a login flow and shows the login form. The flow id and secret go to the cookie `__Host-id_login_flow`, never to a URL. The cookie is HttpOnly, Secure, and SameSite=Lax, and it lasts 15 minutes. `POST /login` checks the login and the password. The `Origin` header MUST equal `MINIAUTH_PUBLIC_URL`. A missing or other `Origin` is 403. A correct password sets the session cookie and redirects with 303 to the return URL. A wrong login or password shows the form again with one message, and no session starts. After 5 failed tries in 15 minutes for one login or one client IP, each next try waits longer, up to one minute, and the reply is 429. A flow that completed cannot be used again. The return URL MUST be an https URL whose host is under `MINIAUTH_COOKIE_DOMAIN`, or equal to the host of `MINIAUTH_PUBLIC_URL` when the domain is empty. Any other return URL opens `GET /`, the overview page.
-
-`GET /tokens` lists the personal access tokens of the session user: name, prefix, scopes, creation time, last use, expiry, and revocation. A browser with no session is redirected to the login page, which returns to `/tokens`. `POST /tokens` makes a token from a name, scopes one per line, and an optional expiry date. The token works until the end of that UTC day. The page shows the clear token once, with `Cache-Control: no-store`. The token never goes to a URL or a log. When the last full login of the session (`auth_at`) is older than 10 minutes, `POST /tokens` makes no token. It starts a step-up flow and shows a password form. The step-up reads only the password and checks it for the session user, so a password of another login does not pass. A correct password sets `auth_at` to now and redirects to `/tokens`, where the user sends the form again. `POST /tokens/{id}/revoke` revokes one token of the session user. A token of another user is 404. Both POST routes need the same `Origin` as `POST /login`, else 403.
-
-Password recovery works for a user whose login is an email address. The account has no separate email column. `GET /recover` asks for the address, and the login page links to it. `POST /recover` always shows the same page, "If the address is known, a link is on its way.", and takes the same time: the lookup and the mail run in a background queue of 64 jobs. An unknown address and a disabled user get no mail. The link is `{MINIAUTH_PUBLIC_URL}/recover/{token}` with 32 random bytes. The table `password_resets` stores only the SHA-256 of the token. The link works once and expires after 30 minutes. `GET /recover/{token}` shows the new password form with the token in a hidden field, `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`. `POST /recover/reset` takes the token and the new password in the form body. The password rules are those of `POST /api/v1/users`. In one transaction it stores the new argon2id hash, marks the link used, deletes every session of the user, and deletes every other open link of the user. Then a second mail says that the password changed. Personal access tokens stay valid, and the mail names the `/tokens` page. Both POST routes require `Origin` equal to `MINIAUTH_PUBLIC_URL`, else 403. Recovery requests use the backoff of the password step, counted per address and per client IP in the table `recovery_attempts`, and the reply is 429.
-
-Recovery mail goes through your own SMTP relay. `MINIAUTH_SMTP_HOST` turns it on. `MINIAUTH_SMTP_PORT` defaults to 587. `MINIAUTH_SMTP_FROM` is the bare sender address, for example `id@example.test`. `MINIAUTH_SMTP_USER` and `MINIAUTH_SMTP_PASSWORD` are set together or not at all. The relay MUST offer STARTTLS, and the certificate MUST be valid for the host: no mail goes out in clear text. For local work, `MINIAUTH_MAIL=log` writes each mail, with its live link, to standard error instead. It MUST NOT be used with real users. With neither setting, the recovery routes answer 503 and the login page hides the link.
-
-`GET /access` is the access page for a member of the group `admin`. It lists each resource with its grants: the user login or the group, and the expiry. It has forms to add a resource (a name and a URL), to grant a resource to a user or a group with an optional expiry, to revoke a grant, and to delete a resource with its grants. An HTML date expires at the end of that UTC day. A date and time is read as UTC. Any other user gets 403 on the page and on each POST. A browser with no session is redirected to the login page, which returns to `/access`. Each POST needs the same `Origin` as `POST /login`, else 403, and the same 10-minute step-up as `POST /tokens`, which returns to `/access`. The page calls the same access service as the access API. A change redirects with 303 to `/access?done=<result>`, and the page shows a fixed message for that result. A refused change shows the page with the message of the access API and 400, 404, or 409.
-
-Google sign-in is on when `MINIAUTH_GOOGLE_CLIENT_ID` and `MINIAUTH_GOOGLE_CLIENT_SECRET` are both set. It also needs `MINIAUTH_PUBLIC_URL`. The OAuth client MUST allow the redirect URL `{MINIAUTH_PUBLIC_URL}/login/google/callback`. Without this config the login page does not offer Google. The process reads the Google discovery document at start and every 10 minutes. While discovery fails, the login page does not offer Google and `POST /login/google` is 503. `POST /login/google` checks `Origin` like `POST /login` and redirects to Google with PKCE. The PKCE verifier goes to the cookie `__Host-id_google_verifier`. The login flow row stores only the SHA-256 of the verifier, the state, and the nonce, so a copy of the database cannot finish a login. `GET /login/google/callback` checks the state, the verifier, and the ID token: signature, issuer, audience, expiry, and nonce. Only the `sub` claim links a Google account to a user. The email and `email_verified` are not read. A linked account signs in, with `X-Auth-Method: google`. An unknown account starts no session and creates no user. The table `pending_identity_links` keeps it for 15 minutes, bound to the browser by the cookie `__Host-id_pending_link`, and the page asks for a password login. When that browser then completes a password login, it redirects to `GET /link`, which names the account (for example "the Google account 1234") and asks to link it or not. A password login never links by itself: another site can put its own account in the cookie. `POST /link` checks `Origin` like `POST /login`. `action=link` makes the account an identity of the session user, and `action=skip` deletes the pending row. A store error keeps the cookie, so the form can be sent again. An expired pending link does not link.
-
-Telegram sign-in is on when `MINIAUTH_TELEGRAM_BOT_NAME` and `MINIAUTH_TELEGRAM_BOT_TOKEN` are both set. It also needs `MINIAUTH_PUBLIC_URL`, and the bot domain MUST be its host. The bot token is a secret. The login page then shows the Telegram Login Widget in redirect mode. Only that page loads a script from `https://telegram.org` and a frame from `https://oauth.telegram.org`, and its Content-Security-Policy allows only these two. Telegram redirects the browser to `GET /login/telegram/callback` with the user fields, `auth_date`, and `hash`. The callback needs the login flow cookie of an open flow. The hash MUST be the HMAC-SHA256 of every other field, sorted by key and joined as `key=value` lines with `\n`, keyed with the SHA-256 of the bot token. Data with an `auth_date` one day old or more, or more than one minute in the future, is refused. The table `telegram_login_proofs` keeps the SHA-256 of the id, `auth_date`, and hash of each accepted login, so the same data signs in once. Only the `id` field links a Telegram account to a user. A field name MUST be `[a-z_]+` and a value MUST NOT contain a line break, so the fields cannot be reshaped to keep the hash. A linked account signs in, with `X-Auth-Method: telegram`. An unknown account becomes a pending link, the same as an unknown Google account. The request log has the path only, never the query.
-
-A passkey is a WebAuthn discoverable credential with user verification. The relying party id is `MINIAUTH_COOKIE_DOMAIN` without the leading dot, or the host of `MINIAUTH_PUBLIC_URL` when the domain is empty. The origin is the `MINIAUTH_PUBLIC_URL` origin. An IP address is not a valid relying party id, and the id MUST be the public host or a parent of it. Otherwise passkeys are off with a warning in the log, and the passkey routes answer 503. The login page and `GET /passkeys/new` load one script, `GET /assets/passkey.js`, under `script-src 'self'`. Every other page has no script of its own; the Telegram widget, when it is on, adds its script from telegram.org and the CSP allows both. `POST /login/passkey/options` stores a new challenge in the login flow and returns the options for `navigator.credentials.get`. `POST /login/passkey` takes the assertion as JSON. One statement reads and clears the challenge, so each challenge is used once. A passkey with the UV flag counts as two factors: it completes the login alone, starts a session with `X-Auth-Method: passkey`, and answers the return URL as JSON. A response without the UV flag, an unknown credential, or a signature counter that does not increase is 400. `GET /sessions` lists the passkeys of the user: name, creation time, and last use. `GET /passkeys/new` adds one after the step-up of the token page. `POST /passkeys/options` returns the options for `navigator.credentials.create` with a required resident key and required user verification, and `POST /passkeys` stores the credential in the table `passkeys`: the credential id, the COSE public key, the signature counter, the transports, and the AAGUID. `POST /passkeys/{id}/delete` deletes one passkey after the same step-up. A passkey of another user is 404. Each POST needs the same `Origin` as `POST /login`, else 403.
-
-Two-step login adds a TOTP code (RFC 6238: SHA-1, 6 digits, 30 seconds, one step of clock skew) after the first factor: the password, Google, or Telegram. Two first factors do not count as two: password and Google, or Google and Telegram, still need the code. A passkey with user verification needs no code. Every factor of one login MUST belong to the same user. `GET /sessions` shows whether two-step login is on, with a button to turn it on or off. `POST /sessions/totp/enroll` makes a 20-byte secret and shows it once as a QR code and as base32 text, with `Cache-Control: no-store`. `POST /sessions/totp/confirm` turns two-step login on when the code from the app matches, and shows 10 recovery codes once. The setup expires after 15 minutes. `POST /sessions/totp/disable` turns it off and deletes the recovery codes. The three POST routes need the same `Origin` as `POST /login`, and a login newer than 10 minutes, else they start the password step-up of `POST /tokens` and return to `/sessions`. For a user with two-step login, a first factor does not start a session: the login page then shows the TOTP form. `POST /login/totp` checks the code. A code is accepted once: the database keeps the time step of the last accepted code. `GET /login/recovery-code` and `POST /login/recovery-code` take one recovery code in place of a TOTP code. A used recovery code is refused. Wrong TOTP and recovery codes share one backoff per login, like the password, and a correct password does not reset it: the table `login_attempts` counts each kind of step apart. The step-up of `POST /tokens` and of the two-step routes checks the password only. `MINIAUTH_TOTP_KEY` is 32 random bytes in base64, for example from `openssl rand -base64 32`. It encrypts each TOTP secret with AES-GCM. Without it, two-step login cannot be turned on, and a TOTP code is refused, so a user who has it can sign in only with a recovery code. The database stores the SHA-256 of each recovery code. A code has 80 random bits, so a slow hash adds nothing.
-
-Every page is a templ component. Each page loads one stylesheet, `GET /assets/app.css`, from this origin, and its CSP allows `style-src 'self'` only: no inline style. The stylesheet follows `prefers-color-scheme` for a light and a dark theme. A signed-in page has a sidebar menu: Overview, Tokens, Security, and Access for a member of the group `admin`. `GET /` is the overview: the login, the groups, the two-step login state, and the counts of active tokens, devices, and passkeys. `GET /tokens` takes `q` and `status` (`active`, `expired`, `revoked`) to filter the table. `GET /access` takes `q` and `status` (`active`, `expired`) the same way. A destructive button opens a confirm step first; the POST and its checks stay the same. After a change, a POST redirects with `?done=<flag>`, and the page shows a fixed message for a known flag. The sign-out button posts to `/logout`: a browser form is redirected to the login page with 303, any other client gets 204.
-
-The client IP of a login try is the TCP peer address. No trusted proxy is configured, so `X-Forwarded-For` is not read. Behind a reverse proxy, all tries share the address of the proxy for the IP backoff.
-
-`docker compose up --build` starts PostgreSQL, miniauth, and a local Traefik. Traefik listens on `127.0.0.1:8088`. `/app` requires a session and a grant on the resource `127.0.0.1:8088/app`. `/editors` also requires the group `editors` and a grant on `127.0.0.1:8088/editors`. A new stack has no resources and no grants. `MINIAUTH_COMPOSE=1 go test ./internal/api -run TestTraefikProtectsThePage` creates them in the database and checks each route. The cookie is `Secure`, so a browser on plain HTTP does not keep it. `curl` can send it.
-
-`POST /api/v1/users` creates a user and one password identity. The body is JSON: `login` and `password`. The caller sends `Authorization: Bearer <token>`. `MINIAUTH_ADMIN_TOKEN_SHA256` is the hex SHA-256 of that token. The token is not in the config. `GET /openapi.yaml` serves the description generated from the handlers. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, request and database spans are exported there. A query string, a header, and a SQL argument are not span attributes.
-
-The users admin API needs the same bootstrap admin token, and each error is `application/problem+json`. `GET /api/v1/users` lists every user with the groups, the state, the device count, and the last time a device was seen. `POST /api/v1/users/{login}/disable` sets the disabled time and deletes every session of the user in one transaction, so the next `/auth/check` of the user is refused. `POST /api/v1/users/{login}/enable` clears it. `PUT /api/v1/groups/{group}/members/{login}` adds the user to the group and is idempotent. `DELETE /api/v1/groups/{group}/members/{login}` removes it, and a user who is not in the group is 404. Each answers 204, and an unknown login is 404. `GET /users` is the same as a page for a member of the group `admin`: search and filter, add to a group, remove from a group, disable and enable, and a form that makes an invite link and shows it once with `Cache-Control: no-store`. Each POST of the page checks `Origin`, the group, and the step-up of `POST /tokens`, then redirects with `?done=`. An admin cannot disable its own account or leave the group `admin` (409).
-
-The access API changes resources and grants. Each route needs the same bootstrap admin token, and each error is `application/problem+json`. `POST /api/v1/resources` takes `{"name": "dashboards", "url": "https://dash.example.test/"}` and answers 201. The URL MUST be an absolute `https` or `http` URL with no query. Only the host and the path are stored, so a reply shows `dash.example.test/`. A name, or a host and path, that is already stored is 409. `GET /api/v1/resources` lists the resources. `DELETE /api/v1/resources/{name}` deletes the resource and its grants, and answers 204 or 404. `POST /api/v1/grants` takes `resource`, exactly one of `user` (a login) and `group`, and an optional `expires_at` in RFC 3339 that MUST be in the future. It answers 201 with the grant and its `id`. An unknown user or resource is 404, and a grant that exists is 409. `DELETE /api/v1/grants/{id}` revokes the grant, and the next `/auth/check` does not count it. `GET /api/v1/grants?user=<login>&resource=<name>` lists grants with their resource name and URL, user or group, expiry, and `created_at`. Both filters are optional. `user` selects the grants to that user, not the grants to the user's groups.
-
-`POST /api/v1/tokens/import` moves a token from a secret store, so the client keeps its token. It takes the same admin bearer token. The body is JSON: `user` (a login), `name`, `scopes` (at least one URL prefix), and `token` (`idp_...`). The table stores the SHA-256 of the token. The token does not expire. The reply has `id`, `name`, `prefix`, and `scopes`, never the token. The first import is 201. The same token again for the same user is 200 and changes nothing. The same token for another user is 409. An unknown login is 404. A bad token format or scope is 400. An `X-Request-ID` that starts with `idp_` is replaced, so the request log cannot hold the token.
-
-An invite lets one new person create an account with access to one resource. There is no public sign-up: an account exists only through an invite or `POST /api/v1/users`. `POST /api/v1/invites` takes `{"resource": "app"}` with the bootstrap admin token and answers 201 with `link`, `resource`, and `expires_at`. Without `MINIAUTH_PUBLIC_URL` it answers 503: the Origin check would refuse every accept. The link is `{MINIAUTH_PUBLIC_URL}/invite/{token}`, and it is shown once. The table `invites` stores the SHA-256 of the 32-byte token, never the token. An unknown resource is 404. A link works once and expires after 7 days. `GET /invite/{token}` shows a form for a login and a password, with the same rules as `POST /api/v1/users`. The page sends `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. `POST /invite/accept` takes the token in the form body, and `Origin` MUST equal `MINIAUTH_PUBLIC_URL`. In one transaction it marks the invite used, creates the user, and grants the resource. Then it sets the session cookie and redirects with 303 to `https://` and the host and path of the resource. A taken login shows the form again with 409, and the invite stays unused. When the session fails to start after the account is created, the page says the account exists and links to the sign-in page. An unknown, used, or expired link is 410 with one page for the three cases. The request log and the request span show the route `/invite/{token}`, never the token.
-
-An MCP client signs in with OAuth. miniauth is the authorization server, and a resource of the access API is the protected MCP server. An admin registers each client with `POST /api/v1/oauth/clients`: `name` and `redirect_uris`. The client gets a `client_id` and no secret. A redirect URI is https, or http on a loopback host, and a loopback URI matches on any port. A 401 from `/auth/check` for a URL under a resource names `resource_metadata` in `WWW-Authenticate`. The reverse proxy MUST send `/.well-known/oauth-protected-resource*` on each MCP host to miniauth, with no forward-auth. `GET /oauth/authorize` requires PKCE S256 and a `resource` parameter matching the resource URL. With no session it sends the browser to the login page first. The user allows the client once per resource on the consent page. `POST /oauth/token` gives an `idp_` access token that reaches only that resource for one hour, and an `idr_` refresh token. Each refresh gives a new refresh token. A code or a refresh token sent a second time ends the consent and every token of it. `/auth/check` reads the access token as a personal access token, so a grant on the resource is still needed. The token page lists the connected apps, and Disconnect ends their tokens at once. The database keeps only the SHA-256 of each code and token.
-
-## Release
-
-A published GitHub release with a tag such as `v0.1.0` builds the image from `Dockerfile` and pushes it to `ghcr.io/popoffvg/miniauth` with the tags `0.1.0`, `0.1`, and `latest`.
-
-## Development
+You need Docker. The local stack runs PostgreSQL, miniauth, a test page, and Traefik on `http://127.0.0.1:8088`.
 
 ```sh
-mise install   # Go 1.27 and task
-task setup     # build the pinned tools, install the pre-push hook
-task check     # lint, vet, gosec, tests with coverage
+docker compose up --build
 ```
 
-CI runs golangci-lint, go vet, gosec (results in the Security tab), and the tests with a gocov report. CodeRabbit reviews each pull request with the rules in `.coderabbit.yaml`.
+The local stack uses the admin token `dev-admin-token`. `compose.yaml` holds its SHA-256 in `MINIAUTH_ADMIN_TOKEN_SHA256`. For a real deploy, make your own token and its hash, and keep the token in your secret store:
 
-### Amp orbs
+```sh
+token=$(openssl rand -base64 32)
+printf '%s' "$token" | sha256sum   # MINIAUTH_ADMIN_TOKEN_SHA256
+```
 
-`.agents/setup` installs the toolchain from `mise.toml`, downloads both Go modules,
-builds the pinned tools and the service, and prepares PostgreSQL 17. Amp can reuse
-these files and caches in project snapshots. `.agents/resume` restores the pre-push
-hook without installing dependencies.
+Create the first user:
 
-Start the local test database with `amp orb services ensure`. Then run `task check`.
-New login shells in this checkout load the toolchain and set
-`MINIAUTH_TEST_DATABASE_URL` unless it is already set. The database listens on
-loopback only. It uses trust authentication and has durability disabled. It MUST
-NOT hold real data. No secrets are required for these tests.
+```sh
+curl -X POST http://127.0.0.1:8088/api/v1/users \
+  -H 'Authorization: Bearer dev-admin-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"login": "alice@example.test", "password": "change-me-now"}'
+```
 
-The Docker-based Hurl test needs a Docker daemon. This orb setup does not install
-or start Docker. Without its socket, that test is skipped. The PostgreSQL
-integration tests use the supervised database and do not need Docker or
-`task test:integration`.
+Make the user an admin. The admin panel opens only for a member of the built-in group `admins`. Every account is already in the built-in group `users`:
+
+```sh
+curl -X PUT http://127.0.0.1:8088/api/v1/groups/admins/members/alice@example.test \
+  -H 'Authorization: Bearer dev-admin-token'
+```
+
+Then:
+
+1. Open `http://127.0.0.1:8088/login` and sign in.
+2. Open `http://127.0.0.1:8088/users` for users and invites.
+3. Open `http://127.0.0.1:8088/groups` for groups and their resources.
+4. Open `http://127.0.0.1:8088/access` for resources and grants.
+
+The cookies of miniauth have the Secure flag. If your browser does not keep them on plain HTTP, put miniauth behind HTTPS as shown below.
+
+## Put it behind Traefik
+
+Serve miniauth on its own host, for example `https://id.example.test`. Set `MINIAUTH_PUBLIC_URL` to that origin, and `MINIAUTH_COOKIE_DOMAIN` to the parent domain of your sites.
+
+Add a `forwardAuth` middleware. The first middleware removes any `X-Auth-*` header that the client sends, so only miniauth sets them:
+
+```yaml
+http:
+  middlewares:
+    strip-auth:
+      headers:
+        customRequestHeaders:
+          X-Auth-User: ""
+          X-Auth-Email: ""
+          X-Auth-Groups: ""
+          X-Auth-Method: ""
+    miniauth:
+      forwardAuth:
+        address: http://miniauth:8080/auth/check
+        authResponseHeaders:
+          - X-Auth-User
+          - X-Auth-Email
+          - X-Auth-Groups
+          - X-Auth-Method
+        addAuthCookiesToResponse:
+          - __Secure-id_session
+  routers:
+    dashboard:
+      rule: Host(`dash.example.test`)
+      middlewares: [strip-auth, miniauth]
+      service: dashboard
+```
+
+To require a group too, use `address: http://miniauth:8080/auth/check?group=editors`. `addAuthCookiesToResponse` passes the session cookie that `/auth/check` sets again when it extends the session, so an active user stays signed in.
+
+Each protected URL needs a resource and a grant. Without them, `/auth/check` answers 403. Make them in the admin panel at `/access` and `/groups`, with the API, or in the file of `MINIAUTH_RESOURCES_FILE`. With the API:
+
+```sh
+curl -X POST https://id.example.test/api/v1/resources \
+  -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+  -d '{"name": "dashboard", "url": "https://dash.example.test/"}'
+
+curl -X POST https://id.example.test/api/v1/grants \
+  -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+  -d '{"resource": "dashboard", "group": "users"}'
+```
+
+The protected service reads the user from `X-Auth-User`, `X-Auth-Email`, `X-Auth-Groups`, and `X-Auth-Method`. The values and every answer of `/auth/check` are in [docs/access.md](docs/access.md#forward-auth).
+
+## Main settings
+
+miniauth reads its settings from the environment. It checks them before it serves, and it stops on a bad value.
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `MINIAUTH_DATABASE_URL` | required | The PostgreSQL connection string. |
+| `MINIAUTH_ADMIN_TOKEN_SHA256` | required | The hex SHA-256 of the admin API token. |
+| `MINIAUTH_PUBLIC_URL` | empty | The origin of miniauth, for example `https://id.example.test`. |
+| `MINIAUTH_COOKIE_DOMAIN` | empty (host-only) | The parent domain of the session cookie, for example `example.test`. |
+| `MINIAUTH_LISTEN` | `127.0.0.1:8080` | The HTTP address. The image sets `0.0.0.0:8080`. |
+| `MINIAUTH_RESOURCES_FILE` | empty | A JSON file of predefined resources and group grants. |
+
+All settings, with the resources file, mail, TOTP, Google, and Telegram: [docs/configuration.md](docs/configuration.md).
+
+## Image and release
+
+Each published GitHub release pushes `ghcr.io/<owner>/miniauth` with the tags `<version>`, `<major>.<minor>`, and `latest`. A prerelease gets only `<version>`.
+
+## Documentation
+
+- [Configuration](docs/configuration.md): every `MINIAUTH_*` variable.
+- [Login methods](docs/login-methods.md): password, two-step login, passkeys, Google, Telegram, account linking.
+- [Access](docs/access.md): resources, grants, groups, predefined resources, invites, forward-auth, personal access tokens.
+- [OAuth](docs/oauth.md): MCP clients, the consent page, and the token endpoint.
+- [API](docs/api.md): the admin API and the other routes.
+- [Security](docs/security.md): cookies, hashes, CSP, Origin checks, logs.
+- [Development](docs/development.md): setup, tests, release, project layout.

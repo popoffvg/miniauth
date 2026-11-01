@@ -60,8 +60,8 @@ type Event struct {
 // A first factor is the password, Google, or Telegram. Any number of first factors counts as one.
 // One first factor completes the flow. A passkey counts as two, so it completes on its own.
 // When NeedsSecond is set, a first factor is not enough: the flow also needs TOTP or a recovery code.
-// TOTP and a recovery code never count without a first factor.
-// A KindStepUp flow ignores NeedsSecond: the step-up checks the password only.
+// TOTP or a recovery code before a first factor is refused.
+// A KindStepUp flow counts the password only and ignores NeedsSecond.
 // An event carries one factor. Every known factor MUST carry the user it belongs to,
 // and the first one binds the flow to that user.
 // An unknown external account moves the flow to pending_link and records the factor.
@@ -87,10 +87,13 @@ func (f LoginFlow) Next(event Event) (LoginFlow, error) {
 }
 
 func (f LoginFlow) pass(event Event) (LoginFlow, error) {
-	if !event.Factor.known() || f.UserID != (users.ID{}) && event.UserID != f.UserID {
+	if !event.Factor.known() || !f.Kind.accepts(event.Factor) || f.UserID != (users.ID{}) && event.UserID != f.UserID {
 		return f, ErrNoTransition
 	}
 	if !event.UnknownAccount && event.UserID == (users.ID{}) {
+		return f, ErrNoTransition
+	}
+	if secondFactors.Has(event.Factor) && f.Factors&firstFactors == 0 {
 		return f, ErrNoTransition
 	}
 	next := f

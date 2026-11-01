@@ -5,12 +5,13 @@ import (
 	"net/http"
 
 	"github.com/popoffvg/miniauth/internal/oauth"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // consentsPath is the path prefix of the consent revoke route. The token page lists the consents.
-const consentsPath = tokensPath + "/consents"
+const consentsPath = views.ConsentsPath
 
-const msgConsentNotFound pageMessage = "The app is not connected."
+const msgConsentNotFound views.Message = "The app is not connected."
 
 // consentRevokeRequest documents the path of POST /tokens/consents/{id}/revoke.
 type consentRevokeRequest struct {

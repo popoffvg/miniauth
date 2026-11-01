@@ -13,19 +13,20 @@ import (
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // accessPagePath is the access page. The step-up and each change return here.
-const accessPagePath = "/access"
+const accessPagePath = views.AccessPath
 
 // expiryLocalLayouts are the values of an HTML datetime-local input, read as UTC.
 var expiryLocalLayouts = []string{"2006-01-02T15:04", "2006-01-02T15:04:05"}
 
 const (
-	msgAccessUnavailable pageMessage = "The access page is not available."
-	msgAccessAdminOnly   pageMessage = "Only a member of the admin group can open the access page."
-	msgAccessStepUp      pageMessage = "Enter your password again to change access."
-	msgAccessFailed      pageMessage = "The access change failed. Try again."
+	msgAccessUnavailable views.Message = "The access page is not available."
+	msgAccessAdminOnly   views.Message = "Only a member of the admins group can open the access page."
+	msgAccessStepUp      views.Message = "Enter your password again to change access."
+	msgAccessFailed      views.Message = "The access change failed. Try again."
 )
 
 // errExpiryInput means the expiry field is not an HTML date or datetime-local value.
@@ -154,7 +155,7 @@ func (s *service) changeAccess(w http.ResponseWriter, r *http.Request, done done
 	if err := change(r.Context(), r.PostForm); err != nil {
 		for _, problem := range accessPageProblems {
 			if errors.Is(err, problem.err) {
-				s.renderAccess(w, r, problem.status, user, pageMessage(problem.detail), "")
+				s.renderAccess(w, r, problem.status, user, views.Message(problem.detail), "")
 				return
 			}
 		}
@@ -165,17 +166,17 @@ func (s *service) changeAccess(w http.ResponseWriter, r *http.Request, done done
 	http.Redirect(w, r, s.publicURL.Origin()+withDone(accessPagePath, done), http.StatusSeeOther)
 }
 
-// accessPageAdmin returns the session user when the user is in groups.Admin.
+// accessPageAdmin returns the session user when the user is in groups.Admins.
 // It returns false after it wrote a reply: a login redirect, 403 for any other user, or an error page.
 func (s *service) accessPageAdmin(w http.ResponseWriter, r *http.Request) (users.User, sessions.Session, bool) {
-	if s.accessAdmin == nil || s.flows == nil || s.passwords == nil {
+	if !s.accessPageOn() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgAccessUnavailable)
 		return users.User{}, sessions.Session{}, false
 	}
 	return s.adminPageUser(w, r, accessPagePath, msgAccessFailed, msgAccessAdminOnly)
 }
 
-func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status int, user users.User, message, notice pageMessage) {
+func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status int, user users.User, message, notice views.Message) {
 	resources, err := s.accessAdmin.ListResources(r.Context())
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: access page", "err", err)
@@ -189,10 +190,10 @@ func (s *service) renderAccess(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	view := newAccessPageView(r, resources, entries, time.Now())
-	// The caller checked the admin group, so the menu needs no second lookup.
-	view.Shell = shellView{Login: user.Login, Admin: true, Current: accessPagePath}
+	// The caller checked the admins group, so the menu needs no second lookup.
+	view.Shell = s.shell(user, true, accessPagePath)
 	view.Message, view.Notice = message, notice
-	writePage(w, r, status, accessPage(view), pageCSP)
+	writePage(w, r, status, views.AccessPage(view), pageCSP)
 }
 
 // parseGrantee reads the user and the group fields. The access service checks that exactly one is set.
@@ -217,24 +218,32 @@ func parseGrantee(form url.Values) (access.Grantee, error) {
 
 // parseExpiryInput reads an HTML date or datetime-local value in UTC. Empty never expires.
 // A date expires at the end of that UTC day, the same as a token expiry.
+// The zero time is refused: as an access.Expiry it means "never".
 func parseExpiryInput(raw string) (access.Expiry, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return access.Expiry{}, nil
 	}
 	if day, err := time.Parse(expiryDateLayout, raw); err == nil {
-		return access.ExpiresAt(day.AddDate(0, 0, 1)), nil
+		return nonZeroExpiry(day.AddDate(0, 0, 1))
 	}
 	for _, layout := range expiryLocalLayouts {
 		if at, err := time.Parse(layout, raw); err == nil {
-			return access.ExpiresAt(at), nil
+			return nonZeroExpiry(at)
 		}
 	}
 	return access.Expiry{}, errExpiryInput
+}
+
+func nonZeroExpiry(at time.Time) (access.Expiry, error) {
+	if at.IsZero() {
+		return access.Expiry{}, errExpiryInput
+	}
+	return access.ExpiresAt(at), nil
 }
 
 // accessFormPages are the statuses of a POST of the access page that answer with a page.
 // 200 is the step-up form.
 var accessFormPages = []int{http.StatusOK, http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusInternalServerError, http.StatusServiceUnavailable}
 
-const accessFormDoc = "Only a member of the group admin can send it; any other user is 403. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up instead: the page asks for the password of the session user and returns to GET /access. A refused change shows the page with a message and 400, 404, or 409."
+const accessFormDoc = "Only a member of the group admins can send it; any other user is 403. Origin MUST be the public origin, else 403. A login older than 10 minutes starts a step-up instead: the page asks for the password of the session user and returns to GET /access. A refused change shows the page with a message and 400, 404, or 409."

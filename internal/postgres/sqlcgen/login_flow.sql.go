@@ -96,7 +96,7 @@ func (q *Queries) DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error {
 
 const deleteLoginFlowVersion = `-- name: DeleteLoginFlowVersion :execrows
 DELETE FROM login_flows
-WHERE id = $1 AND version = $2
+WHERE id = $1 AND version = $2 AND expires_at > now()
 `
 
 type DeleteLoginFlowVersionParams struct {
@@ -179,7 +179,7 @@ SET
     pending_factor = $6,
     expires_at = $7,
     user_id = $8
-WHERE id = $9 AND version = $10
+WHERE id = $9 AND version = $10 AND expires_at > now()
 `
 
 type UpdateLoginFlowParams struct {

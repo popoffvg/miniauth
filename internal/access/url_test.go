@@ -120,7 +120,8 @@ func TestParseRequestURL(t *testing.T) {
 		{name: "encoded sub-delim", scheme: "https", host: "dash.example.test", uri: "/a%21b"},
 		{name: "encoded colon", scheme: "https", host: "dash.example.test", uri: "/a%3Ab"},
 		{name: "encoded space", scheme: "https", host: "dash.example.test", uri: "/a%20b", want: "https://dash.example.test/a%20b", ok: true},
-		{name: "encoded percent", scheme: "https", host: "dash.example.test", uri: "/a%25b", want: "https://dash.example.test/a%25b", ok: true},
+		{name: "encoded percent", scheme: "https", host: "dash.example.test", uri: "/a%25b"},
+		{name: "double-encoded dot dot", scheme: "https", host: "dash.example.test", uri: "/public/%252e%252e/admin"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -212,4 +213,21 @@ func TestParseResourceURL(t *testing.T) {
 			assert.Equal(t, tt.want, got.String())
 		})
 	}
+}
+
+func TestResourceURLTextRoundTrip(t *testing.T) {
+	for _, raw := range []string{"https://dash.example.test/", "https://dash.example.test/mcp", "http://127.0.0.1:8088/app"} {
+		t.Run(raw, func(t *testing.T) {
+			original, err := ParseResourceURL(raw)
+			require.NoError(t, err)
+			text, err := original.MarshalText()
+			require.NoError(t, err)
+			var decoded ResourceURL
+			require.NoError(t, decoded.UnmarshalText(text))
+			assert.Equal(t, original, decoded)
+		})
+	}
+	var decoded ResourceURL
+	require.ErrorIs(t, decoded.UnmarshalText([]byte("dash.example.test/a/../b")), ErrPathPrefix)
+	require.ErrorIs(t, decoded.UnmarshalText([]byte("ftp://dash.example.test/")), ErrResourceURL)
 }

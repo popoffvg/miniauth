@@ -11,11 +11,11 @@ import (
 )
 
 type Querier interface {
+	// The expiry uses the database time: the claim can run after a wait for the row lock.
 	ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invite, error)
 	ClaimOAuthCode(ctx context.Context, arg ClaimOAuthCodeParams) (OauthCode, error)
 	ClaimOAuthRefreshToken(ctx context.Context, arg ClaimOAuthRefreshTokenParams) (OauthRefreshToken, error)
 	ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error)
-	// created_at names the enrollment, so a newer enrollment of the same user is not confirmed by an older page.
 	ConfirmTOTP(ctx context.Context, arg ConfirmTOTPParams) (int64, error)
 	CountDevices(ctx context.Context) (int64, error)
 	// The IP count includes every kind.
@@ -31,12 +31,15 @@ type Querier interface {
 	CountTelegramLoginProofs(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
+	// resources_url_unique is the one deferrable constraint.
+	DeferConstraints(ctx context.Context) error
 	DeleteAccessGrant(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteDevice(ctx context.Context, arg DeleteDeviceParams) (int64, error)
 	DeleteDeviceSession(ctx context.Context, arg DeleteDeviceSessionParams) error
 	DeleteExpiredLoginFlows(ctx context.Context) error
 	DeleteExpiredPendingIdentityLinks(ctx context.Context, now pgtype.Timestamptz) error
 	DeleteExpiredTelegramLoginProofs(ctx context.Context, now pgtype.Timestamptz) error
+	DeleteGroup(ctx context.Context, name string) (int64, error)
 	DeleteGroupMembership(ctx context.Context, arg DeleteGroupMembershipParams) (int64, error)
 	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
@@ -52,16 +55,23 @@ type Querier interface {
 	DeleteRecoveryCodes(ctx context.Context, userID pgtype.UUID) error
 	DeleteResource(ctx context.Context, name string) (int64, error)
 	DeleteSession(ctx context.Context, secretHash []byte) error
-	DeleteTOTP(ctx context.Context, userID pgtype.UUID) error
+	DeleteStaleManagedGrants(ctx context.Context, arg DeleteStaleManagedGrantsParams) (int64, error)
+	DeleteStaleManagedResources(ctx context.Context, keep []string) (int64, error)
+	DeleteTOTP(ctx context.Context, arg DeleteTOTPParams) (int64, error)
 	DeleteTelegramLoginProof(ctx context.Context, proofHash []byte) error
 	DeleteUserPasskey(ctx context.Context, arg DeleteUserPasskeyParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
 	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)
+	// Zero rows means the user is not stored or is disabled already.
+	DisableActiveUser(ctx context.Context, arg DisableActiveUserParams) (int64, error)
 	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
-	EnableUser(ctx context.Context, id pgtype.UUID) (int64, error)
+	// Zero rows means the user is not stored or is active already.
+	EnableDisabledUser(ctx context.Context, id pgtype.UUID) (int64, error)
 	EndOAuthConsent(ctx context.Context, arg EndOAuthConsentParams) error
+	EnsureGroup(ctx context.Context, arg EnsureGroupParams) error
 	EnsureGroupMembership(ctx context.Context, arg EnsureGroupMembershipParams) error
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)
+	GetAccessGrant(ctx context.Context, id pgtype.UUID) (AccessGrant, error)
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
 	GetActivePasskeyByCredential(ctx context.Context, credentialID []byte) (Passkey, error)
 	GetExternalIdentity(ctx context.Context, arg GetExternalIdentityParams) (GetExternalIdentityRow, error)
@@ -81,6 +91,7 @@ type Querier interface {
 	GetUserByLogin(ctx context.Context, login string) (User, error)
 	InsertAccessGrant(ctx context.Context, arg InsertAccessGrantParams) error
 	InsertAccessToken(ctx context.Context, arg InsertAccessTokenParams) error
+	InsertGroup(ctx context.Context, arg InsertGroupParams) error
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
 	InsertInvite(ctx context.Context, arg InsertInviteParams) error
 	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
@@ -91,11 +102,14 @@ type Querier interface {
 	InsertPasskey(ctx context.Context, arg InsertPasskeyParams) error
 	InsertPasswordReset(ctx context.Context, arg InsertPasswordResetParams) error
 	InsertPendingIdentityLink(ctx context.Context, arg InsertPendingIdentityLinkParams) error
+	// Zero rows means another request stored a row first.
+	InsertPendingTOTP(ctx context.Context, arg InsertPendingTOTPParams) (int64, error)
 	InsertRecoveryAttempt(ctx context.Context, arg InsertRecoveryAttemptParams) error
 	InsertRecoveryCodes(ctx context.Context, arg InsertRecoveryCodesParams) error
 	InsertResource(ctx context.Context, arg InsertResourceParams) error
 	InsertSession(ctx context.Context, arg InsertSessionParams) error
 	InsertTelegramLoginProof(ctx context.Context, arg InsertTelegramLoginProofParams) (int64, error)
+	// The account joins the built-in group in the same statement.
 	InsertUserIdentity(ctx context.Context, arg InsertUserIdentityParams) error
 	LinkPendingIdentity(ctx context.Context, arg LinkPendingIdentityParams) (LinkPendingIdentityRow, error)
 	ListAccessGrantEntries(ctx context.Context, arg ListAccessGrantEntriesParams) ([]ListAccessGrantEntriesRow, error)
@@ -104,11 +118,16 @@ type Querier interface {
 	ListAllResources(ctx context.Context) ([]Resource, error)
 	ListDevices(ctx context.Context, userID pgtype.UUID) ([]ListDevicesRow, error)
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
+	ListGroupNames(ctx context.Context) ([]string, error)
+	ListGroupSummaries(ctx context.Context, name pgtype.Text) ([]ListGroupSummariesRow, error)
 	ListOAuthClients(ctx context.Context) ([]OauthClient, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, error)
 	ListUserPasskeys(ctx context.Context, userID pgtype.UUID) ([]Passkey, error)
+	// FOR SHARE waits for a disable in progress, and the disable waits for this transaction.
+	// Zero rows means the user is not stored or is disabled.
+	LockActiveUser(ctx context.Context, id pgtype.UUID) (int64, error)
 	LockOAuthClient(ctx context.Context, id pgtype.UUID) error
 	// FOR UPDATE waits for every token issue under the client's consents,
 	// so the access token delete that follows sees their tokens.
@@ -116,10 +135,13 @@ type Querier interface {
 	// FOR SHARE makes a revoke of the consent wait until the token issue commits.
 	// An issue that starts after the revoke reads the revoked row.
 	LockOAuthConsentForIssue(ctx context.Context, id pgtype.UUID) (OauthConsent, error)
-	LockOpenPasswordReset(ctx context.Context, arg LockOpenPasswordResetParams) (pgtype.UUID, error)
+	// The expiry uses the database time: the reset runs after the password hash and can wait for the row lock.
+	LockOpenPasswordReset(ctx context.Context, tokenHash []byte) (pgtype.UUID, error)
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
 	Ping(ctx context.Context) (int32, error)
 	RecordPasskeyUse(ctx context.Context, arg RecordPasskeyUseParams) (int64, error)
+	// A confirmed row is not replaced.
+	ReplacePendingTOTP(ctx context.Context, arg ReplacePendingTOTPParams) (int64, error)
 	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)
 	RevokeUserOAuthConsent(ctx context.Context, arg RevokeUserOAuthConsentParams) (int64, error)
 	// The no-op update returns the active consent that is already stored.
@@ -130,11 +152,12 @@ type Querier interface {
 	TakeLoginFlowChallenge(ctx context.Context, id pgtype.UUID) ([]byte, error)
 	TouchAccessToken(ctx context.Context, arg TouchAccessTokenParams) error
 	TouchSessionDevice(ctx context.Context, arg TouchSessionDeviceParams) error
+	UnmanagedResourceHasURL(ctx context.Context, arg UnmanagedResourceHasURLParams) (bool, error)
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
 	UpsertDevice(ctx context.Context, arg UpsertDeviceParams) (pgtype.UUID, error)
 	UpsertDeviceSession(ctx context.Context, arg UpsertDeviceSessionParams) error
-	// A confirmed row is not replaced: zero rows means the user is already enrolled.
-	UpsertPendingTOTP(ctx context.Context, arg UpsertPendingTOTPParams) (int64, error)
+	UpsertManagedGroupGrant(ctx context.Context, arg UpsertManagedGroupGrantParams) error
+	UpsertManagedResource(ctx context.Context, arg UpsertManagedResourceParams) error
 	// Zero rows means the code is unknown or spent.
 	UseRecoveryCode(ctx context.Context, arg UseRecoveryCodeParams) (int64, error)
 	// Zero rows means a code of this step or a later step was already accepted.

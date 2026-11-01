@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/popoffvg/sfsm"
 
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
@@ -55,21 +55,53 @@ func (r *UserAdminRepository) ListAccounts(ctx context.Context) ([]useradmin.Acc
 	return accounts, nil
 }
 
-// Disable keeps the first disabled time of a user that is disabled already.
-func (r *UserAdminRepository) Disable(ctx context.Context, id users.ID, at time.Time) error {
+// ListGroupNames returns every group in name order.
+func (r *UserAdminRepository) ListGroupNames(ctx context.Context) ([]groups.Name, error) {
+	rows, err := r.q.ListGroupNames(ctx)
+	if err != nil {
+		return nil, groupError("list group names", err)
+	}
+	names := make([]groups.Name, 0, len(rows))
+	for _, raw := range rows {
+		name, err := groups.ParseName(raw)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: list group names: %w", err)
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// Write stores one account transition. Zero rows changed is sfsm.ErrStaleState.
+// A disable deletes every session of the user in the same transaction.
+// Its UPDATE locks the user row, so a StartOnDevice in progress commits its session first.
+func (r *UserAdminRepository) Write(ctx context.Context, id users.ID, prev, next useradmin.AccountState) error {
+	if prev.Status == next.Status {
+		return fmt.Errorf("postgres: account write from %s to the same status", prev.Status)
+	}
+	userID := pgUUIDBytes(id.Bytes())
+	if next.Status == useradmin.StatusActive {
+		n, err := r.q.EnableDisabledUser(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("postgres: enable user: %w", err)
+		}
+		if n == 0 {
+			return fmt.Errorf("postgres: enable user: %w", sfsm.ErrStaleState)
+		}
+		return nil
+	}
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("postgres: begin disable user: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	q := r.q.WithTx(tx)
-	userID := pgUUIDBytes(id.Bytes())
-	n, err := q.DisableUser(ctx, sqlcgen.DisableUserParams{ID: userID, DisabledAt: pgTime(at)})
+	n, err := q.DisableActiveUser(ctx, sqlcgen.DisableActiveUserParams{ID: userID, DisabledAt: pgTime(next.DisabledAt)})
 	if err != nil {
 		return fmt.Errorf("postgres: disable user: %w", err)
 	}
 	if n == 0 {
-		return useradmin.ErrUserNotFound
+		return fmt.Errorf("postgres: disable user: %w", sfsm.ErrStaleState)
 	}
 	if err = q.DeleteUserSessions(ctx, userID); err != nil {
 		return fmt.Errorf("postgres: delete user sessions: %w", err)
@@ -80,23 +112,11 @@ func (r *UserAdminRepository) Disable(ctx context.Context, id users.ID, at time.
 	return nil
 }
 
-// Enable clears the disabled time. It brings back no session.
-func (r *UserAdminRepository) Enable(ctx context.Context, id users.ID) error {
-	n, err := r.q.EnableUser(ctx, pgUUIDBytes(id.Bytes()))
-	if err != nil {
-		return fmt.Errorf("postgres: enable user: %w", err)
-	}
-	if n == 0 {
-		return useradmin.ErrUserNotFound
-	}
-	return nil
-}
-
-// AddMember keeps a stored pair as it is, so a repeated add is not an error.
+// AddMember keeps a stored pair as it is, so a repeated add is not an error. An unknown group is groups.ErrGroupNotFound.
 func (r *UserAdminRepository) AddMember(ctx context.Context, id users.ID, name groups.Name) error {
 	err := r.q.EnsureGroupMembership(ctx, sqlcgen.EnsureGroupMembershipParams{UserID: pgUUIDBytes(id.Bytes()), Name: name.String()})
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation {
+	if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "group_memberships_user_id_fkey" {
 		return useradmin.ErrUserNotFound
 	}
 	if err != nil {

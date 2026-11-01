@@ -13,6 +13,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // maxLoginFormBody is large enough for the longest login and password, form-encoded.
@@ -46,7 +47,7 @@ func (s *service) loginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setFlowCookie(w, id, secret, time.Now())
-	s.renderSteps(w, r, http.StatusOK, loginflow.LoginFlow{}, "")
+	s.renderSteps(w, withNewFlowSecret(r, secret), http.StatusOK, loginflow.LoginFlow{}, "")
 }
 
 // login runs the password step of the flow in the flow cookie.
@@ -62,7 +63,7 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	retry := func(status int, message pageMessage) {
+	retry := func(status int, message views.Message) {
 		s.renderSteps(w, r, status, machine.Get(), message)
 	}
 	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
@@ -127,7 +128,7 @@ func (s *service) openFlow(w http.ResponseWriter, r *http.Request) (loginMachine
 
 // stepFailed answers the error of a login step and reports whether it wrote a reply.
 // retry shows the form of the step again with a message.
-func stepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(status int, message pageMessage)) bool {
+func stepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(status int, message views.Message)) bool {
 	var tooSoon *password.TooSoonError
 	switch {
 	case err == nil:
@@ -141,7 +142,7 @@ func stepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(st
 	case errors.As(err, &tooSoon):
 		w.Header().Set("Retry-After", retryAfter(tooSoon.RetryAt))
 		retry(http.StatusTooManyRequests, msgTooSoon)
-	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
+	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition), errors.Is(err, loginflow.ErrFlowNotFound):
 		clearFlowCookie(w)
 		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
 	default:

@@ -10,14 +10,20 @@ import (
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/providers/telegram"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // TelegramCallbackPath is the data-auth-url path of the widget. The bot domain MUST be the host of MINIAUTH_PUBLIC_URL.
 const TelegramCallbackPath = "/login/telegram/callback"
 
+// telegramNonceParam carries the loginflow.CallbackNonce in data-auth-url.
+// The widget keeps the query of data-auth-url and appends its fields after "&".
+const telegramNonceParam = "flow_nonce"
+
 // telegramCallbackRequest documents the query of GET /login/telegram/callback.
-// Telegram can add fields. Every field takes part in the hash check.
+// Telegram can add fields. Every field but flow_nonce takes part in the hash check.
 type telegramCallbackRequest struct {
+	FlowNonce string `query:"flow_nonce" required:"true" description:"The nonce of the login flow in the data-auth-url. It MUST match the flow cookie."`
 	ID        string `query:"id" required:"true" description:"The Telegram user id."`
 	FirstName string `query:"first_name"`
 	LastName  string `query:"last_name"`
@@ -25,12 +31,6 @@ type telegramCallbackRequest struct {
 	PhotoURL  string `query:"photo_url"`
 	AuthDate  string `query:"auth_date" required:"true" description:"Unix seconds when Telegram signed the data."`
 	Hash      string `query:"hash" required:"true" description:"Hex HMAC-SHA256 of the other fields, keyed with the SHA-256 of the bot token."`
-}
-
-// telegramWidget is the data of the Telegram Login Widget on a page. The zero value shows no widget.
-type telegramWidget struct {
-	BotName telegram.BotName
-	AuthURL string
 }
 
 // WithTelegram offers the Telegram widget on the login page.
@@ -47,8 +47,14 @@ func (s *service) telegramOffered() bool {
 	return s.telegram != nil && s.links != nil && s.publicURL.Origin() != ""
 }
 
-func (s *service) showTelegramWidget(view *pageView) {
-	view.Telegram = telegramWidget{BotName: s.telegram.BotName(), AuthURL: s.publicURL.Origin() + TelegramCallbackPath}
+// showTelegramWidget binds the callback URL to the flow, so data sent to the browser of another flow is refused.
+func (s *service) showTelegramWidget(r *http.Request, view *views.Page) {
+	secret, ok := flowSecretOf(r)
+	if !ok {
+		return
+	}
+	query := url.Values{telegramNonceParam: {secret.CallbackNonce().String()}}
+	view.Telegram = views.TelegramWidget{BotName: s.telegram.BotName(), AuthURL: s.publicURL.Origin() + TelegramCallbackPath + "?" + query.Encode()}
 }
 
 // telegramCallback checks the widget data for the flow in the flow cookie.
@@ -82,6 +88,13 @@ func (s *service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
 	}
+	nonce := query[telegramNonceParam]
+	query.Del(telegramNonceParam)
+	if len(nonce) != 1 || !secret.CallbackNonce().Matches(nonce[0]) {
+		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: telegram data refused", "err", "the flow nonce does not match")
+		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
+		return
+	}
 	data, err := telegram.ParseAuthData(query)
 	if err != nil {
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
@@ -93,7 +106,7 @@ func (s *service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: telegram data refused", "err", err)
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
-	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
+	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition), errors.Is(err, loginflow.ErrFlowNotFound):
 		clearFlowCookie(w)
 		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
 		return

@@ -8,6 +8,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // maxRecoveryFormBody is large enough for the token and the longest password, form-encoded.
@@ -42,7 +43,7 @@ func (s *service) recoverPage(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgRecoveryOff)
 		return
 	}
-	renderPage(w, r, http.StatusOK, pageRecover, pageView{})
+	renderPage(w, r, http.StatusOK, views.PageRecover, views.Page{})
 }
 
 // requestRecovery queues a reset link. A known, an unknown, and a malformed address get the same reply.
@@ -57,17 +58,17 @@ func (s *service) requestRecovery(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRecoveryFormBody)
 	if r.ParseForm() != nil {
-		renderPage(w, r, http.StatusBadRequest, pageRecover, pageView{Message: msgBadForm})
+		renderPage(w, r, http.StatusBadRequest, views.PageRecover, views.Page{Message: msgBadForm})
 		return
 	}
 	ip, err := clientIP(r)
 	if err != nil {
-		renderPage(w, r, http.StatusBadRequest, pageRecover, pageView{Message: msgBadForm})
+		renderPage(w, r, http.StatusBadRequest, views.PageRecover, views.Page{Message: msgBadForm})
 		return
 	}
 	email, err := users.ParseEmail(r.PostForm.Get("email"))
 	if err != nil {
-		renderPage(w, r, http.StatusOK, pageRecoverSent, pageView{Message: msgRecoverySent})
+		renderPage(w, r, http.StatusOK, views.PageRecoverSent, views.Page{Message: msgRecoverySent})
 		return
 	}
 	err = s.recovery.Request(r.Context(), email, ip)
@@ -75,7 +76,7 @@ func (s *service) requestRecovery(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.As(err, &tooSoon):
 		w.Header().Set("Retry-After", retryAfter(tooSoon.RetryAt))
-		renderPage(w, r, http.StatusTooManyRequests, pageRecover, pageView{Message: msgTooSoon})
+		renderPage(w, r, http.StatusTooManyRequests, views.PageRecover, views.Page{Message: msgTooSoon})
 		return
 	case errors.Is(err, recovery.ErrQueueFull):
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: recovery request", "err", err)
@@ -84,7 +85,7 @@ func (s *service) requestRecovery(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusInternalServerError, msgRecoveryFailed)
 		return
 	}
-	renderPage(w, r, http.StatusOK, pageRecoverSent, pageView{Message: msgRecoverySent})
+	renderPage(w, r, http.StatusOK, views.PageRecoverSent, views.Page{Message: msgRecoverySent})
 }
 
 // resetPage asks for the new password. The token moves from the URL to a hidden form field.
@@ -109,7 +110,7 @@ func (s *service) resetPage(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusInternalServerError, msgRecoveryFailed)
 		return
 	}
-	renderPage(w, r, http.StatusOK, pageReset, pageView{ResetToken: token})
+	renderPage(w, r, http.StatusOK, views.PageReset, views.Page{ResetToken: token})
 }
 
 // reset sets the new password and signs the user out everywhere.
@@ -135,7 +136,7 @@ func (s *service) reset(w http.ResponseWriter, r *http.Request) {
 	}
 	userPassword, err := users.NewPassword(r.PostForm.Get("password"))
 	if err != nil {
-		renderPage(w, r, http.StatusBadRequest, pageReset, pageView{Message: msgNewPasswordInvalid, ResetToken: token})
+		renderPage(w, r, http.StatusBadRequest, views.PageReset, views.Page{Message: msgNewPasswordInvalid, ResetToken: token})
 		return
 	}
 	err = s.recovery.Reset(r.Context(), token, userPassword)
@@ -153,7 +154,7 @@ func (s *service) reset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessions.ClearCookie(w, s.domain)
-	renderPage(w, r, http.StatusOK, pageResetDone, pageView{})
+	renderPage(w, r, http.StatusOK, views.PageResetDone, views.Page{})
 }
 
 // hideResetLink keeps the URL with the token out of a Referer header and out of a cache.

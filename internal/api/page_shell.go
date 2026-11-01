@@ -3,70 +3,71 @@ package api
 import (
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
-
-// shellView is the sidebar of a signed-in page: the user, the menu, and the item of this page.
-type shellView struct {
-	Login   users.Login
-	Admin   bool
-	Current navPath
-}
-
-// navPath is the path of one menu item.
-type navPath string
-
-// navSection is a heading of the menu.
-type navSection string
-
-const (
-	navAccount navSection = "Account"
-	// navAdministration is shown only to a member of groups.Admin.
-	navAdministration navSection = "Administration"
-)
-
-// navItem is one link of the menu.
-type navItem struct {
-	Path    navPath
-	Section navSection
-	Label   string
-	Icon    iconName
-}
-
-// navItems is the menu, in the order of the sidebar.
-var navItems = []navItem{
-	{Path: "/", Section: navAccount, Label: "Overview", Icon: iconHome},
-	{Path: tokensPath, Section: navAccount, Label: "Tokens", Icon: iconKey},
-	{Path: sessionsPagePath, Section: navAccount, Label: "Security", Icon: iconShield},
-	{Path: usersPagePath, Section: navAdministration, Label: "Users", Icon: iconUsers},
-	{Path: accessPagePath, Section: navAdministration, Label: "Access", Icon: iconLock},
-}
-
-// navSections is the order of the menu headings.
-var navSections = []navSection{navAccount, navAdministration}
-
-// itemsOf returns the menu items of section that shell may see.
-func (shell shellView) itemsOf(section navSection) []navItem {
-	if section == navAdministration && !shell.Admin {
-		return nil
-	}
-	var items []navItem
-	for _, item := range navItems {
-		if item.Section == section {
-			items = append(items, item)
-		}
-	}
-	return items
-}
 
 // shellFor builds the sidebar of user. A group store error hides the admin menu and is logged:
 // the page itself still checks the group before it shows admin data.
-func (s *service) shellFor(r *http.Request, user users.User, current navPath) shellView {
+func (s *service) shellFor(r *http.Request, user users.User, current views.NavPath) views.Shell {
 	names, err := s.groups.List(r.Context(), user.ID)
 	if err != nil {
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: page groups", "err", err)
 	}
-	return shellView{Login: user.Login, Admin: slices.Contains(names, groups.Admin()), Current: current}
+	return s.shell(user, slices.Contains(names, groups.Admins()), current)
+}
+
+// shell is the one builder of views.Shell, so every page hides the same menu items.
+func (s *service) shell(user users.User, admin bool, current views.NavPath) views.Shell {
+	shell := views.Shell{Login: user.Login, Admin: admin, Current: current}
+	for _, page := range menuPages {
+		if !page.on(s) {
+			shell.Off = append(shell.Off, page.path)
+		}
+	}
+	return shell
+}
+
+// menuPages is each menu page that needs a service. A page that is off answers 503, so the menu hides it.
+var menuPages = []struct {
+	path views.NavPath
+	on   func(*service) bool
+}{
+	{path: tokensPath, on: (*service).tokensOn},
+	{path: usersPagePath, on: (*service).usersPageOn},
+	{path: groupsPagePath, on: (*service).groupsPageOn},
+	{path: accessPagePath, on: (*service).accessPageOn},
+}
+
+func (s *service) tokensOn() bool {
+	return s.tokens != nil && s.flows != nil && s.passwords != nil
+}
+
+func (s *service) usersPageOn() bool {
+	return s.userAdmin != nil && s.flows != nil && s.passwords != nil
+}
+
+func (s *service) groupsPageOn() bool {
+	return s.groupAdmin != nil && s.accessAdmin != nil && s.flows != nil && s.passwords != nil
+}
+
+func (s *service) accessPageOn() bool {
+	return s.accessAdmin != nil && s.flows != nil && s.passwords != nil
+}
+
+// matchesQuery reports whether one of fields contains query, ignoring case. An empty query matches.
+func matchesQuery(query string, fields ...string) bool {
+	if query == "" {
+		return true
+	}
+	query = strings.ToLower(query)
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), query) {
+			return true
+		}
+	}
+	return false
 }

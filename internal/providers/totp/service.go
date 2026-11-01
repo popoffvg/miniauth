@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
+
+	"github.com/popoffvg/sfsm"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/providers/password"
@@ -12,20 +15,19 @@ import (
 )
 
 // Store keeps the TOTP credential and the recovery code hashes of each user.
-// SavePending MUST return ErrEnrolled when the user has a confirmed credential.
 // Find MUST return ErrNotEnrolled when the user has no row.
-// Confirm saves step and replaces the recovery codes in one transaction. It MUST return
-// ErrNoEnrollment when no unconfirmed row with createdAt exists.
-// UseStep stores step only when it is later than the stored step, and reports whether it did.
+// Write stores the transition from prev to next. It MUST wrap sfsm.ErrStaleState when the row is no longer
+// at prev.Version of prev.Enrollment.
+// A confirm replaces the recovery codes in the same transaction. A next stage that is not Stored
+// deletes the row and every recovery code in one transaction.
+// UseStep stores step only when the row is still enrollment and step is later than the stored step,
+// and reports whether it did.
 // UseRecoveryCode marks an unused code as used, and reports whether it did.
-// Delete removes the credential and every recovery code.
 type Store interface {
-	SavePending(ctx context.Context, userID users.ID, sealed SealedSecret, createdAt time.Time) error
 	Find(ctx context.Context, userID users.ID) (Credential, error)
-	Confirm(ctx context.Context, userID users.ID, createdAt time.Time, step TimeStep, codes []RecoveryHash, at time.Time) error
-	UseStep(ctx context.Context, userID users.ID, step TimeStep) (bool, error)
+	Write(ctx context.Context, userID users.ID, prev, next EnrollmentState) error
+	UseStep(ctx context.Context, userID users.ID, enrollment EnrollmentID, step TimeStep) (bool, error)
 	UseRecoveryCode(ctx context.Context, userID users.ID, hash RecoveryHash, at time.Time) (bool, error)
-	Delete(ctx context.Context, userID users.ID) error
 }
 
 // Service enrolls TOTP and checks TOTP codes and recovery codes.
@@ -34,16 +36,18 @@ type Service struct {
 	limiter *password.Limiter
 	key     Key
 	now     func() time.Time
+	logger  *slog.Logger
 }
 
 // NewService returns a service that reads the clock from time.Now.
 // TOTP and recovery code failures share the password.KindSecondFactor backoff.
-func NewService(store Store, attempts password.AttemptStore, key Key) (*Service, error) {
-	return NewServiceWithClock(store, attempts, key, time.Now)
+// A nil logger discards the enrollment transition log.
+func NewService(store Store, attempts password.AttemptStore, key Key, logger *slog.Logger) (*Service, error) {
+	return NewServiceWithClock(store, attempts, key, time.Now, logger)
 }
 
 // NewServiceWithClock is NewService with the clock read from now.
-func NewServiceWithClock(store Store, attempts password.AttemptStore, key Key, now func() time.Time) (*Service, error) {
+func NewServiceWithClock(store Store, attempts password.AttemptStore, key Key, now func() time.Time, logger *slog.Logger) (*Service, error) {
 	if store == nil || now == nil {
 		return nil, errors.New("totp: store or clock is missing")
 	}
@@ -51,7 +55,10 @@ func NewServiceWithClock(store Store, attempts password.AttemptStore, key Key, n
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: store, limiter: limiter, key: key, now: now}, nil
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	return &Service{store: store, limiter: limiter, key: key, now: now, logger: logger}, nil
 }
 
 var _ loginflow.SecondFactors = (*Service)(nil)
@@ -76,6 +83,10 @@ func (s *Service) HasSecondFactor(ctx context.Context, userID users.ID) (bool, e
 // Begin makes a new secret for user and stores it sealed until Confirm.
 // A later Begin replaces an enrollment that waits.
 func (s *Service) Begin(ctx context.Context, user users.User) (Enrollment, error) {
+	state, err := s.state(ctx, user.ID)
+	if err != nil {
+		return Enrollment{}, err
+	}
 	secret, err := NewSecret()
 	if err != nil {
 		return Enrollment{}, err
@@ -84,7 +95,11 @@ func (s *Service) Begin(ctx context.Context, user users.User) (Enrollment, error
 	if err != nil {
 		return Enrollment{}, err
 	}
-	if err := s.store.SavePending(ctx, user.ID, sealed, s.clock()); err != nil {
+	err = s.transition(ctx, user.ID, state, EnrollmentEvent{Kind: EventBegin, At: s.clock(), Sealed: sealed, Enrollment: NewEnrollmentID()})
+	if errors.Is(err, ErrNoTransition) {
+		return Enrollment{}, ErrEnrolled
+	}
+	if err != nil {
 		return Enrollment{}, err
 	}
 	return Enrollment{Secret: secret, URI: secret.KeyURI(user.Login)}, nil
@@ -127,15 +142,25 @@ func (s *Service) Confirm(ctx context.Context, userID users.ID, code Code) ([]Re
 	for i, c := range codes {
 		hashes[i] = c.Hash()
 	}
-	if err := s.store.Confirm(ctx, userID, credential.CreatedAt, step, hashes, now); err != nil {
+	event := EnrollmentEvent{Kind: EventConfirm, At: now, Step: step, RecoveryCodes: hashes}
+	if err := s.transition(ctx, userID, credential.state(), event); err != nil {
 		return nil, err
 	}
 	return codes, nil
 }
 
 // Disable removes the TOTP and the recovery codes of userID.
+// A user without TOTP gets nil: there is nothing to turn off.
 func (s *Service) Disable(ctx context.Context, userID users.ID) error {
-	return s.store.Delete(ctx, userID)
+	state, err := s.state(ctx, userID)
+	if err != nil {
+		return err
+	}
+	err = s.transition(ctx, userID, state, EnrollmentEvent{Kind: EventDisable})
+	if errors.Is(err, ErrNoTransition) {
+		return nil
+	}
+	return err
 }
 
 // VerifyCode checks a TOTP code of user and sends EventStepPassed or EventStepFailed to flow.
@@ -158,7 +183,7 @@ func (s *Service) VerifyCode(ctx context.Context, flow password.Flow, user users
 		if !ok {
 			return false, nil
 		}
-		return s.store.UseStep(ctx, user.ID, step)
+		return s.store.UseStep(ctx, user.ID, credential.Enrollment, step)
 	})
 }
 
@@ -197,6 +222,7 @@ func (s *Service) verify(ctx context.Context, flow password.Flow, user users.Use
 }
 
 // pending returns the unconfirmed credential of userID that has not expired.
+// An expired one is deleted.
 func (s *Service) pending(ctx context.Context, userID users.ID) (Credential, error) {
 	credential, err := s.store.Find(ctx, userID)
 	if errors.Is(err, ErrNotEnrolled) {
@@ -209,13 +235,66 @@ func (s *Service) pending(ctx context.Context, userID users.ID) (Credential, err
 		return Credential{}, ErrEnrolled
 	}
 	if !s.clock().Before(credential.CreatedAt.Add(EnrollmentTTL)) {
+		if err := s.transition(ctx, userID, credential.state(), EnrollmentEvent{Kind: EventExpire}); err != nil {
+			return Credential{}, err
+		}
 		return Credential{}, ErrNoEnrollment
 	}
 	return credential, nil
 }
 
+// state reads the enrollment stage of userID. No row is StageNone.
+func (s *Service) state(ctx context.Context, userID users.ID) (EnrollmentState, error) {
+	credential, err := s.store.Find(ctx, userID)
+	if errors.Is(err, ErrNotEnrolled) {
+		return EnrollmentState{Stage: StageNone}, nil
+	}
+	if err != nil {
+		return EnrollmentState{}, err
+	}
+	return credential.state(), nil
+}
+
+// transition applies event to the state the caller read and checked.
+// A lost race with another request is an error that wraps sfsm.ErrStaleState.
+func (s *Service) transition(ctx context.Context, userID users.ID, read EnrollmentState, event EnrollmentEvent) error {
+	machine, err := sfsm.OpenPersistedSFSM(ctx, enrollmentStore{store: s.store, read: read}, userID, EnrollmentState.apply,
+		&sfsm.SFSMOptions[EnrollmentState, EnrollmentEvent]{
+			AfterStateChanged: func(from, to EnrollmentState, event EnrollmentEvent) {
+				s.logger.InfoContext(ctx, "miniauth: totp enrollment",
+					"user", userID,
+					"from", from.Stage,
+					"to", to.Stage,
+					"event", event.Kind,
+				)
+			},
+		})
+	if err != nil {
+		return fmt.Errorf("totp: open enrollment: %w", err)
+	}
+	defer func() { _ = machine.Close() }()
+	if err := machine.Apply(ctx, event); err != nil {
+		return fmt.Errorf("totp: %s: %w", event.Kind, err)
+	}
+	return nil
+}
+
+// enrollmentStore is the sfsm.Store of one transition. Load returns the state the service checked,
+// so the version guard of Write refuses the transition when the row moved after that check.
+type enrollmentStore struct {
+	store Store
+	read  EnrollmentState
+}
+
+func (e enrollmentStore) Load(context.Context, users.ID) (EnrollmentState, error) {
+	return e.read, nil
+}
+
+func (e enrollmentStore) Write(ctx context.Context, userID users.ID, prev, next EnrollmentState) error {
+	return e.store.Write(ctx, userID, prev, next)
+}
+
 // clock returns UTC truncated to microseconds, the precision of a PostgreSQL timestamp.
-// Confirm finds the enrollment by its created_at, so the stored value MUST equal the read one.
 func (s *Service) clock() time.Time {
 	return s.now().UTC().Truncate(time.Microsecond)
 }

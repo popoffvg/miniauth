@@ -62,9 +62,9 @@ tasks:
       - "{{.TOOL}} sqlc generate"
 
   templ:
-    desc: Generate Go code from internal/api/*.templ with templ
+    desc: Generate Go code from internal/views/*.templ with templ
     cmds:
-      - "{{.TOOL}} templ generate -path internal/api"
+      - "{{.TOOL}} templ generate -path internal/views"
 
   db:up:
     desc: Start the local PostgreSQL from compose.yaml and wait until it is healthy
@@ -93,13 +93,10 @@ tasks:
       - "{{.TOOL}} gocov report {{.COVER_DIR}}/cover.json"
       - "{{.TOOL}} gocov-html {{.COVER_DIR}}/cover.json > {{.COVER_DIR}}/index.html"
 
-  review:
-    desc: CodeRabbit review of the uncommitted change (needs the coderabbit CLI and a login)
-    preconditions:
-      - sh: command -v coderabbit
-        msg: "install the CodeRabbit CLI: curl -fsSL https://cli.coderabbit.ai/install.sh | sh"
+  review:rules:
+    desc: Per-rule LLM review of the branch against .reviewrules/ (needs a reviewrules backend, see docs/development.md)
     cmds:
-      - coderabbit review --plain
+      - "{{.TOOL}} reviewrules --base origin/main --worktree {{.CLI_ARGS}}"
 
   check:
     desc: Everything CI runs

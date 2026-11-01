@@ -1,0 +1,160 @@
+package views
+
+// document is the HTML skeleton of every page. stylesheet is StylesheetPath, or an absolute URL on a page
+// that another host serves.
+templ document(title string, stylesheet string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="color-scheme" content="light dark"/>
+			<title>{ title } · miniauth</title>
+			<link rel="stylesheet" href={ templ.SafeURL(stylesheet) }/>
+		</head>
+		{ children... }
+	</html>
+}
+
+templ icon(name Icon) {
+	if glyph, ok := iconGlyphs[name]; ok {
+		if glyph.filled {
+			<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+				@templ.Raw(glyph.markup)
+			</svg>
+		} else {
+			<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+				@templ.Raw(glyph.markup)
+			</svg>
+		}
+	}
+}
+
+templ brand(href string) {
+	<a class="brand" href={ templ.SafeURL(href) }>
+		<span class="brand-mark">
+			@icon(IconBrand)
+		</span>
+		<span>miniauth</span>
+	</a>
+}
+
+// authLayout is the centred card of a page for a signed-out user: login, steps, recovery, invite, refusal.
+templ authLayout(title string) {
+	@authLayoutAt(title, "") {
+		{ children... }
+	}
+}
+
+// authLayoutAt is authLayout for a page that another host serves: origin is the public origin of miniauth.
+templ authLayoutAt(title string, origin string) {
+	@document(title, origin+StylesheetPath) {
+		<body>
+			<main class="auth" id="main">
+				@brand(origin + "/")
+				<div class="auth-card">
+					{ children... }
+				</div>
+			</main>
+		</body>
+	}
+}
+
+// shellLayout is the app shell of a signed-in page: the sidebar, the top bar below 768px, and the content.
+templ shellLayout(title string, shell Shell) {
+	@document(title, StylesheetPath) {
+		<body>
+			<a class="skip-link" href="#main">Skip to content</a>
+			<div class="shell">
+				<aside class="sidebar" aria-label="Sidebar">
+					@brand("/")
+					<nav class="sidebar-nav" aria-label="Main">
+						@navMenu(shell)
+					</nav>
+					@accountBox(shell)
+				</aside>
+				<header class="topbar">
+					@brand("/")
+					<details class="mobile-nav">
+						<summary>
+							@icon(IconMenu)
+							Menu
+						</summary>
+						<div class="mobile-nav-panel">
+							<nav aria-label="Main">
+								@navMenu(shell)
+							</nav>
+							@accountBox(shell)
+						</div>
+					</details>
+				</header>
+				<main class="main" id="main">
+					<div class="content">
+						{ children... }
+					</div>
+				</main>
+			</div>
+		</body>
+	}
+}
+
+templ navMenu(shell Shell) {
+	for _, section := range navSections {
+		if items := shell.itemsOf(section); len(items) > 0 {
+			<div class="nav-group">
+				<p class="nav-label">{ string(section) }</p>
+				<ul class="nav-list">
+					for _, item := range items {
+						<li>
+							<a
+								class="nav-link"
+								href={ templ.SafeURL(string(item.Path)) }
+								if item.Path == shell.Current {
+									aria-current="page"
+								}
+							>
+								@icon(item.Icon)
+								{ item.Label }
+							</a>
+						</li>
+					}
+				</ul>
+			</div>
+		}
+	}
+}
+
+templ accountBox(shell Shell) {
+	<div class="account">
+		<span class="avatar" aria-hidden="true">{ initial(shell.Login) }</span>
+		<span class="account-name" title={ shell.Login.String() }>{ shell.Login.String() }</span>
+		<form method="post" action="/logout">
+			<button class="btn btn-ghost btn-icon" type="submit" title="Sign out" aria-label="Sign out">
+				@icon(IconSignOut)
+			</button>
+		</form>
+	</div>
+}
+
+// pageHeader is the title, the one-line description, and the actions of a shell page.
+templ pageHeader(title string, description string) {
+	<div class="page-header">
+		<div>
+			<h1>{ title }</h1>
+			if description != "" {
+				<p>{ description }</p>
+			}
+		</div>
+		<div class="page-actions">
+			{ children... }
+		</div>
+	</div>
+}
+
+templ breadcrumbs(parentPath string, parent string, current string) {
+	<nav class="breadcrumbs" aria-label="Breadcrumb">
+		<a href={ templ.SafeURL(parentPath) }>{ parent }</a>
+		<span aria-hidden="true">/</span>
+		<span aria-current="page">{ current }</span>
+	</nav>
+}

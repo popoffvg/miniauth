@@ -108,9 +108,13 @@ func (u ResourceURL) MarshalText() ([]byte, error) {
 	return []byte(u.String()), nil
 }
 
-// UnmarshalText parses text with ParseResourceURL, so it needs a scheme that MarshalText does not write.
+// UnmarshalText parses an absolute URL with ParseResourceURL, or the scheme-less form that MarshalText writes.
 func (u *ResourceURL) UnmarshalText(text []byte) error {
-	parsed, err := ParseResourceURL(string(text))
+	raw := strings.TrimSpace(string(text))
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	parsed, err := ParseResourceURL(raw)
 	if err != nil {
 		return err
 	}
@@ -181,8 +185,8 @@ func cleanPath(path string) bool {
 	return true
 }
 
-// encodedPlainByte reports a "%XY" that decodes to '/', '\', or a byte a path may carry raw:
-// an unreserved byte, a sub-delim, ':', or '@'.
+// encodedPlainByte reports a "%XY" that decodes to '/', '\', '%', or a byte a path may carry raw:
+// an unreserved byte, a sub-delim, ':', or '@'. A backend that decodes twice turns "%25" into a new escape.
 // A prefix has no '%', so the backend decodes such a path to one that a longer prefix covers.
 func encodedPlainByte(path string) bool {
 	for i := 0; i+2 < len(path); i++ {
@@ -197,7 +201,7 @@ func encodedPlainByte(path string) bool {
 	return false
 }
 
-const plainPathBytes = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@/\\"
+const plainPathBytes = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@/\\%"
 
 func hasControl(s string) bool {
 	for _, r := range s {

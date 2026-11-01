@@ -11,13 +11,14 @@ import (
 	"github.com/popoffvg/miniauth/internal/oauth"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 const (
-	msgOAuthUnavailable pageMessage = "The app sign-in is not available."
-	msgOAuthClient      pageMessage = "The app is not known. Ask the admin to register it."
-	msgOAuthRedirect    pageMessage = "The app asked to return to an address it did not register."
-	msgOAuthFailed      pageMessage = "The app sign-in failed. Try again."
+	msgOAuthUnavailable views.Message = "The app sign-in is not available."
+	msgOAuthClient      views.Message = "The app is not known. Ask the admin to register it."
+	msgOAuthRedirect    views.Message = "The app asked to return to an address it did not register."
+	msgOAuthFailed      views.Message = "The app sign-in failed. Try again."
 )
 
 // consentActionAllow and consentActionDeny are the buttons of the consent page.
@@ -55,21 +56,8 @@ type authorizeRequest struct {
 
 // An untrusted redirect URI MUST render a page. Errors MUST NOT go to the client URI.
 type authorizeRefusal struct {
-	message pageMessage
+	message views.Message
 	code    oauthErrorCode
-}
-
-type consentPageView struct {
-	Login        users.Login
-	ClientName   oauth.ClientName
-	RedirectHost string
-	Resource     tokens.Scope
-	Fields       []consentField
-}
-
-type consentField struct {
-	Name  string
-	Value string
 }
 
 // RFC 6749 Section 3.1 authorization endpoint.
@@ -96,17 +84,17 @@ func (s *service) authorizePage(w http.ResponseWriter, r *http.Request) {
 		s.sendCode(w, r, user, request, http.StatusFound)
 		return
 	}
-	fields := make([]consentField, 0, len(authorizeParams))
+	fields := make([]views.ConsentField, 0, len(authorizeParams))
 	for _, name := range authorizeParams {
-		fields = append(fields, consentField{Name: name, Value: r.URL.Query().Get(name)})
+		fields = append(fields, views.ConsentField{Name: name, Value: r.URL.Query().Get(name)})
 	}
-	writePage(w, r, http.StatusOK, consentPage(consentPageView{
+	renderPage(w, r, http.StatusOK, views.PageConsent, views.Page{
 		Login:        user.Login,
 		ClientName:   request.Client.Name,
 		RedirectHost: request.RedirectURI.Host(),
 		Resource:     request.Resource,
 		Fields:       fields,
-	}), pageCSP)
+	})
 }
 
 func (s *service) answerConsent(w http.ResponseWriter, r *http.Request) {

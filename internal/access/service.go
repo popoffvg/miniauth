@@ -13,8 +13,8 @@ import (
 // CreateResource MUST return ErrDuplicateResource when the name or the URL is stored.
 // DeleteResource and FindResource MUST return ErrResourceNotFound for a missing name.
 // DeleteResource also deletes the grants of the resource.
-// CreateGrant MUST return ErrResourceNotFound, ErrUnknownUser, or ErrDuplicateGrant for those cases.
-// DeleteGrant MUST return ErrGrantNotFound for a missing id.
+// CreateGrant MUST return ErrResourceNotFound, ErrUnknownUser, ErrUnknownGroup, or ErrDuplicateGrant for those cases.
+// DeleteGrant and FindGrant MUST return ErrGrantNotFound for a missing id.
 // ListResources returns the resources on one host. ListGrants returns every grant of one resource, expired ones too.
 // ListGrantEntries returns the grants that match the filter, expired ones too, in resource name order.
 type Repository interface {
@@ -25,6 +25,7 @@ type Repository interface {
 	ListAllResources(ctx context.Context) ([]Resource, error)
 	CreateGrant(ctx context.Context, grant Grant) error
 	DeleteGrant(ctx context.Context, id GrantID) error
+	FindGrant(ctx context.Context, id GrantID) (Grant, error)
 	ListGrants(ctx context.Context, resource ResourceName) ([]Grant, error)
 	ListGrantEntries(ctx context.Context, filter GrantFilter) ([]GrantEntry, error)
 }
@@ -97,10 +98,17 @@ func (s *Service) CreateResource(ctx context.Context, name ResourceName, url Res
 	return resource, nil
 }
 
-// DeleteResource deletes the resource and its grants.
+// DeleteResource deletes the resource and its grants. A managed resource is ErrManagedResource.
 func (s *Service) DeleteResource(ctx context.Context, name ResourceName) error {
 	if err := s.ready(); err != nil {
 		return err
+	}
+	found, err := s.repo.FindResource(ctx, name)
+	if err != nil {
+		return err
+	}
+	if found.Managed {
+		return ErrManagedResource
 	}
 	return s.repo.DeleteResource(ctx, name)
 }
@@ -131,10 +139,17 @@ func (s *Service) Grant(ctx context.Context, resource ResourceName, subject Subj
 	return grant, nil
 }
 
-// Revoke deletes the grant. The next Check does not count it.
+// Revoke deletes the grant. The next Check does not count it. A managed grant is ErrManagedGrant.
 func (s *Service) Revoke(ctx context.Context, id GrantID) error {
 	if err := s.ready(); err != nil {
 		return err
+	}
+	found, err := s.repo.FindGrant(ctx, id)
+	if err != nil {
+		return err
+	}
+	if found.Managed {
+		return ErrManagedGrant
 	}
 	return s.repo.DeleteGrant(ctx, id)
 }
@@ -182,7 +197,7 @@ func (s *Service) FindResourceByURL(ctx context.Context, url ResourceURL) (Resou
 }
 
 // GrantTo gives the user or the group in grantee the resource. A zero expiry never expires.
-// It returns ErrResourceName, ErrSubject, ErrExpiry, ErrUnknownUser, ErrResourceNotFound, or ErrDuplicateGrant for those cases.
+// It returns ErrResourceName, ErrSubject, ErrExpiry, ErrUnknownUser, ErrUnknownGroup, ErrResourceNotFound, or ErrDuplicateGrant for those cases.
 func (s *Service) GrantTo(ctx context.Context, resource ResourceName, grantee Grantee, expiry Expiry) (GrantEntry, error) {
 	if err := s.ready(); err != nil {
 		return GrantEntry{}, err

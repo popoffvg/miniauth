@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/providers/google"
 	"github.com/popoffvg/miniauth/internal/providers/telegram"
@@ -57,6 +58,8 @@ type Config struct {
 	Telegram   TelegramBot
 	// TOTPKey seals each TOTP secret. Without it, TOTP enrollment is off.
 	TOTPKey totp.Key
+	// Resources is the content of MINIAUTH_RESOURCES_FILE. Without the file it is empty, and the start deletes every managed row.
+	Resources []access.PredefinedResource
 }
 
 // GoogleClient is the OAuth client of the Google step. The zero value turns the step off.
@@ -94,6 +97,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("google", c.Google.Enabled()),
 		slog.Bool("telegram", c.Telegram.Enabled()),
 		slog.Bool("totp_key_set", c.TOTPKey.Set()),
+		slog.Int("predefined_resources", len(c.Resources)),
 	)
 }
 
@@ -136,7 +140,8 @@ func Load(getenv func(string) string) (Config, error) {
 	googleConfig, googleErr := parseGoogle(getenv(envGoogleID), getenv(envGoogleSecret), public)
 	telegramConfig, telegramErr := parseTelegram(getenv(envTelegramBot), getenv(envTelegramToken), public)
 	totpKey, totpKeyErr := parseTOTPKey(getenv(envTOTPKey))
-	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr, googleErr, telegramErr, totpKeyErr); err != nil {
+	resources, resourcesErr := loadResources(getenv(envResources))
+	if err := errors.Join(listenErr, databaseErr, adminErr, cookieErr, publicErr, mailErr, googleErr, telegramErr, totpKeyErr, resourcesErr); err != nil {
 		return Config{}, err
 	}
 	return Config{
@@ -149,6 +154,7 @@ func Load(getenv func(string) string) (Config, error) {
 		Google:     googleConfig,
 		Telegram:   telegramConfig,
 		TOTPKey:    totpKey,
+		Resources:  resources,
 	}, nil
 }
 

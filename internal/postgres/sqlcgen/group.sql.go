@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteGroup = `-- name: DeleteGroup :execrows
+DELETE FROM groups
+WHERE name = $1 AND NOT built_in
+`
+
+func (q *Queries) DeleteGroup(ctx context.Context, name string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteGroup, name)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteGroupMembership = `-- name: DeleteGroupMembership :execrows
 DELETE FROM group_memberships
 WHERE user_id = $1 AND name = $2
@@ -29,6 +42,22 @@ func (q *Queries) DeleteGroupMembership(ctx context.Context, arg DeleteGroupMemb
 	return result.RowsAffected(), nil
 }
 
+const ensureGroup = `-- name: EnsureGroup :exec
+INSERT INTO groups (name, created_at)
+VALUES ($1, $2)
+ON CONFLICT (name) DO NOTHING
+`
+
+type EnsureGroupParams struct {
+	Name      string
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) EnsureGroup(ctx context.Context, arg EnsureGroupParams) error {
+	_, err := q.db.Exec(ctx, ensureGroup, arg.Name, arg.CreatedAt)
+	return err
+}
+
 const ensureGroupMembership = `-- name: EnsureGroupMembership :exec
 INSERT INTO group_memberships (user_id, name)
 VALUES ($1, $2)
@@ -42,6 +71,21 @@ type EnsureGroupMembershipParams struct {
 
 func (q *Queries) EnsureGroupMembership(ctx context.Context, arg EnsureGroupMembershipParams) error {
 	_, err := q.db.Exec(ctx, ensureGroupMembership, arg.UserID, arg.Name)
+	return err
+}
+
+const insertGroup = `-- name: InsertGroup :exec
+INSERT INTO groups (name, created_at)
+VALUES ($1, $2)
+`
+
+type InsertGroupParams struct {
+	Name      string
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) InsertGroup(ctx context.Context, arg InsertGroupParams) error {
+	_, err := q.db.Exec(ctx, insertGroup, arg.Name, arg.CreatedAt)
 	return err
 }
 
@@ -80,6 +124,86 @@ func (q *Queries) ListGroupMemberships(ctx context.Context, userID pgtype.UUID) 
 			return nil, err
 		}
 		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupNames = `-- name: ListGroupNames :many
+SELECT name FROM groups
+ORDER BY name
+`
+
+func (q *Queries) ListGroupNames(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listGroupNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupSummaries = `-- name: ListGroupSummaries :many
+SELECT
+    groups.name,
+    groups.built_in,
+    groups.created_at,
+    (SELECT count(*) FROM group_memberships gm WHERE gm.name = groups.name)::bigint AS member_count,
+    COALESCE(
+        (SELECT array_agg(ag.resource_name ORDER BY ag.resource_name) FROM access_grants ag WHERE ag.group_name = groups.name),
+        '{}'
+    )::text[] AS resource_names,
+    COALESCE(
+        (SELECT array_agg(ag.managed ORDER BY ag.resource_name) FROM access_grants ag WHERE ag.group_name = groups.name),
+        '{}'
+    )::boolean[] AS resource_managed
+FROM groups
+WHERE $1::text IS NULL OR groups.name = $1
+ORDER BY groups.name
+`
+
+type ListGroupSummariesRow struct {
+	Name            string
+	BuiltIn         bool
+	CreatedAt       pgtype.Timestamptz
+	MemberCount     int64
+	ResourceNames   []string
+	ResourceManaged []bool
+}
+
+func (q *Queries) ListGroupSummaries(ctx context.Context, name pgtype.Text) ([]ListGroupSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listGroupSummaries, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupSummariesRow
+	for rows.Next() {
+		var i ListGroupSummariesRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.BuiltIn,
+			&i.CreatedAt,
+			&i.MemberCount,
+			&i.ResourceNames,
+			&i.ResourceManaged,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -14,9 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/config"
+	"github.com/popoffvg/miniauth/internal/groupadmin"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
@@ -123,6 +126,10 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err = machine.MigrationDone(ctx); err != nil {
 		return err
 	}
+	if err = reconcileResources(ctx, pool, cfg.Resources); err != nil {
+		return err
+	}
+	logger.Info("miniauth: resources file applied", "resources", len(cfg.Resources))
 	groups, err := postgres.NewGroupRepository(pool)
 	if err != nil {
 		return err
@@ -130,7 +137,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	accounts := postgres.NewUserRepository(pool)
 	flowStore := postgres.NewFlowStore(pool)
 	attempts := postgres.NewAttemptRepository(pool)
-	totpService, err := totp.NewService(postgres.NewTOTPRepository(pool), attempts, cfg.TOTPKey)
+	totpService, err := totp.NewService(postgres.NewTOTPRepository(pool), attempts, cfg.TOTPKey, logger)
 	if err != nil {
 		return err
 	}
@@ -154,11 +161,19 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
-	inviteService, err := invites.NewService(inviteRepo, nil)
+	inviteService, err := invites.NewService(inviteRepo, nil, logger)
 	if err != nil {
 		return err
 	}
 	userAdminRepo, err := postgres.NewUserAdminRepository(pool)
+	if err != nil {
+		return err
+	}
+	groupAdminRepo, err := postgres.NewGroupAdminRepository(pool)
+	if err != nil {
+		return err
+	}
+	groupAdmin, err := groupadmin.NewService(groupAdminRepo, grants)
 	if err != nil {
 		return err
 	}
@@ -179,7 +194,8 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		api.WithAccessAdmin(grants),
 		withRecovery,
 		api.WithInvites(inviteService),
-		api.WithUserAdmin(useradmin.NewService(userAdminRepo, userService)),
+		api.WithUserAdmin(useradmin.NewService(userAdminRepo, userService, logger)),
+		api.WithGroupAdmin(groupAdmin),
 		api.WithOAuth(oauthServer, grants),
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
@@ -246,6 +262,22 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	return stopServing(shutdownCtx, machine, server, serveErr)
+}
+
+// reconcileResources makes the managed rows equal to the resources file. An error stops the start.
+func reconcileResources(ctx context.Context, pool *pgxpool.Pool, entries []access.PredefinedResource) error {
+	store, err := postgres.NewManagedRepository(pool)
+	if err != nil {
+		return err
+	}
+	reconciler, err := access.NewReconciler(store)
+	if err != nil {
+		return err
+	}
+	if err = reconciler.Reconcile(ctx, entries); err != nil {
+		return fmt.Errorf("miniauth: MINIAUTH_RESOURCES_FILE: %w", err)
+	}
+	return nil
 }
 
 func stopTraces(ctx context.Context, stop func(context.Context) error, logger *slog.Logger) {

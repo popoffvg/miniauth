@@ -1,0 +1,175 @@
+package views
+
+import (
+	"net/url"
+	"strconv"
+
+	"github.com/popoffvg/miniauth/internal/groups"
+)
+
+templ UsersPage(view UsersView) {
+	@shellLayout("Users", view.Shell) {
+		@pageHeader("Users", "Every account, its groups, and its state. A disabled user is signed out everywhere and cannot sign in.") {
+			if view.InvitesOn {
+				@primaryLink("#invite", IconUserPlus, "Invite user")
+			}
+		}
+		@doneAlert(view.Notice, UsersPath)
+		@errorAlert(view.Message)
+		<div class="stack-lg">
+			if view.Invite.Link != "" {
+				@inviteShownCard(view.Invite)
+			}
+			<section class="card" aria-label="Users">
+				if view.Total > 0 {
+					@searchToolbar(UsersPath, view.Query, "Search users and groups", string(view.Filter), userChips)
+				}
+				if len(view.Rows) > 0 {
+					@userRows(view.Rows, view.Groups)
+				} else if view.Total == 0 {
+					@emptyState(IconUsers, "No users.", "Invite a person to create the first account.")
+				} else {
+					@emptyState(IconSearch, "No user matches the filter.", "Change the search or the status filter.") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(UsersPath) }>Clear the filter</a>
+					}
+				}
+			</section>
+			if view.InvitesOn {
+				@inviteFormCard(view.Groups)
+			}
+		</div>
+	}
+}
+
+templ userRows(rows []UserRow, choices []groups.Name) {
+	<table class="table">
+		<thead>
+			<tr>
+				<th scope="col">User</th>
+				<th scope="col">Groups</th>
+				<th scope="col">Status</th>
+				<th scope="col">Last seen</th>
+				<th scope="col">Devices</th>
+				<th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, row := range rows {
+				<tr>
+					<td>
+						<div class="cell-main">
+							{ row.Account.User.Login.String() }
+							if row.Self {
+								<span class="badge badge-current">You</span>
+							}
+						</div>
+						<div class="cell-sub">Created <span class="num">{ Timestamp(row.Account.User.CreatedAt).date() }</span></div>
+					</td>
+					<td data-label="Groups">
+						if len(row.Account.Groups) == 0 {
+							<span class="subtle">No groups</span>
+						} else {
+							<div class="tags">
+								for _, name := range row.Account.Groups {
+									@groupBadge(name)
+								}
+							</div>
+						}
+					</td>
+					<td data-label="Status">
+						if row.Account.User.Disabled() {
+							@badge(ToneDisabled, "Disabled")
+						} else {
+							@badge(ToneActive, "Active")
+						}
+					</td>
+					<td class="num" data-label="Last seen">
+						@timeCell(Timestamp(row.Account.LastSeen))
+					</td>
+					<td class="num" data-label="Devices">{ strconv.Itoa(row.Account.Devices) }</td>
+					<td class="actions">
+						@rowMenu(row.Account.User.Login.String()) {
+							if joinable := row.joinable(choices); len(joinable) > 0 {
+								<form class="menu-form" method="post" action={ templ.SafeURL(row.actionPath("groups")) }>
+									<label class="visually-hidden" for={ "group-" + row.Account.User.Login.String() }>Group</label>
+									<select class="input" id={ "group-" + row.Account.User.Login.String() } name="group" required>
+										for _, name := range joinable {
+											<option value={ name.String() }>{ name.String() }</option>
+										}
+									</select>
+									<button class="btn btn-secondary btn-sm" type="submit">Add to group</button>
+								</form>
+							}
+							for _, name := range row.Account.Groups {
+								if row.canLeave(name) {
+									@confirmPost(row.actionPath("groups/"+url.PathEscape(name.String())+"/remove"), "Remove from "+name.String(),
+										"Remove “"+row.Account.User.Login.String()+"” from “"+name.String()+"”? The user loses the access of the group at once.", "Remove from group")
+								}
+							}
+							if row.Account.User.Disabled() {
+								<form method="post" action={ templ.SafeURL(row.actionPath("enable")) }>
+									<button class="menu-item" type="submit">
+										@icon(IconSuccess)
+										Enable user
+									</button>
+								</form>
+							} else if !row.Self {
+								@confirmPost(row.actionPath("disable"), "Disable user",
+									"Disable “"+row.Account.User.Login.String()+"”? Every session ends now, and the user cannot sign in until you enable the account again.", "Disable user")
+							}
+						}
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ inviteFormCard(choices []groups.Name) {
+	<section class="card" id="invite" aria-labelledby="invite-title">
+		<div class="card-header">
+			<div>
+				<h2 id="invite-title">Invite user</h2>
+				<p>The link creates one account in the group you choose and in users. It works once and expires after 7 days.</p>
+			</div>
+		</div>
+		<form method="post" action="/users/invites">
+			<div class="card-body">
+				<div class="field">
+					<label for="invite-group"><span>Group <span class="required" aria-hidden="true">*</span></span></label>
+					<select id="invite-group" name="group" required aria-describedby="invite-group-help">
+						for _, choice := range choices {
+							<option
+								value={ choice.String() }
+								if choice == groups.Users() {
+									selected
+								}
+							>{ choice.String() }</option>
+						}
+					</select>
+					<p class="help" id="invite-group-help">The new user reaches every resource of the group. Manage groups on the Groups page.</p>
+				</div>
+			</div>
+			<div class="card-footer">
+				<button class="btn btn-primary" type="submit">Make invite link</button>
+			</div>
+		</form>
+	</section>
+}
+
+templ inviteShownCard(invite Invite) {
+	<section class="card" aria-labelledby="invite-link-title">
+		<div class="card-header">
+			<div>
+				<h2 id="invite-link-title">Invite link to the group { invite.Group.String() }</h2>
+				<p>Send it to one person. It expires { Timestamp(invite.ExpiresAt).human() }.</p>
+			</div>
+		</div>
+		<div class="card-body">
+			@secretBox("You will not see this link again.") {
+				<code class="secret-value" id="invite-link">{ string(invite.Link) }</code>
+				<p class="secret-help">Select the link to copy it.</p>
+			}
+		</div>
+	</section>
+}
