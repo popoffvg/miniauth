@@ -47,7 +47,7 @@ func (s *service) loginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setFlowCookie(w, id, secret, time.Now())
-	s.renderSteps(w, r, http.StatusOK, loginflow.LoginFlow{}, "")
+	s.renderSteps(w, withNewFlowSecret(r, secret), http.StatusOK, loginflow.LoginFlow{}, "")
 }
 
 // login runs the password step of the flow in the flow cookie.

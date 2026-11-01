@@ -2,10 +2,13 @@ package api
 
 import (
 	"errors"
+	"html"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,9 +112,20 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 		return true
 	}
 	var usedHashes []string
-	callback := func(browser *http.Client, query url.Values) reply {
+	// callback sends query to authURL the way the widget does: it keeps the query of authURL and appends its fields.
+	callback := func(browser *http.Client, authURL string, query url.Values) reply {
 		usedHashes = append(usedHashes, query.Get("hash"))
-		return get(t, browser, base+TelegramCallbackPath+"?"+query.Encode())
+		separator := "?"
+		if strings.Contains(authURL, "?") {
+			separator = "&"
+		}
+		return get(t, browser, authURL+separator+query.Encode())
+	}
+	openWidget := func(browser *http.Client, returnTo string) string {
+		page := openLogin(t, browser, base, returnTo)
+		match := regexp.MustCompile(`data-auth-url="([^"]*)"`).FindStringSubmatch(page.body)
+		require.Len(t, match, 2, "the login page MUST show the widget")
+		return html.UnescapeString(match[1])
 	}
 	signed := func(userID int64, authDate time.Time) url.Values {
 		return telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(userID, authDate))
@@ -121,15 +135,15 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 		page := openLogin(t, newBrowser(t, server), base, base+"/app")
 		assert.Contains(t, page.body, `src="https://telegram.org/js/telegram-widget.js?22"`)
 		assert.Contains(t, page.body, `data-telegram-login="`+telegramtest.BotName+`"`)
-		assert.Contains(t, page.body, `data-auth-url="`+base+TelegramCallbackPath+`"`)
+		assert.Contains(t, page.body, `data-auth-url="`+base+TelegramCallbackPath+"?"+telegramNonceParam+"=")
 		assert.Equal(t, telegramPageCSP, page.header.Get("Content-Security-Policy"))
 	})
 
 	t.Run("a forged hash is refused", func(t *testing.T) {
 		browser := newBrowser(t, server)
-		openLogin(t, browser, base, base+"/app")
+		authURL := openWidget(browser, base+"/app")
 		forged := telegramtest.Sign("987654321:not-the-bot-token", telegramtest.Fields(1001, time.Now()))
-		resp := callback(browser, forged)
+		resp := callback(browser, authURL, forged)
 		assert.Equal(t, http.StatusBadRequest, resp.status)
 		assert.Contains(t, resp.body, string(msgTelegramFailed))
 		assert.Empty(t, sessionCookies(resp))
@@ -139,8 +153,8 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 
 	t.Run("an old auth_date is refused", func(t *testing.T) {
 		browser := newBrowser(t, server)
-		openLogin(t, browser, base, base+"/app")
-		resp := callback(browser, signed(1001, time.Now().Add(-telegram.MaxAge-time.Minute)))
+		authURL := openWidget(browser, base+"/app")
+		resp := callback(browser, authURL, signed(1001, time.Now().Add(-telegram.MaxAge-time.Minute)))
 		assert.Equal(t, http.StatusBadRequest, resp.status)
 		assert.Contains(t, resp.body, string(msgTelegramFailed))
 		assert.Empty(t, sessionCookies(resp))
@@ -148,7 +162,7 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 	})
 
 	t.Run("a callback with no open flow is refused", func(t *testing.T) {
-		resp := callback(newBrowser(t, server), signed(1001, time.Now()))
+		resp := callback(newBrowser(t, server), base+TelegramCallbackPath, signed(1001, time.Now()))
 		assert.Equal(t, http.StatusBadRequest, resp.status)
 		assert.Contains(t, resp.body, string(msgFlowExpired))
 		assert.Empty(t, sessionCookies(resp))
@@ -159,8 +173,8 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 
 	t.Run("an unknown id starts no session, then a password login links it", func(t *testing.T) {
 		browser := newBrowser(t, server)
-		openLogin(t, browser, base, base+"/app")
-		resp := callback(browser, unknownData)
+		authURL := openWidget(browser, base+"/app")
+		resp := callback(browser, authURL, unknownData)
 		require.Equal(t, http.StatusOK, resp.status)
 		assert.Contains(t, resp.body, string(msgLinkTelegram))
 		assert.Contains(t, resp.body, `name="password"`)
@@ -197,9 +211,9 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 
 	t.Run("a replay of used data is refused in another browser", func(t *testing.T) {
 		browser := newBrowser(t, server)
-		openLogin(t, browser, base, base+"/app")
+		authURL := openWidget(browser, base+"/app")
 		before := countSessions()
-		resp := callback(browser, unknownData)
+		resp := callback(browser, authURL, unknownData)
 		assert.Equal(t, http.StatusBadRequest, resp.status)
 		assert.Contains(t, resp.body, string(msgTelegramFailed))
 		assert.Empty(t, sessionCookies(resp))
@@ -208,9 +222,9 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 
 	t.Run("a linked account signs in with Telegram alone", func(t *testing.T) {
 		browser := newBrowser(t, server)
-		openLogin(t, browser, base, base+"/app/telegram")
+		authURL := openWidget(browser, base+"/app/telegram")
 		before := countSessions()
-		resp := callback(browser, signed(1001, time.Now()))
+		resp := callback(browser, authURL, signed(1001, time.Now()))
 		require.Equal(t, http.StatusSeeOther, resp.status)
 		assert.Equal(t, base+"/app/telegram", resp.header.Get("Location"))
 		require.Len(t, sessionCookies(resp), 1)
@@ -222,12 +236,24 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 		assert.Equal(t, "telegram", check.header.Get(headerAuthMethod))
 	})
 
+	t.Run("data for the flow of another browser is refused", func(t *testing.T) {
+		attackerURL := openWidget(newBrowser(t, server), base+"/app")
+		victim := newBrowser(t, server)
+		openWidget(victim, base+"/app")
+		before := countSessions()
+		resp := callback(victim, attackerURL, signed(1001, time.Now().Add(-2*time.Minute)))
+		assert.Equal(t, http.StatusBadRequest, resp.status)
+		assert.Contains(t, resp.body, string(msgTelegramFailed))
+		assert.Empty(t, sessionCookies(resp))
+		assert.Equal(t, before, countSessions())
+	})
+
 	t.Run("the log holds no widget hash", func(t *testing.T) {
 		browser := newBrowser(t, server)
-		openLogin(t, browser, base, base+"/app")
+		authURL := openWidget(browser, base+"/app")
 		query := signed(1002, time.Now())
 		usedHashes = append(usedHashes, query.Get("hash"))
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+TelegramCallbackPath+"?"+query.Encode(), nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, authURL+"&"+query.Encode(), nil)
 		require.NoError(t, err)
 		req.Header.Set("X-Request-ID", query.Get("hash"))
 		do(t, browser, req)

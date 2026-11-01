@@ -44,7 +44,9 @@ func TestLoginPageWithPasskeyAndTelegramAllowsBothScripts(t *testing.T) {
 		publicURL: PublicURL{origin: "https://id.example.test"},
 	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil)
+	secret, err := loginflow.NewFlowSecret()
+	require.NoError(t, err)
+	req := withNewFlowSecret(httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/login", nil), secret)
 	s.renderSteps(rec, req, http.StatusOK, loginflow.LoginFlow{}, "")
 	body := rec.Body.String()
 	assert.Contains(t, body, `name="password"`)

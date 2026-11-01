@@ -16,9 +16,14 @@ import (
 // TelegramCallbackPath is the data-auth-url path of the widget. The bot domain MUST be the host of MINIAUTH_PUBLIC_URL.
 const TelegramCallbackPath = "/login/telegram/callback"
 
+// telegramNonceParam carries the loginflow.CallbackNonce in data-auth-url.
+// The widget keeps the query of data-auth-url and appends its fields after "&".
+const telegramNonceParam = "flow_nonce"
+
 // telegramCallbackRequest documents the query of GET /login/telegram/callback.
-// Telegram can add fields. Every field takes part in the hash check.
+// Telegram can add fields. Every field but flow_nonce takes part in the hash check.
 type telegramCallbackRequest struct {
+	FlowNonce string `query:"flow_nonce" required:"true" description:"The nonce of the login flow in the data-auth-url. It MUST match the flow cookie."`
 	ID        string `query:"id" required:"true" description:"The Telegram user id."`
 	FirstName string `query:"first_name"`
 	LastName  string `query:"last_name"`
@@ -42,8 +47,14 @@ func (s *service) telegramOffered() bool {
 	return s.telegram != nil && s.links != nil && s.publicURL.Origin() != ""
 }
 
-func (s *service) showTelegramWidget(view *views.Page) {
-	view.Telegram = views.TelegramWidget{BotName: s.telegram.BotName(), AuthURL: s.publicURL.Origin() + TelegramCallbackPath}
+// showTelegramWidget binds the callback URL to the flow, so data sent to the browser of another flow is refused.
+func (s *service) showTelegramWidget(r *http.Request, view *views.Page) {
+	secret, ok := flowSecretOf(r)
+	if !ok {
+		return
+	}
+	query := url.Values{telegramNonceParam: {secret.CallbackNonce().String()}}
+	view.Telegram = views.TelegramWidget{BotName: s.telegram.BotName(), AuthURL: s.publicURL.Origin() + TelegramCallbackPath + "?" + query.Encode()}
 }
 
 // telegramCallback checks the widget data for the flow in the flow cookie.
@@ -74,6 +85,13 @@ func (s *service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
+		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
+		return
+	}
+	nonce := query[telegramNonceParam]
+	query.Del(telegramNonceParam)
+	if len(nonce) != 1 || !secret.CallbackNonce().Matches(nonce[0]) {
+		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: telegram data refused", "err", "the flow nonce does not match")
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
 	}
