@@ -28,6 +28,8 @@ type Querier interface {
 	CountTelegramLoginProofs(ctx context.Context) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateLoginFlow(ctx context.Context, arg CreateLoginFlowParams) error
+	// resources_url_unique is the one deferrable constraint.
+	DeferConstraints(ctx context.Context) error
 	DeleteAccessGrant(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteDevice(ctx context.Context, arg DeleteDeviceParams) (int64, error)
 	DeleteDeviceSession(ctx context.Context, arg DeleteDeviceSessionParams) error
@@ -121,6 +123,7 @@ type Querier interface {
 	TakeLoginFlowChallenge(ctx context.Context, id pgtype.UUID) ([]byte, error)
 	TouchAccessToken(ctx context.Context, arg TouchAccessTokenParams) error
 	TouchSessionDevice(ctx context.Context, arg TouchSessionDeviceParams) error
+	UnmanagedResourceHasURL(ctx context.Context, arg UnmanagedResourceHasURLParams) (bool, error)
 	UpdateLoginFlow(ctx context.Context, arg UpdateLoginFlowParams) (int64, error)
 	UpsertDevice(ctx context.Context, arg UpsertDeviceParams) (pgtype.UUID, error)
 	UpsertDeviceSession(ctx context.Context, arg UpsertDeviceSessionParams) error

@@ -22,7 +22,8 @@ type GroupGrantKey struct {
 
 // ManagedWriter writes the managed rows. No method changes a row that is not managed, except:
 // PutManagedResource and PutManagedGrant mark a stored row with the same key as managed.
-// PutManagedResource MUST return ErrDuplicateResource when another resource has the URL.
+// PutManagedResource MUST return ErrDuplicateResource when an unmanaged resource has the URL.
+// Two managed resources MAY swap their URLs in one transaction.
 // DeleteStaleGrants deletes every managed grant whose key is not in keep.
 // DeleteStaleResources deletes every managed resource whose name is not in keep, with all its grants.
 type ManagedWriter interface {

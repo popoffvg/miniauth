@@ -101,6 +101,23 @@ func TestReconcileResourcesFile(t *testing.T) {
 		assert.False(t, stored.Managed)
 	})
 
+	t.Run("two managed resources swap their URLs", func(t *testing.T) {
+		require.NoError(t, reconciler.Reconcile(ctx, []access.PredefinedResource{
+			{Name: dash.Name, URL: dash.URL, Groups: []groups.Name{ops}},
+			{Name: wiki.Name, URL: wiki.URL},
+		}))
+		require.NoError(t, reconciler.Reconcile(ctx, []access.PredefinedResource{
+			{Name: dash.Name, URL: wiki.URL, Groups: []groups.Name{ops}},
+			{Name: wiki.Name, URL: dash.URL},
+		}))
+		found, findErr := accessRepo.FindResource(ctx, dash.Name)
+		require.NoError(t, findErr)
+		assert.Equal(t, wiki.URL, found.URL)
+		require.NoError(t, reconciler.Reconcile(ctx, []access.PredefinedResource{
+			{Name: dash.Name, URL: accessResource(t, "dash", "dash.example.test", "/v2").URL, Groups: []groups.Name{ops}},
+		}))
+	})
+
 	t.Run("a managed row is read-only for the access service", func(t *testing.T) {
 		require.ErrorIs(t, grants.DeleteResource(ctx, dash.Name), access.ErrManagedResource)
 		entries, listErr := grants.ListGrants(ctx, access.GrantFilter{Resource: dash.Name})

@@ -41,7 +41,7 @@ At each start, in one transaction, miniauth:
 2. gives each listed group the resource;
 3. deletes the managed resources and the managed group grants that the file no longer names.
 
-A resource or a group grant that you made by hand, with the same name or the same resource and group as an entry, becomes managed. miniauth never changes another row that is not managed. With no file, the start deletes every managed row.
+A resource or a group grant that you made by hand, with the same name or the same resource and group as an entry, becomes managed. miniauth never changes another row that is not managed. With no file, the start deletes every managed row. Two managed resources can swap their URLs in one change of the file. An entry with the URL of a resource that is not managed stops the start.
 
 You cannot delete a managed resource, revoke a managed grant, or delete a group that the file names: the API and the pages answer 409. The pages show managed rows with a "From config" badge. To change them, change the file and restart.
 
