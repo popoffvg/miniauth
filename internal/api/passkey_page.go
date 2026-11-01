@@ -157,7 +157,7 @@ func (s *service) passkeyOwner(w http.ResponseWriter, r *http.Request) (users.Us
 		writeProblem(w, http.StatusServiceUnavailable, msgPasskeyUnavailable)
 		return users.User{}, false
 	}
-	session, err := s.openBrowserSession(r)
+	session, err := s.openBrowserSession(w, r)
 	if errors.Is(err, sessions.ErrNotFound) {
 		writeProblem(w, http.StatusUnauthorized, msgSessionNotValid)
 		return users.User{}, false

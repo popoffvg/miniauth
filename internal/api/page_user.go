@@ -14,7 +14,7 @@ import (
 // It returns false after it wrote a reply. failed is the message of a store error.
 func (s *service) browserPageUser(w http.ResponseWriter, r *http.Request, returnPath string, failed views.Message) (users.User, sessions.Session, bool) {
 	toLogin := s.publicURL.Login(s.publicURL.Origin() + returnPath)
-	session, err := s.openBrowserSession(r)
+	session, err := s.openBrowserSession(w, r)
 	if errors.Is(err, sessions.ErrNotFound) {
 		http.Redirect(w, r, toLogin, http.StatusSeeOther)
 		return users.User{}, sessions.Session{}, false

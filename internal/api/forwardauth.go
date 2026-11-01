@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/sessions"
@@ -38,7 +39,7 @@ func (s *service) forwardAuth(w http.ResponseWriter, r *http.Request) {
 		s.forwardAuthToken(w, r, need, bearer)
 		return
 	}
-	session, err := s.openBrowserSession(r)
+	session, err := s.openBrowserSession(w, r)
 	if errors.Is(err, sessions.ErrNotFound) {
 		s.unauthenticated(w, r)
 		return
@@ -224,11 +225,16 @@ func mediaQuality(params string) float64 {
 	return quality
 }
 
-func (s *service) openBrowserSession(r *http.Request) (sessions.Session, error) {
+// openBrowserSession opens the first valid session cookie of r.
+// When Open moves the expiry, the cookie is set again, so the browser keeps it as long as the database.
+func (s *service) openBrowserSession(w http.ResponseWriter, r *http.Request) (sessions.Session, error) {
 	var failure error
 	for _, id := range sessions.IDsFromRequest(r) {
-		session, _, err := s.browser.Open(r.Context(), id)
+		session, extended, err := s.browser.Open(r.Context(), id)
 		if err == nil {
+			if extended {
+				sessions.SetCookie(w, id, s.domain, time.Now())
+			}
 			return session, nil
 		}
 		if errors.Is(err, sessions.ErrNotFound) {

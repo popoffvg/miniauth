@@ -18,7 +18,7 @@ const recentDeviceCount = 3
 
 // home is the overview page, the default page after a login. A disabled user is signed out here, as in /auth/check.
 func (s *service) home(w http.ResponseWriter, r *http.Request) {
-	session, err := s.openBrowserSession(r)
+	session, err := s.openBrowserSession(w, r)
 	if errors.Is(err, sessions.ErrNotFound) {
 		http.Redirect(w, r, s.publicURL.Login(""), http.StatusFound)
 		return
