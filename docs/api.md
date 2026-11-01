@@ -54,7 +54,7 @@ A login has 1 to 64 characters, stored in lower case. The first and last are a l
 | `GET /healthz` | The process is up. |
 | `GET /readyz` | 200 when the process is ready. 503 when PostgreSQL does not answer, and while the process shuts down. |
 
-A SIGTERM moves the process to draining: `/readyz` answers 503 while open requests finish. Then the HTTP server stops.
+A SIGTERM moves the process to draining: `/readyz` answers 503 while open requests finish. Then the HTTP server stops. The recovery mails that are still queued go out within 30 seconds before the process exits.
 
 ## Forward-auth
 
