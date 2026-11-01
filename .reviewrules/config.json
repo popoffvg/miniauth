@@ -1,0 +1,66 @@
+{
+  "instructions": "miniauth: a small identity server in Go with PostgreSQL. It signs users in, keeps browser sessions, issues personal access tokens, and answers a reverse proxy's forward-auth check. Login methods live in internal/providers/<name>. AGENTS.md is the source of these rules. Test files (*_test.go, testdata/) and local dev files (compose.yaml, compose/, Taskfile.yml, .github/) are out of scope for the secret and constant-time rules: they hold fixed test passwords on purpose.",
+  "ignorePatterns": "internal/postgres/sqlcgen/**\n**/*_templ.go\napi/openapi.yaml\ngo.sum\ntools/go.sum",
+  "rules": [
+    {
+      "id": "secret-in-clear-text",
+      "rule": "In production Go and SQL code, a secret (password, session id, personal access token, flow secret, reset or invite token, TOTP secret, recovery code, provider client secret, SMTP password) MUST NOT reach a log line, an error message, a URL, a span attribute, or a database column in clear text. The database stores a hash of each session id and each token. A return URL that the user asked for is not a secret.",
+      "scope": ["cmd/**/*.go", "internal/**/*.go", "queries/*.sql", "migrations/*.sql"],
+      "severity": "high"
+    },
+    {
+      "id": "constant-time-compare",
+      "rule": "Production code that compares a secret or a hash of a secret with a value from a request MUST use crypto/subtle. Out of scope: test files, a check against the zero value, and a database lookup by hash.",
+      "scope": ["cmd/**/*.go", "internal/**/*.go"],
+      "severity": "high"
+    },
+    {
+      "id": "domain-types",
+      "rule": "Domain-driven design: each entity, value object, id, and DTO has its own named type. A bare string, []byte, or uuid.UUID MUST NOT carry a domain concept in an exported signature or a struct field of production code. A DTO stays in its adapter package (internal/api).",
+      "scope": ["internal/**/*.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "migrations-append-only",
+      "rule": "Each schema change is a new numbered migration file in migrations/. A diff MUST NOT edit or delete a migration file that already exists on the base branch.",
+      "scope": ["migrations/**"],
+      "severity": "high"
+    },
+    {
+      "id": "sql-through-sqlc",
+      "rule": "SQL lives in queries/*.sql and goes through sqlc. Production Go code MUST NOT build or hold SQL strings.",
+      "scope": ["cmd/**/*.go", "internal/**/*.go"],
+      "severity": "medium"
+    },
+    {
+      "id": "pages-are-templ",
+      "rule": "HTML pages are templ components that use the one stylesheet internal/api/assets/app.css. No inline style attribute, no <style> block, no inline <script>, no other CSS file.",
+      "scope": ["**/*.templ", "internal/api/assets/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "standard-library-first",
+      "rule": "Use the standard library first: net/http routing, log/slog. A new dependency in go.mod is allowed only when the standard library has no equal.",
+      "scope": ["go.mod"],
+      "severity": "low"
+    },
+    {
+      "id": "comment-content",
+      "rule": "A comment states an invariant or an outside assumption. A comment MUST NOT say what the code says. Code MUST NOT contain ticket ids or links to tasks or docs.",
+      "scope": ["**/*.go", "**/*.templ"],
+      "severity": "low"
+    },
+    {
+      "id": "no-real-host",
+      "rule": "This repo is public. Nothing names a real host, server, or deployment of the owner: tests and docs use example.test hosts or localhost. Public identity providers that the code must call (Google, Telegram) and public registries (ghcr.io) are allowed.",
+      "scope": ["**/*"],
+      "severity": "medium"
+    },
+    {
+      "id": "simple-english",
+      "rule": "Docs and comments use simple English (ASD-STE100): short sentences, RFC 2119 keywords for obligations.",
+      "scope": ["**/*.md"],
+      "severity": "low"
+    }
+  ]
+}

@@ -39,5 +39,6 @@ Go and task are pinned in `mise.toml`; the linters, gosec, and gocov are pinned 
 | Coverage report (gocov) | `task cover` |
 | Everything CI runs | `task check` |
 | CodeRabbit review of the uncommitted change | `task review` |
+| Per-rule review of the branch against `.reviewrules/` | `task review:rules` |
 
 The pre-push hook runs `task lint` and `task test`. Fix the failure; never push with `--no-verify`.
