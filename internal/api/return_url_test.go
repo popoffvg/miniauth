@@ -36,6 +36,8 @@ func TestParseReturnURL(t *testing.T) {
 		{name: "bad port", raw: "https://app.example.test:99999/", domain: parent, want: root},
 		{name: "public host with no domain", raw: "https://id.example.test/after", want: "https://id.example.test/after"},
 		{name: "subdomain with no domain", raw: "https://app.example.test/", want: root},
+		{name: "public host with its default port", raw: "https://id.example.test:443/after", want: "https://id.example.test:443/after"},
+		{name: "public host with another port", raw: "https://id.example.test:8443/after", want: root},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

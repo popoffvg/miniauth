@@ -17,7 +17,7 @@ func ParseReturnURL(raw string, domain sessions.Domain, public PublicURL) loginf
 	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Opaque != "" {
 		return fallback
 	}
-	if !forwardedHostAllowed(parsed.Host, domain, public) {
+	if !forwardedHostAllowed(parsed.Scheme, parsed.Host, domain, public) {
 		return fallback
 	}
 	returnURL, err := loginflow.NewReturnURL(parsed.String())
