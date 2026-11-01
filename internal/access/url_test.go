@@ -214,3 +214,20 @@ func TestParseResourceURL(t *testing.T) {
 		})
 	}
 }
+
+func TestResourceURLTextRoundTrip(t *testing.T) {
+	for _, raw := range []string{"https://dash.example.test/", "https://dash.example.test/mcp", "http://127.0.0.1:8088/app"} {
+		t.Run(raw, func(t *testing.T) {
+			original, err := ParseResourceURL(raw)
+			require.NoError(t, err)
+			text, err := original.MarshalText()
+			require.NoError(t, err)
+			var decoded ResourceURL
+			require.NoError(t, decoded.UnmarshalText(text))
+			assert.Equal(t, original, decoded)
+		})
+	}
+	var decoded ResourceURL
+	require.ErrorIs(t, decoded.UnmarshalText([]byte("dash.example.test/a/../b")), ErrPathPrefix)
+	require.ErrorIs(t, decoded.UnmarshalText([]byte("ftp://dash.example.test/")), ErrResourceURL)
+}
