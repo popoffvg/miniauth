@@ -95,8 +95,13 @@ func (s *service) linkPage(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgLoginUnavailable)
 		return
 	}
-	returnURL := ParseReturnURL(r.URL.Query().Get("return"), s.domain, s.publicURL)
-	user, session, ok := s.browserPageUser(w, r, linkPagePath, msgLinkFailed)
+	rawReturn := r.URL.Query().Get("return")
+	returnURL := ParseReturnURL(rawReturn, s.domain, s.publicURL)
+	pagePath := linkPagePath
+	if rawReturn != "" {
+		pagePath += "?return=" + url.QueryEscape(returnURL.String())
+	}
+	user, session, ok := s.browserPageUser(w, r, pagePath, msgLinkFailed)
 	if !ok {
 		return
 	}
