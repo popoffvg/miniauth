@@ -81,3 +81,10 @@ WHERE id = sqlc.arg(id) AND disabled_at IS NULL;
 UPDATE users
 SET disabled_at = NULL
 WHERE id = $1 AND disabled_at IS NOT NULL;
+
+-- name: LockActiveUser :execrows
+-- FOR SHARE waits for a disable in progress, and the disable waits for this transaction.
+-- Zero rows means the user is not stored or is disabled.
+SELECT id FROM users
+WHERE id = $1 AND disabled_at IS NULL
+FOR SHARE;
