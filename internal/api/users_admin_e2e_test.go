@@ -74,7 +74,7 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 	grants := access.NewService(accessRepo, accounts)
 	inviteRepo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
-	inviteService, err := invites.NewService(inviteRepo, nil)
+	inviteService, err := invites.NewService(inviteRepo, nil, nil)
 	require.NoError(t, err)
 	adminRepo, err := postgres.NewUserAdminRepository(pool)
 	require.NoError(t, err)

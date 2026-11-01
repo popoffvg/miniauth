@@ -1,10 +1,12 @@
 package postgres_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/popoffvg/sfsm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -34,7 +36,7 @@ func TestInviteAcceptance(t *testing.T) {
 	repo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
 	now := time.Now()
-	service, err := invites.NewService(repo, func() time.Time { return now })
+	service, err := invites.NewService(repo, func() time.Time { return now }, nil)
 	require.NoError(t, err)
 	password, err := users.NewPassword("invite-password-1")
 	require.NoError(t, err)
@@ -113,7 +115,7 @@ func TestInviteAcceptance(t *testing.T) {
 	t.Run("an expired invite is refused", func(t *testing.T) {
 		token, invite, err := service.Create(ctx, ops)
 		require.NoError(t, err)
-		later, err := invites.NewService(repo, func() time.Time { return invite.ExpiresAt })
+		later, err := invites.NewService(repo, func() time.Time { return invite.ExpiresAt }, nil)
 		require.NoError(t, err)
 		_, err = later.Open(ctx, token)
 		require.ErrorIs(t, err, invites.ErrInviteGone)
@@ -122,4 +124,64 @@ func TestInviteAcceptance(t *testing.T) {
 		_, err = accounts.FindByLogin(ctx, login("late"))
 		require.ErrorIs(t, err, users.ErrNotFound)
 	})
+}
+
+// raceInviteStore makes the first two invite reads wait for each other, so both acceptances read an open invite.
+type raceInviteStore struct {
+	*postgres.InviteRepository
+	reads *sync.WaitGroup
+}
+
+func (s raceInviteStore) InTransaction(ctx context.Context, fn func(invites.Transaction) error) error {
+	return s.InviteRepository.InTransaction(ctx, func(tx invites.Transaction) error {
+		return fn(raceInviteTransaction{Transaction: tx, reads: s.reads})
+	})
+}
+
+type raceInviteTransaction struct {
+	invites.Transaction
+	reads *sync.WaitGroup
+}
+
+func (t raceInviteTransaction) Find(ctx context.Context, hash invites.TokenHash) (invites.Invite, error) {
+	invite, err := t.Transaction.Find(ctx, hash)
+	t.reads.Done()
+	t.reads.Wait()
+	return invite, err
+}
+
+func TestInviteAcceptanceRaceOneWins(t *testing.T) {
+	ctx := t.Context()
+	pool := migratedPool(t)
+	repo, err := postgres.NewInviteRepository(pool)
+	require.NoError(t, err)
+	reads := &sync.WaitGroup{}
+	reads.Add(2)
+	service, err := invites.NewService(raceInviteStore{InviteRepository: repo, reads: reads}, nil, nil)
+	require.NoError(t, err)
+	token, _, err := service.Create(ctx, groups.Name{})
+	require.NoError(t, err)
+	password, err := users.NewPassword("invite-password-1")
+	require.NoError(t, err)
+
+	results := make(chan error, 2)
+	for _, raw := range []string{"first", "second"} {
+		name, err := users.ParseLogin(raw)
+		require.NoError(t, err)
+		go func() {
+			_, err := service.Accept(ctx, token, name, password)
+			results <- err
+		}()
+	}
+	errs := []error{<-results, <-results}
+	won := 0
+	for _, err := range errs {
+		if err == nil {
+			won++
+			continue
+		}
+		require.ErrorIs(t, err, sfsm.ErrStaleState)
+		require.ErrorIs(t, err, invites.ErrInviteGone)
+	}
+	assert.Equal(t, 1, won, "exactly one acceptance MUST win: %v", errs)
 }

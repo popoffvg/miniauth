@@ -37,7 +37,7 @@ func TestInviteEndToEnd(t *testing.T) {
 	clock := func() time.Time { return time.Now().Add(time.Duration(skew.Load())) }
 	inviteRepo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
-	invitations, err := invites.NewService(inviteRepo, clock)
+	invitations, err := invites.NewService(inviteRepo, clock, nil)
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
@@ -194,7 +194,7 @@ func TestInviteWithoutAPublicURLOrASession(t *testing.T) {
 	require.NoError(t, postgres.Migrate(ctx, pool))
 	inviteRepo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
-	invitations, err := invites.NewService(inviteRepo, time.Now)
+	invitations, err := invites.NewService(inviteRepo, time.Now, nil)
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)

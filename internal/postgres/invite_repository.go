@@ -84,6 +84,18 @@ type inviteTransaction struct {
 	membership *GroupRepository
 }
 
+// Find reads the invite inside the transaction. It takes no lock: Claim is the guard.
+func (t *inviteTransaction) Find(ctx context.Context, hash invites.TokenHash) (invites.Invite, error) {
+	row, err := t.q.GetInvite(ctx, hash[:])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return invites.Invite{}, invites.ErrInviteGone
+	}
+	if err != nil {
+		return invites.Invite{}, inviteError("find invite", err)
+	}
+	return inviteFromRow(row)
+}
+
 // Claim is one conditional UPDATE. A parallel claim waits for the row lock and then sees used_at set.
 func (t *inviteTransaction) Claim(ctx context.Context, hash invites.TokenHash, now time.Time) (invites.Invite, error) {
 	row, err := t.q.ClaimInvite(ctx, sqlcgen.ClaimInviteParams{Now: pgTime(now), TokenHash: hash[:]})
