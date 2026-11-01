@@ -107,6 +107,9 @@ type Querier interface {
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, error)
 	ListUserPasskeys(ctx context.Context, userID pgtype.UUID) ([]Passkey, error)
+	// FOR SHARE waits for a disable in progress, and the disable waits for this transaction.
+	// Zero rows means the user is not stored or is disabled.
+	LockActiveUser(ctx context.Context, id pgtype.UUID) (int64, error)
 	LockOpenPasswordReset(ctx context.Context, arg LockOpenPasswordResetParams) (pgtype.UUID, error)
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
 	Ping(ctx context.Context) (int32, error)

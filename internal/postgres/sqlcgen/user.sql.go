@@ -254,3 +254,19 @@ func (q *Queries) ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, 
 	}
 	return items, nil
 }
+
+const lockActiveUser = `-- name: LockActiveUser :execrows
+SELECT id FROM users
+WHERE id = $1 AND disabled_at IS NULL
+FOR SHARE
+`
+
+// FOR SHARE waits for a disable in progress, and the disable waits for this transaction.
+// Zero rows means the user is not stored or is disabled.
+func (q *Queries) LockActiveUser(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, lockActiveUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

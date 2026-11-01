@@ -57,6 +57,7 @@ func (r *UserAdminRepository) ListAccounts(ctx context.Context) ([]useradmin.Acc
 
 // Write stores one account transition. Zero rows changed is sfsm.ErrStaleState.
 // A disable deletes every session of the user in the same transaction.
+// Its UPDATE locks the user row, so a StartOnDevice in progress commits its session first.
 func (r *UserAdminRepository) Write(ctx context.Context, id users.ID, prev, next useradmin.AccountState) error {
 	if prev.Status == next.Status {
 		return fmt.Errorf("postgres: account write from %s to the same status", prev.Status)
