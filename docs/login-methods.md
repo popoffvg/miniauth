@@ -2,7 +2,7 @@
 
 A login is a flow of steps. `GET /login?return=<url>` starts a flow and shows the login form. The flow lives 15 minutes. Its id and secret are in the cookie `__Host-id_login_flow`, never in a URL. A flow that completed cannot be used again.
 
-A complete flow sets the session cookie and redirects with 303 to the return URL. The return URL MUST be an `https` URL whose host is under `MINIAUTH_COOKIE_DOMAIN`, or equal to the host of `MINIAUTH_PUBLIC_URL` when the domain is empty. Any other return URL opens `GET /`, the overview page.
+A complete flow sets the session cookie and redirects with 303 to the return URL. The return URL MUST be an `https` URL whose host is under `MINIAUTH_COOKIE_DOMAIN`, or equal to the host of `MINIAUTH_PUBLIC_URL` when the domain is empty. A default port, such as `:443`, does not make the host different. Any other return URL opens `GET /`, the overview page.
 
 The login methods give these factors. `X-Auth-Method` names the factors of the session in this order: `password`, `totp`, `recovery`, `passkey`, `google`, `telegram`.
 

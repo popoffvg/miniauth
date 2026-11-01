@@ -293,7 +293,7 @@ func forwardedURL(r *http.Request, domain sessions.Domain, publicURL PublicURL) 
 		return forwardedRequest{}, false
 	}
 	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if !forwardedHostAllowed(host, domain, publicURL) {
+	if !forwardedHostAllowed(proto, host, domain, publicURL) {
 		return forwardedRequest{}, false
 	}
 	uri := r.Header.Get("X-Forwarded-Uri")
@@ -303,7 +303,8 @@ func forwardedURL(r *http.Request, domain sessions.Domain, publicURL PublicURL) 
 	return forwardedRequest{proto: proto, host: host, uri: uri}, true
 }
 
-func forwardedHostAllowed(host string, domain sessions.Domain, publicURL PublicURL) bool {
+// forwardedHostAllowed compares a host with no cookie domain to the public host without the default port of each scheme.
+func forwardedHostAllowed(scheme, host string, domain sessions.Domain, publicURL PublicURL) bool {
 	if host == "" || strings.ContainsAny(host, "\r\n/\\@ ?#") {
 		return false
 	}
@@ -317,7 +318,18 @@ func forwardedHostAllowed(host string, domain sessions.Domain, publicURL PublicU
 		return name == parent || strings.HasSuffix(name, "."+parent)
 	}
 	allowed := publicURL.Host()
-	return allowed != "" && strings.EqualFold(host, allowed)
+	publicScheme, _, _ := strings.Cut(publicURL.Origin(), "://")
+	return allowed != "" && strings.EqualFold(withoutDefaultPort(scheme, host), withoutDefaultPort(publicScheme, allowed))
+}
+
+// defaultPorts is the port that a URL of each scheme has when it names none.
+var defaultPorts = map[string]string{"http": ":80", "https": ":443"}
+
+func withoutDefaultPort(scheme, host string) string {
+	if port, ok := defaultPorts[strings.ToLower(scheme)]; ok {
+		return strings.TrimSuffix(host, port)
+	}
+	return host
 }
 
 func forwardedHostname(hostport string) (string, bool) {
