@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/popoffvg/sfsm"
+
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -22,6 +24,7 @@ const (
 	msgTwoStepExpired     views.Message = "The two-step login setup expired. Start it again from your devices page."
 	msgTwoStepFailed      views.Message = "The two-step login change failed. Try again."
 	msgWrongCode          views.Message = "The code is wrong or was used before."
+	msgTwoStepRace        views.Message = "Two-step login changed in another tab or window. Open your devices page and try again."
 )
 
 // WithTOTP serves the TOTP step, the recovery code step, and TOTP enrollment.
@@ -153,6 +156,8 @@ func (s *service) twoStepFailed(w http.ResponseWriter, r *http.Request, err erro
 		renderDenied(w, r, http.StatusBadRequest, msgTwoStepExpired)
 	case errors.Is(err, totp.ErrKeyMissing):
 		renderDenied(w, r, http.StatusServiceUnavailable, msgTwoStepUnavailable)
+	case errors.Is(err, sfsm.ErrStaleState):
+		renderDenied(w, r, http.StatusConflict, msgTwoStepRace)
 	default:
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: two-step login", "err", err)
 		renderDenied(w, r, http.StatusInternalServerError, msgTwoStepFailed)

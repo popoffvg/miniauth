@@ -1,23 +1,31 @@
--- name: UpsertPendingTOTP :execrows
--- A confirmed row is not replaced: zero rows means the user is already enrolled.
-INSERT INTO totp_credentials (user_id, sealed_secret, created_at)
-VALUES ($1, $2, $3)
-ON CONFLICT (user_id) DO UPDATE
-SET sealed_secret = excluded.sealed_secret, created_at = excluded.created_at, last_step = 0
-WHERE totp_credentials.confirmed_at IS NULL;
+-- name: InsertPendingTOTP :execrows
+-- Zero rows means another request stored a row first.
+INSERT INTO totp_credentials (user_id, sealed_secret, created_at, version)
+VALUES (sqlc.arg(user_id), sqlc.arg(sealed_secret), sqlc.arg(created_at), sqlc.arg(version))
+ON CONFLICT (user_id) DO NOTHING;
+
+-- name: ReplacePendingTOTP :execrows
+-- A confirmed row is not replaced.
+UPDATE totp_credentials
+SET sealed_secret = sqlc.arg(sealed_secret), created_at = sqlc.arg(created_at), last_step = 0, version = sqlc.arg(next_version)
+WHERE user_id = sqlc.arg(user_id)
+    AND confirmed_at IS NULL
+    AND version = sqlc.arg(prev_version);
 
 -- name: GetTOTPCredential :one
-SELECT user_id, sealed_secret, last_step, created_at, confirmed_at
+SELECT user_id, sealed_secret, last_step, created_at, confirmed_at, version
 FROM totp_credentials
 WHERE user_id = $1;
 
 -- name: ConfirmTOTP :execrows
--- created_at names the enrollment, so a newer enrollment of the same user is not confirmed by an older page.
+-- created_at names the enrollment. A deleted and new row starts at version 1 again,
+-- so the version alone does not keep an older page from confirming a newer enrollment.
 UPDATE totp_credentials
-SET confirmed_at = sqlc.arg(confirmed_at), last_step = sqlc.arg(last_step)
+SET confirmed_at = sqlc.arg(confirmed_at), last_step = sqlc.arg(last_step), version = sqlc.arg(next_version)
 WHERE user_id = sqlc.arg(user_id)
     AND confirmed_at IS NULL
-    AND created_at = sqlc.arg(created_at);
+    AND created_at = sqlc.arg(created_at)
+    AND version = sqlc.arg(prev_version);
 
 -- name: UseTOTPStep :execrows
 -- Zero rows means a code of this step or a later step was already accepted.
@@ -27,9 +35,10 @@ WHERE user_id = sqlc.arg(user_id)
     AND confirmed_at IS NOT NULL
     AND last_step < sqlc.arg(step);
 
--- name: DeleteTOTP :exec
+-- name: DeleteTOTP :execrows
 DELETE FROM totp_credentials
-WHERE user_id = $1;
+WHERE user_id = sqlc.arg(user_id)
+    AND version = sqlc.arg(version);
 
 -- name: InsertRecoveryCodes :exec
 INSERT INTO recovery_codes (user_id, code_hash)

@@ -165,6 +165,7 @@ type TotpCredential struct {
 	LastStep     int64
 	CreatedAt    pgtype.Timestamptz
 	ConfirmedAt  pgtype.Timestamptz
+	Version      int64
 }
 
 type User struct {

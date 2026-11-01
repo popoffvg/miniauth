@@ -13,7 +13,8 @@ import (
 type Querier interface {
 	ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invite, error)
 	ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error)
-	// created_at names the enrollment, so a newer enrollment of the same user is not confirmed by an older page.
+	// created_at names the enrollment. A deleted and new row starts at version 1 again,
+	// so the version alone does not keep an older page from confirming a newer enrollment.
 	ConfirmTOTP(ctx context.Context, arg ConfirmTOTPParams) (int64, error)
 	CountDevices(ctx context.Context) (int64, error)
 	// The IP count includes every kind.
@@ -49,7 +50,7 @@ type Querier interface {
 	DeleteSession(ctx context.Context, secretHash []byte) error
 	DeleteStaleManagedGrants(ctx context.Context, arg DeleteStaleManagedGrantsParams) (int64, error)
 	DeleteStaleManagedResources(ctx context.Context, keep []string) (int64, error)
-	DeleteTOTP(ctx context.Context, userID pgtype.UUID) error
+	DeleteTOTP(ctx context.Context, arg DeleteTOTPParams) (int64, error)
 	DeleteTelegramLoginProof(ctx context.Context, proofHash []byte) error
 	DeleteUserPasskey(ctx context.Context, arg DeleteUserPasskeyParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
@@ -83,6 +84,8 @@ type Querier interface {
 	InsertPasskey(ctx context.Context, arg InsertPasskeyParams) error
 	InsertPasswordReset(ctx context.Context, arg InsertPasswordResetParams) error
 	InsertPendingIdentityLink(ctx context.Context, arg InsertPendingIdentityLinkParams) error
+	// Zero rows means another request stored a row first.
+	InsertPendingTOTP(ctx context.Context, arg InsertPendingTOTPParams) (int64, error)
 	InsertRecoveryAttempt(ctx context.Context, arg InsertRecoveryAttemptParams) error
 	InsertRecoveryCodes(ctx context.Context, arg InsertRecoveryCodesParams) error
 	InsertResource(ctx context.Context, arg InsertResourceParams) error
@@ -105,6 +108,8 @@ type Querier interface {
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
 	Ping(ctx context.Context) (int32, error)
 	RecordPasskeyUse(ctx context.Context, arg RecordPasskeyUseParams) (int64, error)
+	// A confirmed row is not replaced.
+	ReplacePendingTOTP(ctx context.Context, arg ReplacePendingTOTPParams) (int64, error)
 	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)
 	SetInviteUser(ctx context.Context, arg SetInviteUserParams) (int64, error)
 	SetLoginFlowChallenge(ctx context.Context, arg SetLoginFlowChallengeParams) (int64, error)
@@ -117,8 +122,6 @@ type Querier interface {
 	UpsertDeviceSession(ctx context.Context, arg UpsertDeviceSessionParams) error
 	UpsertManagedGroupGrant(ctx context.Context, arg UpsertManagedGroupGrantParams) error
 	UpsertManagedResource(ctx context.Context, arg UpsertManagedResourceParams) error
-	// A confirmed row is not replaced: zero rows means the user is already enrolled.
-	UpsertPendingTOTP(ctx context.Context, arg UpsertPendingTOTPParams) (int64, error)
 	// Zero rows means the code is unknown or spent.
 	UseRecoveryCode(ctx context.Context, arg UseRecoveryCodeParams) (int64, error)
 	// Zero rows means a code of this step or a later step was already accepted.

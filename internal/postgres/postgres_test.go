@@ -78,18 +78,20 @@ func TestMigrateAppliesALowerNumberThatArrivesLater(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	const late = "00017_totp.sql"
+	// 00021 alters the table of 00017, so it arrives with it.
+	arriveLate := map[string]bool{late: true, "00021_totp_version.sql": true}
 	early := fstest.MapFS{}
 	names, err := fs.Glob(migrations.FS, "*.sql")
 	require.NoError(t, err)
 	for _, name := range names {
-		if name == late {
+		if arriveLate[name] {
 			continue
 		}
 		data, readErr := fs.ReadFile(migrations.FS, name)
 		require.NoError(t, readErr)
 		early[name] = &fstest.MapFile{Data: data}
 	}
-	require.Len(t, early, len(names)-1)
+	require.Len(t, early, len(names)-len(arriveLate))
 	db := stdlib.OpenDBFromPool(pool)
 	t.Cleanup(func() { _ = db.Close() })
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, early)

@@ -28,6 +28,17 @@ Turn it on in the security page `GET /sessions`:
 2. `POST /sessions/totp/confirm` turns two-step login on when the code from the app matches. It shows 10 recovery codes once. The setup expires after 15 minutes.
 3. `POST /sessions/totp/disable` turns it off and deletes the recovery codes.
 
+The setup has the stages none, pending, confirmed, and disabled:
+
+| Stage | enroll | confirm | expire | disable |
+| --- | --- | --- | --- | --- |
+| none | pending | refused | refused | refused |
+| pending | pending, with a new secret | confirmed | none | disabled |
+| confirmed | refused | refused | refused | disabled |
+| disabled | pending | refused | refused | refused |
+
+A refused enroll shows the security page. A refused disable changes nothing and also returns to it. Two requests that change the setup at the same time, such as a confirm in one tab and a disable in another, cannot both succeed: the second one gets 409 and the message to try again.
+
 At login, a user with two-step login sees the TOTP form after the first factor. `POST /login/totp` checks the code. Each code is accepted once.
 
 ## Recovery codes

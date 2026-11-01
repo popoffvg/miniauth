@@ -136,7 +136,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	accounts := postgres.NewUserRepository(pool)
 	flowStore := postgres.NewFlowStore(pool)
 	attempts := postgres.NewAttemptRepository(pool)
-	totpService, err := totp.NewService(postgres.NewTOTPRepository(pool), attempts, cfg.TOTPKey)
+	totpService, err := totp.NewService(postgres.NewTOTPRepository(pool), attempts, cfg.TOTPKey, logger)
 	if err != nil {
 		return err
 	}

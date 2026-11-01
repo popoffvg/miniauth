@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/popoffvg/sfsm"
 
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
 	"github.com/popoffvg/miniauth/internal/providers/totp"
@@ -20,29 +22,13 @@ type TOTPRepository struct {
 }
 
 // NewTOTPRepository returns a repository that uses db for queries.
-// Confirm and Delete need a db that can begin a transaction, such as a pool.
+// A confirm and a delete need a db that can begin a transaction, such as a pool.
 func NewTOTPRepository(db sqlcgen.DBTX) *TOTPRepository {
 	begin, _ := db.(txBeginner)
 	return &TOTPRepository{q: sqlcgen.New(db), begin: begin}
 }
 
 var _ totp.Store = (*TOTPRepository)(nil)
-
-// SavePending stores sealed as the enrollment of userID that waits for its first code.
-func (r *TOTPRepository) SavePending(ctx context.Context, userID users.ID, sealed totp.SealedSecret, createdAt time.Time) error {
-	n, err := r.q.UpsertPendingTOTP(ctx, sqlcgen.UpsertPendingTOTPParams{
-		UserID:       pgUUIDBytes(userID.Bytes()),
-		SealedSecret: sealed,
-		CreatedAt:    pgTime(createdAt),
-	})
-	if err != nil {
-		return fmt.Errorf("postgres: save TOTP enrollment: %w", err)
-	}
-	if n == 0 {
-		return totp.ErrEnrolled
-	}
-	return nil
-}
 
 // Find returns the credential of userID.
 func (r *TOTPRepository) Find(ctx context.Context, userID users.ID) (totp.Credential, error) {
@@ -62,45 +48,84 @@ func (r *TOTPRepository) Find(ctx context.Context, userID users.ID) (totp.Creden
 		LastStep:    totp.TimeStep(row.LastStep),
 		CreatedAt:   row.CreatedAt.Time.UTC(),
 		ConfirmedAt: optionalTime(row.ConfirmedAt),
+		Version:     totp.EnrollmentVersion(row.Version),
 	}, nil
 }
 
-// Confirm turns on the enrollment created at createdAt and replaces the recovery codes in one transaction.
-func (r *TOTPRepository) Confirm(ctx context.Context, userID users.ID, createdAt time.Time, step totp.TimeStep, codes []totp.RecoveryHash, at time.Time) error {
-	if r.begin == nil {
-		return errors.New("postgres: TOTP repository cannot begin a transaction")
+// Write stores one enrollment transition. Zero rows changed is sfsm.ErrStaleState.
+func (r *TOTPRepository) Write(ctx context.Context, userID users.ID, prev, next totp.EnrollmentState) error {
+	if next.Version != prev.Version+1 || next.Cause == nil {
+		return fmt.Errorf("postgres: TOTP enrollment %d does not follow %d", next.Version, prev.Version)
 	}
 	id := pgUUIDBytes(userID.Bytes())
-	hashes := make([][]byte, len(codes))
-	for i := range codes {
-		hashes[i] = codes[i][:]
+	var n int64
+	var err error
+	switch {
+	case next.Stage == totp.StagePending && !prev.Stage.Stored():
+		n, err = r.q.InsertPendingTOTP(ctx, sqlcgen.InsertPendingTOTPParams{
+			UserID:       id,
+			SealedSecret: next.Cause.Sealed,
+			CreatedAt:    pgTime(next.CreatedAt),
+			Version:      int64(next.Version),
+		})
+	case next.Stage == totp.StagePending:
+		n, err = r.q.ReplacePendingTOTP(ctx, sqlcgen.ReplacePendingTOTPParams{
+			SealedSecret: next.Cause.Sealed,
+			CreatedAt:    pgTime(next.CreatedAt),
+			NextVersion:  int64(next.Version),
+			UserID:       id,
+			PrevVersion:  int64(prev.Version),
+		})
+	case next.Stage == totp.StageConfirmed:
+		n, err = r.confirm(ctx, id, prev, next)
+	default:
+		n, err = r.delete(ctx, id, prev.Version)
 	}
+	if err != nil {
+		return fmt.Errorf("postgres: write TOTP %s: %w", next.Stage, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("postgres: write TOTP %s: %w", next.Stage, sfsm.ErrStaleState)
+	}
+	return nil
+}
+
+// confirm turns on the enrollment of prev and replaces the recovery codes in one transaction.
+func (r *TOTPRepository) confirm(ctx context.Context, id pgtype.UUID, prev, next totp.EnrollmentState) (int64, error) {
+	if r.begin == nil {
+		return 0, errors.New("postgres: TOTP repository cannot begin a transaction")
+	}
+	hashes := make([][]byte, len(next.Cause.RecoveryCodes))
+	for i := range next.Cause.RecoveryCodes {
+		hashes[i] = next.Cause.RecoveryCodes[i][:]
+	}
+	var n int64
 	err := pgx.BeginFunc(ctx, r.begin, func(tx pgx.Tx) error {
 		q := r.q.WithTx(tx)
-		n, err := q.ConfirmTOTP(ctx, sqlcgen.ConfirmTOTPParams{
-			ConfirmedAt: pgTime(at),
-			LastStep:    int64(step),
+		var err error
+		n, err = q.ConfirmTOTP(ctx, sqlcgen.ConfirmTOTPParams{
+			ConfirmedAt: pgTime(next.Cause.At),
+			LastStep:    int64(next.Cause.Step),
+			NextVersion: int64(next.Version),
 			UserID:      id,
-			CreatedAt:   pgTime(createdAt),
+			CreatedAt:   pgTime(prev.CreatedAt),
+			PrevVersion: int64(prev.Version),
 		})
-		if err != nil {
-			return fmt.Errorf("postgres: update TOTP: %w", err)
-		}
-		if n == 0 {
-			return totp.ErrNoEnrollment
+		if err != nil || n == 0 {
+			return err
 		}
 		if err = q.DeleteRecoveryCodes(ctx, id); err != nil {
-			return fmt.Errorf("postgres: delete recovery codes: %w", err)
+			return fmt.Errorf("delete recovery codes: %w", err)
 		}
 		if err = q.InsertRecoveryCodes(ctx, sqlcgen.InsertRecoveryCodesParams{UserID: id, CodeHashes: hashes}); err != nil {
-			return fmt.Errorf("postgres: insert recovery codes: %w", err)
+			return fmt.Errorf("insert recovery codes: %w", err)
 		}
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("postgres: confirm TOTP: %w", err)
+		return 0, fmt.Errorf("confirm transaction: %w", err)
 	}
-	return nil
+	return n, nil
 }
 
 // UseStep stores step when it is later than the stored step.
@@ -125,26 +150,28 @@ func (r *TOTPRepository) UseRecoveryCode(ctx context.Context, userID users.ID, h
 	return n == 1, nil
 }
 
-// Delete removes the credential and the recovery codes of userID in one transaction.
-// The credential goes first: its row lock makes a Confirm that holds the row finish first,
-// so the codes it inserts are deleted too. A later Confirm finds no row.
-func (r *TOTPRepository) Delete(ctx context.Context, userID users.ID) error {
+// delete removes the credential at version and the recovery codes in one transaction.
+// The credential goes first: its row lock makes a confirm that holds the row finish first.
+// The confirm moves the version, so this delete then changes zero rows and the codes stay with their credential.
+func (r *TOTPRepository) delete(ctx context.Context, id pgtype.UUID, version totp.EnrollmentVersion) (int64, error) {
 	if r.begin == nil {
-		return errors.New("postgres: TOTP repository cannot begin a transaction")
+		return 0, errors.New("postgres: TOTP repository cannot begin a transaction")
 	}
-	id := pgUUIDBytes(userID.Bytes())
+	var n int64
 	err := pgx.BeginFunc(ctx, r.begin, func(tx pgx.Tx) error {
 		q := r.q.WithTx(tx)
-		if err := q.DeleteTOTP(ctx, id); err != nil {
-			return fmt.Errorf("postgres: delete TOTP: %w", err)
+		var err error
+		n, err = q.DeleteTOTP(ctx, sqlcgen.DeleteTOTPParams{UserID: id, Version: int64(version)})
+		if err != nil || n == 0 {
+			return err
 		}
-		if err := q.DeleteRecoveryCodes(ctx, id); err != nil {
-			return fmt.Errorf("postgres: delete recovery codes: %w", err)
+		if err = q.DeleteRecoveryCodes(ctx, id); err != nil {
+			return fmt.Errorf("delete recovery codes: %w", err)
 		}
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("postgres: disable TOTP: %w", err)
+		return 0, fmt.Errorf("delete transaction: %w", err)
 	}
-	return nil
+	return n, nil
 }

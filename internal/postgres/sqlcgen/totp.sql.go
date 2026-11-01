@@ -13,26 +13,32 @@ import (
 
 const confirmTOTP = `-- name: ConfirmTOTP :execrows
 UPDATE totp_credentials
-SET confirmed_at = $1, last_step = $2
-WHERE user_id = $3
+SET confirmed_at = $1, last_step = $2, version = $3
+WHERE user_id = $4
     AND confirmed_at IS NULL
-    AND created_at = $4
+    AND created_at = $5
+    AND version = $6
 `
 
 type ConfirmTOTPParams struct {
 	ConfirmedAt pgtype.Timestamptz
 	LastStep    int64
+	NextVersion int64
 	UserID      pgtype.UUID
 	CreatedAt   pgtype.Timestamptz
+	PrevVersion int64
 }
 
-// created_at names the enrollment, so a newer enrollment of the same user is not confirmed by an older page.
+// created_at names the enrollment. A deleted and new row starts at version 1 again,
+// so the version alone does not keep an older page from confirming a newer enrollment.
 func (q *Queries) ConfirmTOTP(ctx context.Context, arg ConfirmTOTPParams) (int64, error) {
 	result, err := q.db.Exec(ctx, confirmTOTP,
 		arg.ConfirmedAt,
 		arg.LastStep,
+		arg.NextVersion,
 		arg.UserID,
 		arg.CreatedAt,
+		arg.PrevVersion,
 	)
 	if err != nil {
 		return 0, err
@@ -50,18 +56,27 @@ func (q *Queries) DeleteRecoveryCodes(ctx context.Context, userID pgtype.UUID) e
 	return err
 }
 
-const deleteTOTP = `-- name: DeleteTOTP :exec
+const deleteTOTP = `-- name: DeleteTOTP :execrows
 DELETE FROM totp_credentials
 WHERE user_id = $1
+    AND version = $2
 `
 
-func (q *Queries) DeleteTOTP(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteTOTP, userID)
-	return err
+type DeleteTOTPParams struct {
+	UserID  pgtype.UUID
+	Version int64
+}
+
+func (q *Queries) DeleteTOTP(ctx context.Context, arg DeleteTOTPParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTOTP, arg.UserID, arg.Version)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getTOTPCredential = `-- name: GetTOTPCredential :one
-SELECT user_id, sealed_secret, last_step, created_at, confirmed_at
+SELECT user_id, sealed_secret, last_step, created_at, confirmed_at, version
 FROM totp_credentials
 WHERE user_id = $1
 `
@@ -75,8 +90,36 @@ func (q *Queries) GetTOTPCredential(ctx context.Context, userID pgtype.UUID) (To
 		&i.LastStep,
 		&i.CreatedAt,
 		&i.ConfirmedAt,
+		&i.Version,
 	)
 	return i, err
+}
+
+const insertPendingTOTP = `-- name: InsertPendingTOTP :execrows
+INSERT INTO totp_credentials (user_id, sealed_secret, created_at, version)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (user_id) DO NOTHING
+`
+
+type InsertPendingTOTPParams struct {
+	UserID       pgtype.UUID
+	SealedSecret []byte
+	CreatedAt    pgtype.Timestamptz
+	Version      int64
+}
+
+// Zero rows means another request stored a row first.
+func (q *Queries) InsertPendingTOTP(ctx context.Context, arg InsertPendingTOTPParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertPendingTOTP,
+		arg.UserID,
+		arg.SealedSecret,
+		arg.CreatedAt,
+		arg.Version,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertRecoveryCodes = `-- name: InsertRecoveryCodes :exec
@@ -94,23 +137,31 @@ func (q *Queries) InsertRecoveryCodes(ctx context.Context, arg InsertRecoveryCod
 	return err
 }
 
-const upsertPendingTOTP = `-- name: UpsertPendingTOTP :execrows
-INSERT INTO totp_credentials (user_id, sealed_secret, created_at)
-VALUES ($1, $2, $3)
-ON CONFLICT (user_id) DO UPDATE
-SET sealed_secret = excluded.sealed_secret, created_at = excluded.created_at, last_step = 0
-WHERE totp_credentials.confirmed_at IS NULL
+const replacePendingTOTP = `-- name: ReplacePendingTOTP :execrows
+UPDATE totp_credentials
+SET sealed_secret = $1, created_at = $2, last_step = 0, version = $3
+WHERE user_id = $4
+    AND confirmed_at IS NULL
+    AND version = $5
 `
 
-type UpsertPendingTOTPParams struct {
-	UserID       pgtype.UUID
+type ReplacePendingTOTPParams struct {
 	SealedSecret []byte
 	CreatedAt    pgtype.Timestamptz
+	NextVersion  int64
+	UserID       pgtype.UUID
+	PrevVersion  int64
 }
 
-// A confirmed row is not replaced: zero rows means the user is already enrolled.
-func (q *Queries) UpsertPendingTOTP(ctx context.Context, arg UpsertPendingTOTPParams) (int64, error) {
-	result, err := q.db.Exec(ctx, upsertPendingTOTP, arg.UserID, arg.SealedSecret, arg.CreatedAt)
+// A confirmed row is not replaced.
+func (q *Queries) ReplacePendingTOTP(ctx context.Context, arg ReplacePendingTOTPParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replacePendingTOTP,
+		arg.SealedSecret,
+		arg.CreatedAt,
+		arg.NextVersion,
+		arg.UserID,
+		arg.PrevVersion,
+	)
 	if err != nil {
 		return 0, err
 	}
