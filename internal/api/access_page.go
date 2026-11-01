@@ -218,20 +218,28 @@ func parseGrantee(form url.Values) (access.Grantee, error) {
 
 // parseExpiryInput reads an HTML date or datetime-local value in UTC. Empty never expires.
 // A date expires at the end of that UTC day, the same as a token expiry.
+// The zero time is refused: as an access.Expiry it means "never".
 func parseExpiryInput(raw string) (access.Expiry, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return access.Expiry{}, nil
 	}
 	if day, err := time.Parse(expiryDateLayout, raw); err == nil {
-		return access.ExpiresAt(day.AddDate(0, 0, 1)), nil
+		return nonZeroExpiry(day.AddDate(0, 0, 1))
 	}
 	for _, layout := range expiryLocalLayouts {
 		if at, err := time.Parse(layout, raw); err == nil {
-			return access.ExpiresAt(at), nil
+			return nonZeroExpiry(at)
 		}
 	}
 	return access.Expiry{}, errExpiryInput
+}
+
+func nonZeroExpiry(at time.Time) (access.Expiry, error) {
+	if at.IsZero() {
+		return access.Expiry{}, errExpiryInput
+	}
+	return access.ExpiresAt(at), nil
 }
 
 // accessFormPages are the statuses of a POST of the access page that answer with a page.

@@ -22,6 +22,8 @@ func TestParseExpiryInput(t *testing.T) {
 		{name: "datetime-local with seconds", raw: "2030-05-01T13:45:30", want: time.Date(2030, 5, 1, 13, 45, 30, 0, time.UTC)},
 		{name: "RFC 3339 is not an HTML value", raw: "2030-05-01T13:45:00Z", wantErr: errExpiryInput},
 		{name: "text", raw: "tomorrow", wantErr: errExpiryInput},
+		{name: "the zero time is not never", raw: "0001-01-01T00:00", wantErr: errExpiryInput},
+		{name: "a date that ends at the zero time", raw: "0000-12-31", wantErr: errExpiryInput},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
