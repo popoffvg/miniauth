@@ -88,7 +88,7 @@ func (s *service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: telegram data refused", "err", err)
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
-	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
+	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition), errors.Is(err, loginflow.ErrFlowNotFound):
 		clearFlowCookie(w)
 		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
 		return

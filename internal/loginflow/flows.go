@@ -14,6 +14,7 @@ import (
 // Store is the persistence port for login flows.
 // Load and Write are the sfsm.Store methods. Write MUST wrap sfsm.ErrStaleState
 // when the row version is no longer prev.Version. Write MUST delete the row when next is final.
+// Write MUST refuse an expired row with ErrFlowNotFound.
 // Create inserts a new flow. SecretHash returns the stored hash.
 // Cleanup deletes expired rows.
 type Store interface {

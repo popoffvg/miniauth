@@ -78,7 +78,8 @@ func (s *FlowStore) SecretHash(ctx context.Context, id loginflow.FlowID) (loginf
 }
 
 // Write updates the row when its version is still prev.Version.
-// A final next state deletes the row instead. Zero rows is sfsm.ErrStaleState.
+// A final next state deletes the row instead. Only a row that has not expired changes.
+// Zero rows is ErrFlowNotFound for a missing or expired row, else sfsm.ErrStaleState.
 func (s *FlowStore) Write(ctx context.Context, id loginflow.FlowID, prev, next loginflow.LoginFlow) error {
 	if next.Version != prev.Version+1 {
 		return fmt.Errorf("postgres: login flow version %d does not follow %d", next.Version, prev.Version)
@@ -114,6 +115,9 @@ func (s *FlowStore) Write(ctx context.Context, id loginflow.FlowID, prev, next l
 		return fmt.Errorf("postgres: write login flow: %w", err)
 	}
 	if n == 0 {
+		if _, err = s.fetch(ctx, id); err != nil {
+			return fmt.Errorf("postgres: write login flow: %w", err)
+		}
 		return fmt.Errorf("postgres: write login flow: %w", sfsm.ErrStaleState)
 	}
 	return nil

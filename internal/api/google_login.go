@@ -125,7 +125,7 @@ func (s *service) googleCallback(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, google.ErrUnavailable):
 		renderDenied(w, r, http.StatusServiceUnavailable, msgGoogleUnavailable)
 		return
-	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
+	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition), errors.Is(err, loginflow.ErrFlowNotFound):
 		clearFlowCookie(w)
 		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
 		return
