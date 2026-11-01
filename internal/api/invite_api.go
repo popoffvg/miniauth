@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/popoffvg/sfsm"
+
 	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
@@ -56,6 +58,7 @@ type invitePath struct {
 
 const (
 	msgInviteGone         views.Message = "This invite link does not work. It was used, it expired, or it is wrong."
+	msgInviteRace         views.Message = "Another request used this invite link at the same moment."
 	msgInviteLogin        views.Message = "The login or the password does not match the rules."
 	msgInviteLoginUsed    views.Message = "This login is taken. Choose another login."
 	msgInviteFailed       views.Message = "The account was not created. Try again."
@@ -133,6 +136,9 @@ func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	accepted, err := s.invites.Accept(r.Context(), token, login, password)
 	switch {
+	case errors.Is(err, sfsm.ErrStaleState):
+		renderDenied(w, r, http.StatusGone, msgInviteRace)
+		return
 	case errors.Is(err, invites.ErrInviteGone):
 		renderDenied(w, r, http.StatusGone, msgInviteGone)
 		return

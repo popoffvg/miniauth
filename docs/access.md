@@ -92,7 +92,7 @@ There is no public sign-up. An account exists only through an invite or `POST /a
 
 An invite lets one new person make an account in one group. An admin makes it in `/users` or with `POST /api/v1/invites`. With no group, the invite is to `users`. The link is `{MINIAUTH_PUBLIC_URL}/invite/{token}`. It is shown once, works once, and expires after 7 days.
 
-The person opens the link and chooses a login and a password. In one transaction miniauth marks the invite used and creates the user in the group of the invite and in `users`. Then it starts a session and redirects to the overview page `/`. A taken login shows the form again with 409, and the invite stays unused. An unknown, used, or expired link is 410.
+The person opens the link and chooses a login and a password. In one transaction miniauth marks the invite used and creates the user in the group of the invite and in `users`. Then it starts a session and redirects to the overview page `/`. A taken login shows the form again with 409, and the invite stays unused. An unknown, used, or expired link is 410. An invite is open, used, or expired. Only an open invite accepts: accept moves it to used, and its expiry moves it to expired. Two acceptances of one link at the same moment create one account. The other gets 410 with the message that another request used the link.
 
 ## Sessions and devices
 

@@ -160,7 +160,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
-	inviteService, err := invites.NewService(inviteRepo, nil)
+	inviteService, err := invites.NewService(inviteRepo, nil, logger)
 	if err != nil {
 		return err
 	}

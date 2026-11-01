@@ -84,7 +84,7 @@ func TestGroupsEndToEnd(t *testing.T) {
 	createResource(t, grants, "grafana", host, "/grafana")
 	inviteRepo, err := postgres.NewInviteRepository(pool)
 	require.NoError(t, err)
-	invitations, err := invites.NewService(inviteRepo, nil)
+	invitations, err := invites.NewService(inviteRepo, nil, nil)
 	require.NoError(t, err)
 	userAdminRepo, err := postgres.NewUserAdminRepository(pool)
 	require.NoError(t, err)
