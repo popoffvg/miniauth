@@ -93,18 +93,14 @@ FROM password_resets
 JOIN users ON users.id = password_resets.user_id
 WHERE password_resets.token_hash = $1
     AND password_resets.used_at IS NULL
-    AND password_resets.expires_at > $2::timestamptz
+    AND password_resets.expires_at > now()
     AND users.disabled_at IS NULL
 FOR UPDATE OF password_resets
 `
 
-type LockOpenPasswordResetParams struct {
-	TokenHash []byte
-	Now       pgtype.Timestamptz
-}
-
-func (q *Queries) LockOpenPasswordReset(ctx context.Context, arg LockOpenPasswordResetParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, lockOpenPasswordReset, arg.TokenHash, arg.Now)
+// The expiry uses the database time: the reset runs after the password hash and can wait for the row lock.
+func (q *Queries) LockOpenPasswordReset(ctx context.Context, tokenHash []byte) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockOpenPasswordReset, tokenHash)
 	var user_id pgtype.UUID
 	err := row.Scan(&user_id)
 	return user_id, err

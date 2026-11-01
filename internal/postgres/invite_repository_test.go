@@ -185,3 +185,23 @@ func TestInviteAcceptanceRaceOneWins(t *testing.T) {
 	}
 	assert.Equal(t, 1, won, "exactly one acceptance MUST win: %v", errs)
 }
+
+// An acceptance that read its clock before the invite expired MUST still fail once the database time is past the expiry.
+func TestInviteClaimChecksTheExpiryWithTheDatabaseTime(t *testing.T) {
+	ctx := t.Context()
+	pool := migratedPool(t)
+	repo, err := postgres.NewInviteRepository(pool)
+	require.NoError(t, err)
+	late := time.Now().Add(-invites.Lifetime - time.Minute)
+	service, err := invites.NewService(repo, func() time.Time { return late }, nil)
+	require.NoError(t, err)
+	token, _, err := service.Create(ctx, groups.Name{})
+	require.NoError(t, err)
+	password, err := users.NewPassword("invite-password-1")
+	require.NoError(t, err)
+	login, err := users.ParseLogin("bea")
+	require.NoError(t, err)
+
+	_, err = service.Accept(ctx, token, login, password)
+	require.ErrorIs(t, err, invites.ErrInviteGone)
+}

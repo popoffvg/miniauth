@@ -83,6 +83,7 @@ func (r *PasswordResetRepository) FindOpen(ctx context.Context, hash recovery.To
 
 // Redeem sets the password through the open link under hash in one transaction.
 // The row lock makes a second, concurrent use of the link wait and then find it used.
+// The expiry is checked with the database time. now is the used time only.
 func (r *PasswordResetRepository) Redeem(ctx context.Context, hash recovery.TokenHash, password users.PasswordHash, now time.Time) (users.User, error) {
 	encoded := password.Encoded()
 	if encoded == "" {
@@ -95,7 +96,7 @@ func (r *PasswordResetRepository) Redeem(ctx context.Context, hash recovery.Toke
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	q := r.q.WithTx(tx)
 
-	userID, err := q.LockOpenPasswordReset(ctx, sqlcgen.LockOpenPasswordResetParams{TokenHash: hash[:], Now: pgTime(now)})
+	userID, err := q.LockOpenPasswordReset(ctx, hash[:])
 	if errors.Is(err, pgx.ErrNoRows) {
 		return users.User{}, recovery.ErrInvalidToken
 	}

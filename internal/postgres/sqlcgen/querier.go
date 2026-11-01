@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	// The expiry uses the database time: the claim can run after a wait for the row lock.
 	ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invite, error)
 	ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error)
 	ConfirmTOTP(ctx context.Context, arg ConfirmTOTPParams) (int64, error)
@@ -110,7 +111,8 @@ type Querier interface {
 	// FOR SHARE waits for a disable in progress, and the disable waits for this transaction.
 	// Zero rows means the user is not stored or is disabled.
 	LockActiveUser(ctx context.Context, id pgtype.UUID) (int64, error)
-	LockOpenPasswordReset(ctx context.Context, arg LockOpenPasswordResetParams) (pgtype.UUID, error)
+	// The expiry uses the database time: the reset runs after the password hash and can wait for the row lock.
+	LockOpenPasswordReset(ctx context.Context, tokenHash []byte) (pgtype.UUID, error)
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
 	Ping(ctx context.Context) (int32, error)
 	RecordPasskeyUse(ctx context.Context, arg RecordPasskeyUseParams) (int64, error)

@@ -8,11 +8,12 @@ FROM invites
 WHERE token_hash = $1;
 
 -- name: ClaimInvite :one
+-- The expiry uses the database time: the claim can run after a wait for the row lock.
 UPDATE invites
 SET used_at = sqlc.arg(now)
 WHERE token_hash = sqlc.arg(token_hash)
     AND used_at IS NULL
-    AND expires_at > sqlc.arg(now)
+    AND expires_at > now()
 RETURNING token_hash, created_at, expires_at, used_at, user_id, group_name;
 
 -- name: SetInviteUser :execrows
