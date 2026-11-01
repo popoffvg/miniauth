@@ -133,14 +133,14 @@ func TestTOTPStaleRequestMissesANewEnrollment(t *testing.T) {
 	service, err := totp.NewServiceWithClock(repo, postgres.NewAttemptRepository(pool), randomKey(t), func() time.Time { return now }, nil)
 	require.NoError(t, err)
 	enroll := func() totp.Credential {
-		enrollment, err := service.Begin(ctx, user)
-		require.NoError(t, err)
-		code, err := totp.ParseCode(rfc6238Code(t, enrollment.Secret.Reveal(), now))
-		require.NoError(t, err)
-		_, err = service.Confirm(ctx, user.ID, code)
-		require.NoError(t, err)
-		credential, err := repo.Find(ctx, user.ID)
-		require.NoError(t, err)
+		enrollment, beginErr := service.Begin(ctx, user)
+		require.NoError(t, beginErr)
+		code, codeErr := totp.ParseCode(rfc6238Code(t, enrollment.Secret.Reveal(), now))
+		require.NoError(t, codeErr)
+		_, confirmErr := service.Confirm(ctx, user.ID, code)
+		require.NoError(t, confirmErr)
+		credential, findErr := repo.Find(ctx, user.ID)
+		require.NoError(t, findErr)
 		return credential
 	}
 	old := enroll()
