@@ -54,6 +54,10 @@ An invite lets one new person create an account with access to one resource. The
 
 A published GitHub release with a tag such as `v0.1.0` builds the image from `Dockerfile` and pushes it to `ghcr.io/popoffvg/miniauth` with the tags `0.1.0`, `0.1`, and `latest`.
 
+## Rule review
+
+`.reviewrules/config.json` holds the rules from AGENTS.md. `task review:rules` runs `reviewrules` (pinned in `tools/go.mod`) on the branch against `origin/main`, including the uncommitted change. Each rule gets its own LLM check, and a separate check looks for bugs that no rule names. The backend comes from `~/.config/reviewrules/config.toml`, for example `[local]` with `agent = "codex"` after `codex login`. You MAY pass more flags after `--`, for example `task review:rules -- --json-out report.json`.
+
 ## Development
 
 ```sh

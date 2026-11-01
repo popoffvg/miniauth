@@ -101,6 +101,11 @@ tasks:
     cmds:
       - coderabbit review --plain
 
+  review:rules:
+    desc: Per-rule LLM review of the branch against .reviewrules/ (needs a reviewrules backend, see README)
+    cmds:
+      - "{{.TOOL}} reviewrules --base origin/main --worktree {{.CLI_ARGS}}"
+
   check:
     desc: Everything CI runs
     cmds:
