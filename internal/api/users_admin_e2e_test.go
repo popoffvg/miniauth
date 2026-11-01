@@ -282,6 +282,30 @@ func TestUsersAdminEndToEnd(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, unknown.status)
 		assert.Contains(t, unknown.body, string(msgInviteGroup))
 	})
+
+	t.Run("the page offers every group without the groups service", func(t *testing.T) {
+		bare := httptest.NewUnstartedServer(nil)
+		bareBase := "https://" + bare.Listener.Addr().String()
+		bareRouter, err := NewRouter(
+			accounts,
+			sessions.NewServiceWithClock(postgres.NewSessionRepository(pool), clock.Now),
+			groupRepo,
+			sessions.Domain{},
+			mustPublicURL(t, bareBase),
+			hashToken(t, usersAdminToken),
+			&readyState{ok: true},
+			slog.New(slog.DiscardHandler),
+			WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
+			WithUserAdmin(useradmin.NewService(adminRepo, accounts, nil)),
+		)
+		require.NoError(t, err)
+		bare.Config.Handler = bareRouter
+		bare.StartTLS()
+		t.Cleanup(bare.Close)
+		page := get(t, adminBrowser, bareBase+usersPagePath)
+		require.Equal(t, http.StatusOK, page.status, page.body)
+		assert.Contains(t, page.body, `value="editors"`)
+	})
 }
 
 func mustGroupAdmin(t *testing.T, store groupadmin.Store, grants *access.Service) *groupadmin.Service {

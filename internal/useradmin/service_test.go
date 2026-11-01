@@ -29,6 +29,8 @@ type spyStore struct {
 
 func (s *spyStore) ListAccounts(context.Context) ([]useradmin.Account, error) { return nil, nil }
 
+func (s *spyStore) ListGroupNames(context.Context) ([]groups.Name, error) { return nil, nil }
+
 func (s *spyStore) Write(_ context.Context, id users.ID, _, next useradmin.AccountState) error {
 	if next.Status == useradmin.StatusDisabled {
 		s.disabled = append(s.disabled, id)
