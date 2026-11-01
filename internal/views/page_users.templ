@@ -1,4 +1,4 @@
-package api
+package views
 
 import (
 	"net/url"
@@ -7,14 +7,14 @@ import (
 	"github.com/popoffvg/miniauth/internal/groups"
 )
 
-templ usersPage(view usersPageView) {
+templ UsersPage(view UsersView) {
 	@shellLayout("Users", view.Shell) {
 		@pageHeader("Users", "Every account, its groups, and its state. A disabled user is signed out everywhere and cannot sign in.") {
 			if view.InvitesOn {
-				@primaryLink("#invite", iconUserPlus, "Invite user")
+				@primaryLink("#invite", IconUserPlus, "Invite user")
 			}
 		}
-		@doneAlert(view.Notice, usersPagePath)
+		@doneAlert(view.Notice, UsersPath)
 		@errorAlert(view.Message)
 		<div class="stack-lg">
 			if view.Invite.Link != "" {
@@ -22,15 +22,15 @@ templ usersPage(view usersPageView) {
 			}
 			<section class="card" aria-label="Users">
 				if view.Total > 0 {
-					@searchToolbar(usersPagePath, view.Query, "Search users and groups", string(view.Filter), userChips)
+					@searchToolbar(UsersPath, view.Query, "Search users and groups", string(view.Filter), userChips)
 				}
 				if len(view.Rows) > 0 {
 					@userRows(view.Rows, view.Groups)
 				} else if view.Total == 0 {
-					@emptyState(iconUsers, "No users.", "Invite a person to create the first account.")
+					@emptyState(IconUsers, "No users.", "Invite a person to create the first account.")
 				} else {
-					@emptyState(iconSearch, "No user matches the filter.", "Change the search or the status filter.") {
-						<a class="btn btn-secondary" href={ templ.SafeURL(usersPagePath) }>Clear the filter</a>
+					@emptyState(IconSearch, "No user matches the filter.", "Change the search or the status filter.") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(UsersPath) }>Clear the filter</a>
 					}
 				}
 			</section>
@@ -41,7 +41,7 @@ templ usersPage(view usersPageView) {
 	}
 }
 
-templ userRows(rows []userRow, choices []groups.Name) {
+templ userRows(rows []UserRow, choices []groups.Name) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -63,7 +63,7 @@ templ userRows(rows []userRow, choices []groups.Name) {
 								<span class="badge badge-current">You</span>
 							}
 						</div>
-						<div class="cell-sub">Created <span class="num">{ timeText(row.Account.User.CreatedAt).Date() }</span></div>
+						<div class="cell-sub">Created <span class="num">{ Timestamp(row.Account.User.CreatedAt).date() }</span></div>
 					</td>
 					<td data-label="Groups">
 						if len(row.Account.Groups) == 0 {
@@ -78,13 +78,13 @@ templ userRows(rows []userRow, choices []groups.Name) {
 					</td>
 					<td data-label="Status">
 						if row.Account.User.Disabled() {
-							@badge(toneDisabled, "Disabled")
+							@badge(ToneDisabled, "Disabled")
 						} else {
-							@badge(toneActive, "Active")
+							@badge(ToneActive, "Active")
 						}
 					</td>
 					<td class="num" data-label="Last seen">
-						@timeCell(timeText(row.Account.LastSeen))
+						@timeCell(Timestamp(row.Account.LastSeen))
 					</td>
 					<td class="num" data-label="Devices">{ strconv.Itoa(row.Account.Devices) }</td>
 					<td class="actions">
@@ -109,7 +109,7 @@ templ userRows(rows []userRow, choices []groups.Name) {
 							if row.Account.User.Disabled() {
 								<form method="post" action={ templ.SafeURL(row.actionPath("enable")) }>
 									<button class="menu-item" type="submit">
-										@icon(iconSuccess)
+										@icon(IconSuccess)
 										Enable user
 									</button>
 								</form>
@@ -157,12 +157,12 @@ templ inviteFormCard(choices []groups.Name) {
 	</section>
 }
 
-templ inviteShownCard(invite inviteBody) {
+templ inviteShownCard(invite Invite) {
 	<section class="card" aria-labelledby="invite-link-title">
 		<div class="card-header">
 			<div>
 				<h2 id="invite-link-title">Invite link to the group { invite.Group.String() }</h2>
-				<p>Send it to one person. It expires { timeText(invite.ExpiresAt).Human() }.</p>
+				<p>Send it to one person. It expires { Timestamp(invite.ExpiresAt).human() }.</p>
 			</div>
 		</div>
 		<div class="card-body">

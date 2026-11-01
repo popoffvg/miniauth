@@ -4,15 +4,14 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/popoffvg/miniauth/internal/devices"
-	"github.com/popoffvg/miniauth/internal/providers/passkey"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
-const sessionsPagePath = "/sessions"
+const sessionsPagePath = views.SecurityPath
 
 // sessionsPageCSP allows no script. The forms post to this origin only, and no page may frame this one.
 const sessionsPageCSP = "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
@@ -25,24 +24,6 @@ type deviceRequest struct {
 // sessionsPageRequest documents the query of GET /sessions.
 type sessionsPageRequest struct {
 	Done string `query:"done" description:"The result of the last change. The page shows a fixed message for a known value and ignores any other value."`
-}
-
-// ShowPasskeys is false when the router has no passkey service.
-type sessionsPageView struct {
-	Shell        shellView
-	Notice       pageMessage
-	Devices      []deviceView
-	Passkeys     []passkey.Passkey
-	ShowPasskeys bool
-	TwoStep      twoStepView
-}
-
-type deviceView struct {
-	ID        devices.ID
-	Name      devices.Name
-	FirstSeen time.Time
-	LastSeen  time.Time
-	IsCurrent bool
 }
 
 func (s *service) sessionsPage(w http.ResponseWriter, r *http.Request) {
@@ -78,14 +59,14 @@ func (s *service) sessionsPage(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusInternalServerError, "The devices were not loaded.")
 		return
 	}
-	view := sessionsPageView{
+	view := views.SecurityView{
 		Shell:   s.shellFor(r, user, sessionsPagePath),
 		Notice:  doneNotice(r),
-		Devices: make([]deviceView, 0, len(list)),
+		Devices: make([]views.Device, 0, len(list)),
 		TwoStep: twoStep,
 	}
 	for _, device := range list {
-		view.Devices = append(view.Devices, deviceView{
+		view.Devices = append(view.Devices, views.Device{
 			ID:        device.ID,
 			Name:      device.Name,
 			FirstSeen: device.FirstSeen.UTC(),
@@ -102,7 +83,7 @@ func (s *service) sessionsPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	writePage(w, r, http.StatusOK, securityPage(view), sessionsPageCSP)
+	writePage(w, r, http.StatusOK, views.SecurityPage(view), sessionsPageCSP)
 }
 
 // sessionsPageLogin sends a browser to the login page with this page as the return URL.

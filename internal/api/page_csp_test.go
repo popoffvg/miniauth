@@ -12,27 +12,28 @@ import (
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/providers/passkey"
 	"github.com/popoffvg/miniauth/internal/providers/telegram"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 func TestPageCSPAddsTheSourcesOfEachFeature(t *testing.T) {
 	bot, err := telegram.ParseBotName("minibot")
 	require.NoError(t, err)
-	widget := telegramWidget{BotName: bot, AuthURL: "https://id.example.test" + TelegramCallbackPath}
+	widget := views.TelegramWidget{BotName: bot, AuthURL: "https://id.example.test" + TelegramCallbackPath}
 	tests := []struct {
 		name string
-		view pageView
+		view views.Page
 		want string
 	}{
-		{name: "no feature", view: pageView{}, want: "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
-		{name: "passkey script", view: pageView{Script: true}, want: "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
-		{name: "telegram widget", view: pageView{Telegram: widget}, want: "default-src 'none'; script-src https://telegram.org; frame-src https://oauth.telegram.org; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
-		{name: "both", view: pageView{Script: true, Telegram: widget}, want: "default-src 'none'; script-src 'self' https://telegram.org; connect-src 'self'; frame-src https://oauth.telegram.org; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
+		{name: "no feature", view: views.Page{}, want: "default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
+		{name: "passkey script", view: views.Page{Script: true}, want: "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
+		{name: "telegram widget", view: views.Page{Telegram: widget}, want: "default-src 'none'; script-src https://telegram.org; frame-src https://oauth.telegram.org; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
+		{name: "both", view: views.Page{Script: true, Telegram: widget}, want: "default-src 'none'; script-src 'self' https://telegram.org; connect-src 'self'; frame-src https://oauth.telegram.org; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"},
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, pageCSPOf(tt.view), tt.name)
 	}
-	assert.Equal(t, scriptPageCSP, pageCSPOf(pageView{Script: true}))
-	assert.Equal(t, telegramPageCSP, pageCSPOf(pageView{Telegram: widget}))
+	assert.Equal(t, scriptPageCSP, pageCSPOf(views.Page{Script: true}))
+	assert.Equal(t, telegramPageCSP, pageCSPOf(views.Page{Telegram: widget}))
 }
 
 func TestLoginPageWithPasskeyAndTelegramAllowsBothScripts(t *testing.T) {

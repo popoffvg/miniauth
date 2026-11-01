@@ -11,6 +11,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // loginMachine is an open login flow from loginflow.LoginFlows.Open.
@@ -18,7 +19,7 @@ type loginMachine = *sfsm.PersistedSFSM[loginflow.FlowID, loginflow.LoginFlow, l
 
 // askStepUp starts a step-up flow for user and shows the password form.
 // After the step-up the browser returns to returnTo.
-func (s *service) askStepUp(w http.ResponseWriter, r *http.Request, user users.User, returnTo loginflow.ReturnURL, message pageMessage) {
+func (s *service) askStepUp(w http.ResponseWriter, r *http.Request, user users.User, returnTo loginflow.ReturnURL, message views.Message) {
 	id, secret, err := s.flows.StartStepUp(r.Context(), user.ID, returnTo)
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: start step-up", "err", err)
@@ -26,7 +27,7 @@ func (s *service) askStepUp(w http.ResponseWriter, r *http.Request, user users.U
 		return
 	}
 	setFlowCookie(w, id, secret, time.Now())
-	renderPage(w, r, http.StatusOK, pageStepUp, pageView{Login: user.Login, Prompt: message})
+	renderPage(w, r, http.StatusOK, views.PageStepUp, views.Page{Login: user.Login, Prompt: message})
 }
 
 // stepUp checks the password of the flow user. The login in the form is not read,
@@ -44,8 +45,8 @@ func (s *service) stepUp(w http.ResponseWriter, r *http.Request, machine loginMa
 		renderDenied(w, r, http.StatusInternalServerError, msgLoginFailed)
 		return
 	}
-	retry := func(status int, message pageMessage) {
-		renderPage(w, r, status, pageStepUp, pageView{Login: user.Login, Message: message})
+	retry := func(status int, message views.Message) {
+		renderPage(w, r, status, views.PageStepUp, views.Page{Login: user.Login, Message: message})
 	}
 	userPassword, err := users.NewPassword(r.PostForm.Get("password"))
 	if err != nil {

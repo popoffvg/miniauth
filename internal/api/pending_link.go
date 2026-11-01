@@ -9,6 +9,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // pendingLinkCookieName binds a pending link to the browser. The database stores its SHA-256.
@@ -19,11 +20,11 @@ const linkingFactor = loginflow.FactorPassword
 
 // linkPagePath confirms a pending link. A page from another site can put its own outside account
 // in the pending link cookie, so a password login alone never links: the user confirms on this page.
-const linkPagePath = "/link"
+const linkPagePath = views.LinkPath
 
 const (
-	msgLinkFailed pageMessage = "The account was not linked. Try again."
-	msgLinkTaken  pageMessage = "This account is linked to another user, or you already have an account of this provider. It was not linked."
+	msgLinkFailed views.Message = "The account was not linked. Try again."
+	msgLinkTaken  views.Message = "This account is linked to another user, or you already have an account of this provider. It was not linked."
 )
 
 // linkProviders is the name that the confirm page shows for each outside provider.
@@ -54,16 +55,8 @@ type linkForm struct {
 	Return string `formData:"return" description:"The page to open after the choice, as in GET /link."`
 }
 
-// linkPageView is the data of the link confirm page.
-type linkPageView struct {
-	Login    users.Login
-	Provider string
-	Subject  users.Subject
-	Return   loginflow.ReturnURL
-}
-
 // rememberPendingLink stores the unknown account and asks, with message, for a password login in this browser.
-func (s *service) rememberPendingLink(w http.ResponseWriter, r *http.Request, account users.ExternalAccount, flow loginflow.LoginFlow, message pageMessage) {
+func (s *service) rememberPendingLink(w http.ResponseWriter, r *http.Request, account users.ExternalAccount, flow loginflow.LoginFlow, message views.Message) {
 	secret, err := s.links.Remember(r.Context(), account)
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: remember pending link", "err", err)
@@ -126,7 +119,7 @@ func (s *service) linkPage(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusInternalServerError, msgLinkFailed)
 		return
 	}
-	writePage(w, r, http.StatusOK, linkConfirmPage(linkPageView{
+	writePage(w, r, http.StatusOK, views.LinkConfirmPage(views.LinkView{
 		Login:    user.Login,
 		Provider: providerName(link.Account.Kind),
 		Subject:  link.Account.Subject,

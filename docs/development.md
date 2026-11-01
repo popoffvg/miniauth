@@ -23,7 +23,7 @@ The pre-push hook runs `task lint` and `task test`. Fix the failure; never push 
 | `task vet` | `go vet`. |
 | `task sec` | gosec with its own report. |
 | `task generate` | Generates `internal/postgres/sqlcgen` from `queries/*.sql` with sqlc. |
-| `task templ` | Generates the `_templ.go` files from `internal/api/*.templ`. |
+| `task templ` | Generates the `_templ.go` files from `internal/views/*.templ`. |
 | `task db:up` | Starts the local PostgreSQL from `compose.yaml` and waits until it is healthy. |
 | `task test` | All tests with the race detector. |
 | `task test:integration` | All tests against the local PostgreSQL. |
@@ -77,7 +77,7 @@ The backend comes from `~/.config/reviewrules/config.toml`, for example `[local]
 
 ## Pages
 
-Each HTML page is a templ component in `internal/api/*.templ`. Run `task templ` after a change and commit the `_templ.go` files. CI fails when the templ output is not up to date. Every page uses the one stylesheet `internal/api/assets/app.css`.
+Each HTML page is a templ component in `internal/views/*.templ`. Run `task templ` after a change and commit the `_templ.go` files. CI fails when the templ output is not up to date. Every page uses the one stylesheet `internal/views/assets/app.css`.
 
 ## Routes
 

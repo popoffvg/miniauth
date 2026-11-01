@@ -10,6 +10,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/providers/telegram"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // TelegramCallbackPath is the data-auth-url path of the widget. The bot domain MUST be the host of MINIAUTH_PUBLIC_URL.
@@ -27,12 +28,6 @@ type telegramCallbackRequest struct {
 	Hash      string `query:"hash" required:"true" description:"Hex HMAC-SHA256 of the other fields, keyed with the SHA-256 of the bot token."`
 }
 
-// telegramWidget is the data of the Telegram Login Widget on a page. The zero value shows no widget.
-type telegramWidget struct {
-	BotName telegram.BotName
-	AuthURL string
-}
-
 // WithTelegram offers the Telegram widget on the login page.
 // links keeps an unknown Telegram account until a password login in the same browser.
 func WithTelegram(step *telegram.Step, links *identitylink.Service) RouterOption {
@@ -47,8 +42,8 @@ func (s *service) telegramOffered() bool {
 	return s.telegram != nil && s.links != nil && s.publicURL.Origin() != ""
 }
 
-func (s *service) showTelegramWidget(view *pageView) {
-	view.Telegram = telegramWidget{BotName: s.telegram.BotName(), AuthURL: s.publicURL.Origin() + TelegramCallbackPath}
+func (s *service) showTelegramWidget(view *views.Page) {
+	view.Telegram = views.TelegramWidget{BotName: s.telegram.BotName(), AuthURL: s.publicURL.Origin() + TelegramCallbackPath}
 }
 
 // telegramCallback checks the widget data for the flow in the flow cookie.

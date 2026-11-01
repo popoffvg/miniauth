@@ -6,12 +6,13 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // browserPageUser returns the active user of the browser session.
 // With no session, or with a missing or disabled user, it redirects to the login page, which returns to returnPath.
 // It returns false after it wrote a reply. failed is the message of a store error.
-func (s *service) browserPageUser(w http.ResponseWriter, r *http.Request, returnPath string, failed pageMessage) (users.User, sessions.Session, bool) {
+func (s *service) browserPageUser(w http.ResponseWriter, r *http.Request, returnPath string, failed views.Message) (users.User, sessions.Session, bool) {
 	toLogin := s.publicURL.Login(s.publicURL.Origin() + returnPath)
 	session, err := s.openBrowserSession(r)
 	if errors.Is(err, sessions.ErrNotFound) {

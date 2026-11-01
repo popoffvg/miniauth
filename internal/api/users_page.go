@@ -11,20 +11,21 @@ import (
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/useradmin"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // usersPagePath is the users page. The step-up and each change return here.
-const usersPagePath = "/users"
+const usersPagePath = views.UsersPath
 
 // maxUsersFormBody is large enough for a group name or a resource name, form-encoded.
 const maxUsersFormBody = 4 << 10
 
 const (
-	msgUsersUnavailable pageMessage = "The users page is not available."
-	msgUsersAdminOnly   pageMessage = "Only a member of the admins group can open the users page."
-	msgUsersStepUp      pageMessage = "Enter your password again to change users."
-	msgUsersFailed      pageMessage = "The user change failed. Try again."
-	msgInviteGroup      pageMessage = "Choose a group that exists."
+	msgUsersUnavailable views.Message = "The users page is not available."
+	msgUsersAdminOnly   views.Message = "Only a member of the admins group can open the users page."
+	msgUsersStepUp      views.Message = "Enter your password again to change users."
+	msgUsersFailed      views.Message = "The user change failed. Try again."
+	msgInviteGroup      views.Message = "Choose a group that exists."
 )
 
 // usersPageRequest documents the query of GET /users.
@@ -136,7 +137,7 @@ func (s *service) changeUsers(w http.ResponseWriter, r *http.Request, done doneF
 	}
 	if err != nil {
 		if status, detail, known := userAdminProblem(err); known {
-			s.renderUsers(w, r, status, user, usersPageNote{message: pageMessage(detail)})
+			s.renderUsers(w, r, status, user, usersPageNote{message: views.Message(detail)})
 			return
 		}
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: users page", "err", err)
@@ -179,8 +180,8 @@ func (s *service) usersPageAdmin(w http.ResponseWriter, r *http.Request) (users.
 
 // usersPageNote is what one reply of the users page adds to the list: a refusal, a result, or a new invite.
 type usersPageNote struct {
-	message pageMessage
-	notice  pageMessage
+	message views.Message
+	notice  views.Message
 	// invite is a new invite link. The zero value shows none.
 	invite inviteBody
 }
@@ -194,7 +195,7 @@ func (s *service) renderUsers(w http.ResponseWriter, r *http.Request, status int
 	}
 	view := newUsersPageView(r, accounts, user.Login)
 	// The caller checked the admins group, so the menu needs no second lookup.
-	view.Shell = shellView{Login: user.Login, Admin: true, Current: usersPagePath}
+	view.Shell = views.Shell{Login: user.Login, Admin: true, Current: usersPagePath}
 	view.Message, view.Notice = note.message, note.notice
 	view.InvitesOn = s.invites != nil && s.publicURL.Origin() != ""
 	if view.Groups, err = s.groupNames(r.Context()); err != nil {
@@ -202,8 +203,8 @@ func (s *service) renderUsers(w http.ResponseWriter, r *http.Request, status int
 		renderDenied(w, r, http.StatusInternalServerError, msgUsersFailed)
 		return
 	}
-	view.Invite = note.invite
-	writePage(w, r, status, usersPage(view), pageCSP)
+	view.Invite = views.Invite{Link: views.InviteLink(note.invite.Link), Group: note.invite.Group, ExpiresAt: note.invite.ExpiresAt}
+	writePage(w, r, status, views.UsersPage(view), pageCSP)
 }
 
 // groupNames returns every group in name order. Without the groups service it is the built-in groups.

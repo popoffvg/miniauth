@@ -62,9 +62,9 @@ tasks:
       - "{{.TOOL}} sqlc generate"
 
   templ:
-    desc: Generate Go code from internal/api/*.templ with templ
+    desc: Generate Go code from internal/views/*.templ with templ
     cmds:
-      - "{{.TOOL}} templ generate -path internal/api"
+      - "{{.TOOL}} templ generate -path internal/views"
 
   db:up:
     desc: Start the local PostgreSQL from compose.yaml and wait until it is healthy

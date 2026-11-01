@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 const (
@@ -24,23 +25,23 @@ type loginStep struct {
 	Factor   loginflow.Factor
 	Path     string
 	Label    string
-	Page     pageName
+	Page     views.PageName
 	Script   bool
 	Second   bool
 	Fallback bool
-	Icon     iconName
-	widget   func(*service, *pageView)
+	Icon     views.Icon
+	widget   func(*service, *views.Page)
 	offered  func(*service) bool
 }
 
 // loginSteps is every step the login page offers, in the order the pages list them.
 var loginSteps = []loginStep{
-	{Factor: loginflow.FactorPassword, Path: "/login", Label: "Login and password", Icon: iconLock, Page: pageLogin},
-	{Factor: loginflow.FactorGoogle, Path: googleLoginPath, Label: "Sign in with Google", Icon: iconGoogle, offered: (*service).googleOffered},
+	{Factor: loginflow.FactorPassword, Path: "/login", Label: "Login and password", Icon: views.IconLock, Page: views.PageLogin},
+	{Factor: loginflow.FactorGoogle, Path: googleLoginPath, Label: "Sign in with Google", Icon: views.IconGoogle, offered: (*service).googleOffered},
 	{Factor: loginflow.FactorTelegram, Path: TelegramCallbackPath, Label: "Sign in with Telegram", widget: (*service).showTelegramWidget, offered: (*service).telegramOffered},
-	{Factor: loginflow.FactorPasskey, Path: passkeyLoginPath, Label: "Sign in with a passkey", Icon: iconPasskey, Script: true, offered: (*service).passkeyOffered},
-	{Factor: loginflow.FactorTOTP, Path: loginTOTPPath, Label: "Code from the authenticator app", Icon: iconPhone, Page: pageTOTP, Second: true, offered: (*service).totpOffered},
-	{Factor: loginflow.FactorRecovery, Path: loginRecoveryCodePath, Label: "Use a recovery code", Icon: iconKey, Page: pageRecoveryCode, Second: true, Fallback: true, offered: (*service).totpOffered},
+	{Factor: loginflow.FactorPasskey, Path: passkeyLoginPath, Label: "Sign in with a passkey", Icon: views.IconPasskey, Script: true, offered: (*service).passkeyOffered},
+	{Factor: loginflow.FactorTOTP, Path: loginTOTPPath, Label: "Code from the authenticator app", Icon: views.IconPhone, Page: views.PageTOTP, Second: true, offered: (*service).totpOffered},
+	{Factor: loginflow.FactorRecovery, Path: loginRecoveryCodePath, Label: "Use a recovery code", Icon: views.IconKey, Page: views.PageRecoveryCode, Second: true, Fallback: true, offered: (*service).totpOffered},
 }
 
 // openSteps is the offered steps of the stage of flow whose factor the flow has not collected yet.
@@ -67,7 +68,7 @@ func findStep(steps []loginStep, factor loginflow.Factor) (loginStep, bool) {
 }
 
 // renderSteps shows the form of the one open form step that is not a Fallback, or the chooser when more are open.
-func (s *service) renderSteps(w http.ResponseWriter, r *http.Request, status int, flow loginflow.LoginFlow, message pageMessage) {
+func (s *service) renderSteps(w http.ResponseWriter, r *http.Request, status int, flow loginflow.LoginFlow, message views.Message) {
 	s.renderStep(w, r, status, flow, 0, message)
 }
 
@@ -75,15 +76,15 @@ func (s *service) renderSteps(w http.ResponseWriter, r *http.Request, status int
 // The other open form steps become Links. With no such step it shows the chooser.
 // Every page lists the open redirect steps as buttons and shows the open widget steps.
 // A Script button loads passkey.js.
-func (s *service) renderStep(w http.ResponseWriter, r *http.Request, status int, flow loginflow.LoginFlow, factor loginflow.Factor, message pageMessage) {
-	view := pageView{Message: message, Recovery: s.recovery != nil && !flow.NeedsSecond}
+func (s *service) renderStep(w http.ResponseWriter, r *http.Request, status int, flow loginflow.LoginFlow, factor loginflow.Factor, message views.Message) {
+	view := views.Page{Message: message, Recovery: s.recovery != nil && !flow.NeedsSecond}
 	var forms []loginStep
 	for _, step := range s.openSteps(flow) {
 		switch {
 		case step.widget != nil:
 			step.widget(s, &view)
 		case step.Page == "":
-			view.Buttons = append(view.Buttons, step)
+			view.Buttons = append(view.Buttons, step.view())
 			view.Script = view.Script || step.Script
 		default:
 			forms = append(forms, step)
@@ -91,13 +92,15 @@ func (s *service) renderStep(w http.ResponseWriter, r *http.Request, status int,
 	}
 	shown, ok := chooseForm(forms, factor)
 	if !ok {
-		view.Steps = forms
-		renderPage(w, r, status, pageSteps, view)
+		for _, step := range forms {
+			view.Steps = append(view.Steps, step.view())
+		}
+		renderPage(w, r, status, views.PageSteps, view)
 		return
 	}
 	for _, step := range forms {
 		if step.Factor != shown.Factor {
-			view.Links = append(view.Links, step)
+			view.Links = append(view.Links, step.view())
 		}
 	}
 	renderPage(w, r, status, shown.Page, view)
@@ -115,4 +118,9 @@ func chooseForm(forms []loginStep, factor loginflow.Factor) (loginStep, bool) {
 		return loginStep{}, false
 	}
 	return found[0], true
+}
+
+// view is the step as a page shows it.
+func (step loginStep) view() views.Step {
+	return views.Step{Path: step.Path, Label: step.Label, Icon: step.Icon, Script: step.Script}
 }

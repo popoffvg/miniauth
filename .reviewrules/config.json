@@ -34,8 +34,8 @@
     },
     {
       "id": "pages-are-templ",
-      "rule": "HTML pages are templ components that use the one stylesheet internal/api/assets/app.css. No inline style attribute, no <style> block, no inline <script>, no other CSS file.",
-      "scope": ["**/*.templ", "internal/api/assets/**"],
+      "rule": "HTML pages are templ components in internal/views that use the one stylesheet internal/views/assets/app.css. No inline style attribute, no <style> block, no inline <script>, no other CSS file.",
+      "scope": ["**/*.templ", "internal/views/assets/**"],
       "severity": "medium"
     },
     {

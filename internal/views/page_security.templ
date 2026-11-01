@@ -1,15 +1,15 @@
-package api
+package views
 
 import "github.com/popoffvg/miniauth/internal/providers/passkey"
 
-templ securityPage(view sessionsPageView) {
+templ SecurityPage(view SecurityView) {
 	@shellLayout("Security", view.Shell) {
 		@pageHeader("Security", "The devices that signed in to your account, your passkeys, and two-step login.") {
 			if view.ShowPasskeys {
-				@primaryLink(passkeyNewPath, iconPlus, "Add a passkey")
+				@primaryLink(PasskeyNewPath, IconPlus, "Add a passkey")
 			}
 		}
-		@doneAlert(view.Notice, sessionsPagePath)
+		@doneAlert(view.Notice, SecurityPath)
 		<div class="stack-lg">
 			if view.TwoStep.Shown {
 				@twoStepCard(view.TwoStep)
@@ -24,7 +24,7 @@ templ securityPage(view sessionsPageView) {
 				if len(view.Devices) > 0 {
 					@deviceRows(view.Devices)
 				} else {
-					@emptyState(iconDevice, "No device is known.", "A device shows here after a sign-in.")
+					@emptyState(IconDevice, "No device is known.", "A device shows here after a sign-in.")
 				}
 			</section>
 			if view.ShowPasskeys {
@@ -38,8 +38,8 @@ templ securityPage(view sessionsPageView) {
 					if len(view.Passkeys) > 0 {
 						@passkeyRows(view.Passkeys)
 					} else {
-						@emptyState(iconPasskey, "No passkey is stored.", "Add a passkey to sign in without a password.") {
-							@primaryLink(passkeyNewPath, iconPlus, "Add a passkey")
+						@emptyState(IconPasskey, "No passkey is stored.", "Add a passkey to sign in without a password.") {
+							@primaryLink(PasskeyNewPath, IconPlus, "Add a passkey")
 						}
 					}
 				</section>
@@ -48,7 +48,7 @@ templ securityPage(view sessionsPageView) {
 	}
 }
 
-templ twoStepCard(state twoStepView) {
+templ twoStepCard(state TwoStep) {
 	<section class="card" aria-labelledby="two-step-title">
 		<div
 			class="setting"
@@ -60,12 +60,12 @@ templ twoStepCard(state twoStepView) {
 		>
 			<div>
 				<h2 class="setting-title" id="two-step-title">
-					@icon(iconPhone)
+					@icon(IconPhone)
 					Two-step login
 					if state.On {
-						@badge(toneOn, "On")
+						@badge(ToneOn, "On")
 					} else {
-						@badge(toneOff, "Off")
+						@badge(ToneOff, "Off")
 					}
 				</h2>
 				if state.On {
@@ -75,9 +75,9 @@ templ twoStepCard(state twoStepView) {
 				}
 			</div>
 			if state.On {
-				@confirmButton(totpDisablePath, "Turn off", "Turn off two-step login? Your recovery codes stop working.", "Turn off two-step login")
+				@confirmButton(TOTPDisablePath, "Turn off", "Turn off two-step login? Your recovery codes stop working.", "Turn off two-step login")
 			} else if state.CanEnroll {
-				<form method="post" action={ templ.SafeURL(totpEnrollPath) }>
+				<form method="post" action={ templ.SafeURL(TOTPEnrollPath) }>
 					<button class="btn btn-primary" type="submit">Turn on two-step login</button>
 				</form>
 			}
@@ -85,7 +85,7 @@ templ twoStepCard(state twoStepView) {
 	</section>
 }
 
-templ deviceRows(rows []deviceView) {
+templ deviceRows(rows []Device) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -107,16 +107,16 @@ templ deviceRows(rows []deviceView) {
 						</div>
 					</td>
 					<td class="num" data-label="First seen">
-						@timeCell(timeText(device.FirstSeen))
+						@timeCell(Timestamp(device.FirstSeen))
 					</td>
 					<td class="num" data-label="Last seen">
-						@timeCell(timeText(device.LastSeen))
+						@timeCell(Timestamp(device.LastSeen))
 					</td>
 					<td class="actions">
 						@rowMenu(device.Name.String()) {
 							<form method="post" action={ templ.SafeURL("/sessions/" + device.ID.String() + "/signout") }>
 								<button class="menu-item" type="submit">
-									@icon(iconSignOut)
+									@icon(IconSignOut)
 									Sign out
 								</button>
 							</form>
@@ -145,14 +145,14 @@ templ passkeyRows(rows []passkey.Passkey) {
 				<tr>
 					<td><div class="cell-main">{ key.Name.String() }</div></td>
 					<td class="num" data-label="Created">
-						@timeCell(timeText(key.CreatedAt))
+						@timeCell(Timestamp(key.CreatedAt))
 					</td>
 					<td class="num" data-label="Last used">
-						@timeCell(timeText(key.LastUsedAt))
+						@timeCell(Timestamp(key.LastUsedAt))
 					</td>
 					<td class="actions">
 						@rowMenu(key.Name.String()) {
-							@confirmPost(passkeysPath+"/"+key.ID.String()+"/delete", "Delete passkey",
+							@confirmPost(PasskeysPath+"/"+key.ID.String()+"/delete", "Delete passkey",
 								"Delete passkey “"+key.Name.String()+"”? It cannot sign you in again. This cannot be undone.", "Delete passkey")
 						}
 					</td>
@@ -162,14 +162,14 @@ templ passkeyRows(rows []passkey.Passkey) {
 	</table>
 }
 
-templ passkeyNewPage(view pageView) {
+templ passkeyNewPage(view Page) {
 	@shellLayout("Add a passkey", view.Shell) {
-		@breadcrumbs(sessionsPagePath, "Security", "Add a passkey")
+		@breadcrumbs(SecurityPath, "Security", "Add a passkey")
 		@pageHeader("Add a passkey", "Your browser asks for the screen lock of this device or for a security key.")
 		@errorAlert(view.Message)
 		<p class="alert alert-error" role="alert" data-passkey-message hidden></p>
 		<section class="card">
-			<form data-passkey-add={ passkeysPath }>
+			<form data-passkey-add={ PasskeysPath }>
 				<div class="card-body">
 					<div class="field">
 						<label for="name"><span>Name <span class="required" aria-hidden="true">*</span></span></label>
@@ -178,7 +178,7 @@ templ passkeyNewPage(view pageView) {
 					</div>
 				</div>
 				<div class="card-footer">
-					<a class="btn btn-secondary" href={ templ.SafeURL(sessionsPagePath) }>Cancel</a>
+					<a class="btn btn-secondary" href={ templ.SafeURL(SecurityPath) }>Cancel</a>
 					<button class="btn btn-primary" type="submit">Add a passkey</button>
 				</div>
 			</form>
@@ -187,9 +187,9 @@ templ passkeyNewPage(view pageView) {
 	}
 }
 
-templ totpEnrollPage(view pageView) {
+templ totpEnrollPage(view Page) {
 	@shellLayout("Turn on two-step login", view.Shell) {
-		@breadcrumbs(sessionsPagePath, "Security", "Two-step login")
+		@breadcrumbs(SecurityPath, "Security", "Two-step login")
 		@pageHeader("Turn on two-step login", "Connect an authenticator app, then type one code to confirm.")
 		@errorAlert(view.Message)
 		<section class="card">
@@ -208,7 +208,7 @@ templ totpEnrollPage(view pageView) {
 					</div>
 				</div>
 			}
-			<form method="post" action={ templ.SafeURL(totpConfirmPath) }>
+			<form method="post" action={ templ.SafeURL(TOTPConfirmPath) }>
 				<div class="card-body">
 					<div class="field">
 						<label for="code">Code from the app</label>
@@ -228,7 +228,7 @@ templ totpEnrollPage(view pageView) {
 					</div>
 				</div>
 				<div class="card-footer">
-					<a class="btn btn-secondary" href={ templ.SafeURL(sessionsPagePath) }>Cancel</a>
+					<a class="btn btn-secondary" href={ templ.SafeURL(SecurityPath) }>Cancel</a>
 					<button class="btn btn-primary" type="submit">Turn on</button>
 				</div>
 			</form>
@@ -236,7 +236,7 @@ templ totpEnrollPage(view pageView) {
 	}
 }
 
-templ recoveryCodesPage(view pageView) {
+templ recoveryCodesPage(view Page) {
 	@shellLayout("Recovery codes", view.Shell) {
 		@pageHeader("Two-step login is on", "Save your recovery codes now. Each code works one time, in place of a code from the app.")
 		<section class="card">
@@ -251,7 +251,7 @@ templ recoveryCodesPage(view pageView) {
 				}
 			</div>
 			<div class="card-footer">
-				<a class="btn btn-primary" href={ templ.SafeURL(sessionsPagePath) }>Done</a>
+				<a class="btn btn-primary" href={ templ.SafeURL(SecurityPath) }>Done</a>
 			</div>
 		</section>
 	}

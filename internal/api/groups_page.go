@@ -10,16 +10,17 @@ import (
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // groupsPagePath is the groups page. The step-up and each change return here.
-const groupsPagePath = "/groups"
+const groupsPagePath = views.GroupsPath
 
 const (
-	msgGroupsUnavailable pageMessage = "The groups page is not available."
-	msgGroupsAdminOnly   pageMessage = "Only a member of the admins group can open the groups page."
-	msgGroupsStepUp      pageMessage = "Enter your password again to change groups."
-	msgGroupsFailed      pageMessage = "The group change failed. Try again."
+	msgGroupsUnavailable views.Message = "The groups page is not available."
+	msgGroupsAdminOnly   views.Message = "Only a member of the admins group can open the groups page."
+	msgGroupsStepUp      views.Message = "Enter your password again to change groups."
+	msgGroupsFailed      views.Message = "The group change failed. Try again."
 )
 
 // groupsPageRequest documents the query of GET /groups.
@@ -124,7 +125,7 @@ func (s *service) changeGroups(w http.ResponseWriter, r *http.Request, done done
 	}
 	if err := change(r.Context(), r.PostForm); err != nil {
 		if status, detail, known := groupAdminProblem(err); known {
-			s.renderGroups(w, r, status, user, pageMessage(detail), "")
+			s.renderGroups(w, r, status, user, views.Message(detail), "")
 			return
 		}
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: groups page", "err", err)
@@ -142,7 +143,7 @@ func (s *service) groupsPageAdmin(w http.ResponseWriter, r *http.Request) (users
 	return s.adminPageUser(w, r, groupsPagePath, msgGroupsFailed, msgGroupsAdminOnly)
 }
 
-func (s *service) renderGroups(w http.ResponseWriter, r *http.Request, status int, user users.User, message, notice pageMessage) {
+func (s *service) renderGroups(w http.ResponseWriter, r *http.Request, status int, user users.User, message, notice views.Message) {
 	found, err := s.groupAdmin.List(r.Context())
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: groups page", "err", err)
@@ -157,7 +158,7 @@ func (s *service) renderGroups(w http.ResponseWriter, r *http.Request, status in
 	}
 	view := newGroupsPageView(r, found, resources)
 	// The caller checked the admins group, so the menu needs no second lookup.
-	view.Shell = shellView{Login: user.Login, Admin: true, Current: groupsPagePath}
+	view.Shell = views.Shell{Login: user.Login, Admin: true, Current: groupsPagePath}
 	view.Message, view.Notice = message, notice
-	writePage(w, r, status, groupsPage(view), pageCSP)
+	writePage(w, r, status, views.GroupsPage(view), pageCSP)
 }

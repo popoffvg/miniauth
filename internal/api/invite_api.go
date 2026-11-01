@@ -10,6 +10,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // invitePathPrefix starts each invite link. The rest of the path is the invite token, a secret.
@@ -54,12 +55,12 @@ type invitePath struct {
 }
 
 const (
-	msgInviteGone         pageMessage = "This invite link does not work. It was used, it expired, or it is wrong."
-	msgInviteLogin        pageMessage = "The login or the password does not match the rules."
-	msgInviteLoginUsed    pageMessage = "This login is taken. Choose another login."
-	msgInviteFailed       pageMessage = "The account was not created. Try again."
-	msgInviteOff          pageMessage = "Invites are not available."
-	msgInviteSignInFailed pageMessage = "Your account was created, but the sign-in failed. Sign in with your new login and password."
+	msgInviteGone         views.Message = "This invite link does not work. It was used, it expired, or it is wrong."
+	msgInviteLogin        views.Message = "The login or the password does not match the rules."
+	msgInviteLoginUsed    views.Message = "This login is taken. Choose another login."
+	msgInviteFailed       views.Message = "The account was not created. Try again."
+	msgInviteOff          views.Message = "Invites are not available."
+	msgInviteSignInFailed views.Message = "Your account was created, but the sign-in failed. Sign in with your new login and password."
 )
 
 func (s *service) createInvite(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +102,7 @@ func (s *service) invitePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	renderPage(w, r, http.StatusOK, pageInvite, pageView{Invite: token})
+	renderPage(w, r, http.StatusOK, views.PageInvite, views.Page{Invite: token})
 }
 
 // acceptInvite creates the account in the group of the invite, starts a session, and opens the overview.
@@ -127,7 +128,7 @@ func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
 	password, passwordErr := users.NewPassword(r.PostForm.Get("password"))
 	if loginErr != nil || passwordErr != nil {
-		renderPage(w, r, http.StatusBadRequest, pageInvite, pageView{Invite: token, Message: msgInviteLogin})
+		renderPage(w, r, http.StatusBadRequest, views.PageInvite, views.Page{Invite: token, Message: msgInviteLogin})
 		return
 	}
 	accepted, err := s.invites.Accept(r.Context(), token, login, password)
@@ -136,7 +137,7 @@ func (s *service) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusGone, msgInviteGone)
 		return
 	case errors.Is(err, users.ErrLoginTaken):
-		renderPage(w, r, http.StatusConflict, pageInvite, pageView{Invite: token, Message: msgInviteLoginUsed})
+		renderPage(w, r, http.StatusConflict, views.PageInvite, views.Page{Invite: token, Message: msgInviteLoginUsed})
 		return
 	case err != nil:
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: accept invite", "err", err)

@@ -1,6 +1,10 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/popoffvg/miniauth/internal/views"
+)
 
 // doneFlag is the query flag of the redirect after a change. It carries no data.
 type doneFlag string
@@ -28,7 +32,7 @@ const (
 // doneNotices is the fixed message of each flag. A page ignores a flag that is not in this list.
 var doneNotices = []struct {
 	flag    doneFlag
-	message pageMessage
+	message views.Message
 }{
 	{flag: doneResourceAdded, message: "The resource is added."},
 	{flag: doneResourceDeleted, message: "The resource and its grants are deleted."},
@@ -49,7 +53,7 @@ var doneNotices = []struct {
 	{flag: doneGroupResourceRemoved, message: "The group no longer reaches the resource."},
 }
 
-func doneNotice(r *http.Request) pageMessage {
+func doneNotice(r *http.Request) views.Message {
 	flag := doneFlag(r.URL.Query().Get("done"))
 	for _, notice := range doneNotices {
 		if notice.flag == flag {

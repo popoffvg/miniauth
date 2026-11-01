@@ -10,22 +10,23 @@ import (
 	"github.com/popoffvg/miniauth/internal/providers/passkey"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
+	"github.com/popoffvg/miniauth/internal/views"
 )
 
 // passkeysPath is where a signed-in user adds a passkey. The step-up returns to passkeyNewPath.
 const (
-	passkeysPath   = "/passkeys"
-	passkeyNewPath = passkeysPath + "/new"
+	passkeysPath   = views.PasskeysPath
+	passkeyNewPath = views.PasskeyNewPath
 )
 
 const (
-	msgPasskeyStepUp   pageMessage = "Enter your password again to change your passkeys."
-	msgPasskeyNotFound pageMessage = "The passkey is not found."
-	msgPasskeyFailed   pageMessage = "The passkey operation failed. Try again."
-	msgPasskeyName                 = "The name must have 1 to 64 characters."
-	msgPasskeyNoStepUp             = "Your sign-in is too old. Open the page again and confirm your password."
-	msgPasskeyTaken                = "This passkey is already stored."
-	msgSessionNotValid             = "The session is not valid."
+	msgPasskeyStepUp   views.Message = "Enter your password again to change your passkeys."
+	msgPasskeyNotFound views.Message = "The passkey is not found."
+	msgPasskeyFailed   views.Message = "The passkey operation failed. Try again."
+	msgPasskeyName                   = "The name must have 1 to 64 characters."
+	msgPasskeyNoStepUp               = "Your sign-in is too old. Open the page again and confirm your password."
+	msgPasskeyTaken                  = "This passkey is already stored."
+	msgSessionNotValid               = "The session is not valid."
 )
 
 // passkeyAddRequest is the body of POST /passkeys.
@@ -60,7 +61,7 @@ func (s *service) passkeyNewPage(w http.ResponseWriter, r *http.Request) {
 		s.askStepUp(w, r, user, loginflow.ReturnURL(s.publicURL.Origin()+passkeyNewPath), msgPasskeyStepUp)
 		return
 	}
-	renderPage(w, r, http.StatusOK, pageAddKey, pageView{Shell: s.shellFor(r, user, sessionsPagePath), Script: true})
+	renderPage(w, r, http.StatusOK, views.PageAddKey, views.Page{Shell: s.shellFor(r, user, sessionsPagePath), Script: true})
 }
 
 // passkeyAddOptions starts a step-up flow of the session user that carries the registration challenge.

@@ -1,4 +1,4 @@
-package api
+package views
 
 import (
 	"strconv"
@@ -6,13 +6,13 @@ import (
 	"github.com/popoffvg/miniauth/internal/access"
 )
 
-templ accessPage(view accessPageView) {
+templ AccessPage(view AccessView) {
 	@shellLayout("Access", view.Shell) {
 		@pageHeader("Access", "A resource is a URL behind the proxy. A grant lets one user or one group reach it. Times are UTC.") {
 			<a class="btn btn-secondary" href="#grant">Grant access</a>
-			@primaryLink("#add-resource", iconPlus, "Add resource")
+			@primaryLink("#add-resource", IconPlus, "Add resource")
 		}
-		@doneAlert(view.Notice, accessPagePath)
+		@doneAlert(view.Notice, AccessPath)
 		@errorAlert(view.Message)
 		<div class="stack-lg">
 			<section class="card" aria-labelledby="resources-title">
@@ -23,17 +23,17 @@ templ accessPage(view accessPageView) {
 					</div>
 				</div>
 				if view.TotalResources > 0 {
-					@searchToolbar(accessPagePath, view.Query, "Search resources and grants", string(view.Filter), nil)
+					@searchToolbar(AccessPath, view.Query, "Search resources and grants", string(view.Filter), nil)
 				}
 				if len(view.Resources) > 0 {
 					@resourceRows(view.Resources)
 				} else if view.TotalResources == 0 {
-					@emptyState(iconGlobe, "No resources.", "Add the URL of an app behind the proxy, then grant it to a user or a group.") {
-						@primaryLink("#add-resource", iconPlus, "Add resource")
+					@emptyState(IconGlobe, "No resources.", "Add the URL of an app behind the proxy, then grant it to a user or a group.") {
+						@primaryLink("#add-resource", IconPlus, "Add resource")
 					}
 				} else {
-					@emptyState(iconSearch, "No resource matches the search.", "") {
-						<a class="btn btn-secondary" href={ templ.SafeURL(accessPagePath) }>Clear the search</a>
+					@emptyState(IconSearch, "No resource matches the search.", "") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(AccessPath) }>Clear the search</a>
 					}
 				}
 			</section>
@@ -46,18 +46,18 @@ templ accessPage(view accessPageView) {
 				</div>
 				if view.TotalGrants > 0 {
 					<div class="toolbar">
-						@filterChips(accessPagePath, view.Query, string(view.Filter), grantChips)
+						@filterChips(AccessPath, view.Query, string(view.Filter), grantChips)
 					</div>
 				}
 				if len(view.Grants) > 0 {
 					@grantRows(view.Grants)
 				} else if view.TotalGrants == 0 {
-					@emptyState(iconLock, "No grants.", "Nobody can reach a resource until you grant it.") {
+					@emptyState(IconLock, "No grants.", "Nobody can reach a resource until you grant it.") {
 						<a class="btn btn-secondary" href="#grant">Grant access</a>
 					}
 				} else {
-					@emptyState(iconSearch, "No grant matches the filter.", "") {
-						<a class="btn btn-secondary" href={ templ.SafeURL(accessPagePath) }>Clear the filter</a>
+					@emptyState(IconSearch, "No grant matches the filter.", "") {
+						<a class="btn btn-secondary" href={ templ.SafeURL(AccessPath) }>Clear the filter</a>
 					}
 				}
 			</section>
@@ -69,7 +69,7 @@ templ accessPage(view accessPageView) {
 	}
 }
 
-templ resourceRows(rows []accessResourceView) {
+templ resourceRows(rows []AccessResource) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -85,7 +85,7 @@ templ resourceRows(rows []accessResourceView) {
 						<div class="cell-main">
 							{ resource.Name.String() }
 							if resource.Managed {
-								@badge(toneConfig, "From config")
+								@badge(ToneConfig, "From config")
 							}
 						</div>
 						<div class="cell-sub"><code>{ resource.URL.String() }</code></div>
@@ -96,7 +96,7 @@ templ resourceRows(rows []accessResourceView) {
 							if resource.Managed {
 								<p class="menu-note">The resources file owns this resource. Change the file to change it.</p>
 							} else {
-								@confirmPost(accessPagePath+"/resources/"+resource.Name.String()+"/delete", "Delete resource",
+								@confirmPost(AccessPath+"/resources/"+resource.Name.String()+"/delete", "Delete resource",
 									"Delete “"+resource.Name.String()+"” and its "+countText(resource.Grants, "grant", "grants")+"? Its users lose access at once. This cannot be undone.", "Delete resource")
 							}
 						}
@@ -107,7 +107,7 @@ templ resourceRows(rows []accessResourceView) {
 	</table>
 }
 
-templ grantRows(rows []accessGrantView) {
+templ grantRows(rows []AccessGrant) {
 	<table class="table">
 		<thead>
 			<tr>
@@ -132,17 +132,17 @@ templ grantRows(rows []accessGrantView) {
 					</td>
 					<td data-label="Resource">{ grant.Resource.String() }</td>
 					<td class="num" data-label="Expires">
-						@timeCell(timeText(grant.ExpiresAt))
+						@timeCell(Timestamp(grant.ExpiresAt))
 					</td>
 					<td data-label="Status">
 						<div class="tags">
 							if grant.Expired {
-								@badge(toneExpired, "Expired")
+								@badge(ToneExpired, "Expired")
 							} else {
-								@badge(toneActive, "Active")
+								@badge(ToneActive, "Active")
 							}
 							if grant.Managed {
-								@badge(toneConfig, "From config")
+								@badge(ToneConfig, "From config")
 							}
 						</div>
 					</td>
@@ -151,7 +151,7 @@ templ grantRows(rows []accessGrantView) {
 							if grant.Managed {
 								<p class="menu-note">The resources file owns this grant. Change the file to change it.</p>
 							} else {
-								@confirmPost(accessPagePath+"/grants/"+grant.ID.String()+"/revoke", "Revoke grant",
+								@confirmPost(AccessPath+"/grants/"+grant.ID.String()+"/revoke", "Revoke grant",
 									"Revoke this grant of “"+grant.Resource.String()+"”? The next request is refused.", "Revoke grant")
 							}
 						}

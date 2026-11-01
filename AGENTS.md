@@ -20,7 +20,7 @@ The design documents live in the owner's private infrastructure repo, not here. 
 - Each schema change is a new numbered migration in `migrations/`. Never edit a migration that is on `main`.
 - SQL lives in `queries/*.sql` and goes through `sqlc`. No SQL strings in Go code.
 - Use the standard library first: `net/http` routing, `log/slog`. Add a dependency only when the standard library has no equal.
-- HTML pages are templ components in `internal/api/*.templ`. Run `task templ` after each change and commit the generated `_templ.go` files. Every page uses the one stylesheet `internal/api/assets/app.css`: no inline style, no other CSS.
+- HTML pages are templ components in `internal/views/*.templ`. Run `task templ` after each change and commit the generated `_templ.go` files. Every page uses the one stylesheet `internal/views/assets/app.css`: no inline style, no other CSS.
 - A comment states an invariant or an outside assumption. It MUST NOT say what the code says. No ticket ids or links in code.
 - Nothing in this repo names a real host, server, or deployment. This repo is public.
 - Commit subject in imperative mood. No co-author lines.

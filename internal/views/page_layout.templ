@@ -1,6 +1,6 @@
-package api
+package views
 
-// document is the HTML skeleton of every page. stylesheet is appCSSPath, or an absolute URL on a page
+// document is the HTML skeleton of every page. stylesheet is StylesheetPath, or an absolute URL on a page
 // that another host serves.
 templ document(title string, stylesheet string) {
 	<!DOCTYPE html>
@@ -16,7 +16,7 @@ templ document(title string, stylesheet string) {
 	</html>
 }
 
-templ icon(name iconName) {
+templ icon(name Icon) {
 	if glyph, ok := iconGlyphs[name]; ok {
 		if glyph.filled {
 			<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -33,7 +33,7 @@ templ icon(name iconName) {
 templ brand(href string) {
 	<a class="brand" href={ templ.SafeURL(href) }>
 		<span class="brand-mark">
-			@icon(iconBrand)
+			@icon(IconBrand)
 		</span>
 		<span>miniauth</span>
 	</a>
@@ -48,7 +48,7 @@ templ authLayout(title string) {
 
 // authLayoutAt is authLayout for a page that another host serves: origin is the public origin of miniauth.
 templ authLayoutAt(title string, origin string) {
-	@document(title, origin+appCSSPath) {
+	@document(title, origin+StylesheetPath) {
 		<body>
 			<main class="auth" id="main">
 				@brand(origin + "/")
@@ -61,8 +61,8 @@ templ authLayoutAt(title string, origin string) {
 }
 
 // shellLayout is the app shell of a signed-in page: the sidebar, the top bar below 768px, and the content.
-templ shellLayout(title string, shell shellView) {
-	@document(title, appCSSPath) {
+templ shellLayout(title string, shell Shell) {
+	@document(title, StylesheetPath) {
 		<body>
 			<a class="skip-link" href="#main">Skip to content</a>
 			<div class="shell">
@@ -77,7 +77,7 @@ templ shellLayout(title string, shell shellView) {
 					@brand("/")
 					<details class="mobile-nav">
 						<summary>
-							@icon(iconMenu)
+							@icon(IconMenu)
 							Menu
 						</summary>
 						<div class="mobile-nav-panel">
@@ -98,7 +98,7 @@ templ shellLayout(title string, shell shellView) {
 	}
 }
 
-templ navMenu(shell shellView) {
+templ navMenu(shell Shell) {
 	for _, section := range navSections {
 		if items := shell.itemsOf(section); len(items) > 0 {
 			<div class="nav-group">
@@ -124,13 +124,13 @@ templ navMenu(shell shellView) {
 	}
 }
 
-templ accountBox(shell shellView) {
+templ accountBox(shell Shell) {
 	<div class="account">
 		<span class="avatar" aria-hidden="true">{ initial(shell.Login) }</span>
 		<span class="account-name" title={ shell.Login.String() }>{ shell.Login.String() }</span>
 		<form method="post" action="/logout">
 			<button class="btn btn-ghost btn-icon" type="submit" title="Sign out" aria-label="Sign out">
-				@icon(iconSignOut)
+				@icon(IconSignOut)
 			</button>
 		</form>
 	</div>
