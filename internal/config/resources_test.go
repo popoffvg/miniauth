@@ -41,6 +41,8 @@ func TestLoadResourcesRefusesABadFile(t *testing.T) {
 	}{
 		{name: "not JSON", body: `{"resources": [` + secret, want: errResourcesJSON, message: "MINIAUTH_RESOURCES_FILE is not a JSON object"},
 		{name: "no array", body: `{"items": []}`, want: errResourcesJSON, message: "MINIAUTH_RESOURCES_FILE"},
+		{name: "trailing brace", body: `{"resources": []}}`, want: errResourcesJSON, message: "MINIAUTH_RESOURCES_FILE"},
+		{name: "second value", body: `{"resources": []} {"resources": []}`, want: errResourcesJSON, message: "MINIAUTH_RESOURCES_FILE"},
 		{name: "bad URL", body: `{"resources": [{"name": "a", "url": "https://a.example.test/"}, {"name": "b", "url": "ftp://` + secret + `@b.example.test/"}]}`, want: access.ErrResourceURL, message: "MINIAUTH_RESOURCES_FILE: resources[1]"},
 		{name: "bad group", body: `{"resources": [{"name": "a", "url": "https://a.example.test/", "groups": ["-` + secret + `"]}]}`, want: groups.ErrName, message: "resources[0]"},
 		{name: "unknown field", body: `{"resources": [{"name": "a", "url": "https://a.example.test/", "` + secret + `": 1}]}`, want: errEntry, message: "resources[0]"},
