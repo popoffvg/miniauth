@@ -365,12 +365,12 @@ func validPort(port string) bool {
 	return err == nil && number >= 1 && number <= 65535
 }
 
+// safeForwardedURI refuses a "://" in the path only: a query such as ?next=https://example.test/ is common.
 func safeForwardedURI(uri string) bool {
 	if !strings.HasPrefix(uri, "/") || strings.HasPrefix(uri, "//") {
 		return false
 	}
-	if strings.ContainsAny(uri, "\r\n\\") || strings.Contains(uri, "://") {
-		return false
-	}
-	return true
+	path, _, _ := strings.Cut(uri, "?")
+	path, _, _ = strings.Cut(path, "#")
+	return !strings.ContainsAny(uri, "\r\n\\") && !strings.Contains(path, "://")
 }
