@@ -10,5 +10,5 @@ var (
 	// ErrSelfDisable is what Disable returns when the actor names itself.
 	ErrSelfDisable = errors.New("useradmin: an administrator cannot disable itself")
 	// ErrSelfAdmin is what RemoveFromGroup returns when the actor removes its own admin membership.
-	ErrSelfAdmin = errors.New("useradmin: an administrator cannot leave the admin group")
+	ErrSelfAdmin = errors.New("useradmin: an administrator cannot leave the admins group")
 )

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/popoffvg/miniauth/internal/groups"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
 	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -34,7 +35,7 @@ var (
 	_ password.IdentityStore = (*UserRepository)(nil)
 )
 
-// Create inserts the user and the password identity in one statement.
+// Create inserts the user, the password identity, and the membership of groups.Users in one statement.
 // A login that is already stored returns users.ErrLoginTaken.
 func (r *UserRepository) Create(ctx context.Context, account users.User, identity users.Identity) error {
 	if identity.Kind != users.KindPassword {
@@ -54,6 +55,7 @@ func (r *UserRepository) Create(ctx context.Context, account users.User, identit
 		IdentityID:   pgUUIDBytes(identity.ID.Bytes()),
 		Kind:         identity.Kind.String(),
 		PasswordHash: pgtype.Text{String: encoded, Valid: true},
+		GroupName:    groups.Users().String(),
 	})
 	if err != nil {
 		return createUserError(err)

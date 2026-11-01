@@ -28,29 +28,31 @@ func TestUserAdminRepository(t *testing.T) {
 	bob := createAccount(t, accounts, "bob")
 	repo, err := postgres.NewUserAdminRepository(pool)
 	require.NoError(t, err)
-	editors, err := groups.ParseName("editors")
+	editors := createGroup(t, pool, "editors")
+	missing, err := groups.ParseName("missing")
 	require.NoError(t, err)
 
 	t.Run("membership", func(t *testing.T) {
 		require.NoError(t, repo.AddMember(ctx, ada.ID, editors))
 		require.NoError(t, repo.AddMember(ctx, ada.ID, editors), "a stored pair changes nothing")
-		require.NoError(t, repo.AddMember(ctx, ada.ID, groups.Admin()))
+		require.NoError(t, repo.AddMember(ctx, ada.ID, groups.Admins()))
 		require.ErrorIs(t, repo.AddMember(ctx, users.NewID(), editors), useradmin.ErrUserNotFound)
+		require.ErrorIs(t, repo.AddMember(ctx, ada.ID, missing), groups.ErrGroupNotFound)
 		require.ErrorIs(t, repo.RemoveMember(ctx, bob.ID, editors), useradmin.ErrNotMember)
 
 		list, err := repo.ListAccounts(ctx)
 		require.NoError(t, err)
 		require.Len(t, list, 2)
 		assert.Equal(t, "ada", list[0].User.Login.String())
-		assert.Equal(t, []groups.Name{groups.Admin(), editors}, list[0].Groups)
-		assert.Empty(t, list[1].Groups)
+		assert.Equal(t, []groups.Name{groups.Admins(), editors, groups.Users()}, list[0].Groups)
+		assert.Equal(t, []groups.Name{groups.Users()}, list[1].Groups)
 		assert.Zero(t, list[1].Devices)
 		assert.True(t, list[1].LastSeen.IsZero())
 
 		require.NoError(t, repo.RemoveMember(ctx, ada.ID, editors))
 		list, err = repo.ListAccounts(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, []groups.Name{groups.Admin()}, list[0].Groups)
+		assert.Equal(t, []groups.Name{groups.Admins(), groups.Users()}, list[0].Groups)
 	})
 
 	t.Run("disable deletes the sessions and enable clears the time", func(t *testing.T) {

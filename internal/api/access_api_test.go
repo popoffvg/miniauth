@@ -24,7 +24,7 @@ func TestCreateResource(t *testing.T) {
 	fixture := newAccessFixture(t)
 	created := fixture.send(t, http.MethodPost, "/api/v1/resources", `{"name":"Dashboards","url":"https://Dash.Example.Test/"}`)
 	require.Equal(t, http.StatusCreated, created.Code, created.Body.String())
-	assert.JSONEq(t, `{"name":"dashboards","url":"dash.example.test/"}`, created.Body.String())
+	assert.JSONEq(t, `{"name":"dashboards","url":"dash.example.test/","managed":false}`, created.Body.String())
 
 	tests := []struct {
 		name        string
@@ -60,7 +60,7 @@ func TestCreateResource(t *testing.T) {
 	}
 	listed := fixture.send(t, http.MethodGet, "/api/v1/resources", "")
 	require.Equal(t, http.StatusOK, listed.Code)
-	assert.JSONEq(t, `{"resources":[{"name":"dashboards","url":"dash.example.test/"}]}`, listed.Body.String())
+	assert.JSONEq(t, `{"resources":[{"name":"dashboards","url":"dash.example.test/","managed":false}]}`, listed.Body.String())
 }
 
 func TestListResources(t *testing.T) {
@@ -73,7 +73,7 @@ func TestListResources(t *testing.T) {
 	fixture.createResource(t, "dashboards", "https://dash.example.test/")
 	listed := fixture.send(t, http.MethodGet, "/api/v1/resources", "")
 	require.Equal(t, http.StatusOK, listed.Code)
-	assert.JSONEq(t, `{"resources":[{"name":"dashboards","url":"dash.example.test/"},{"name":"mcp","url":"dash.example.test/mcp"}]}`, listed.Body.String())
+	assert.JSONEq(t, `{"resources":[{"name":"dashboards","url":"dash.example.test/","managed":false},{"name":"mcp","url":"dash.example.test/mcp","managed":false}]}`, listed.Body.String())
 
 	noToken := fixture.sendAs(t, "", "", http.MethodGet, "/api/v1/resources", "")
 	require.Equal(t, http.StatusUnauthorized, noToken.Code)
@@ -106,6 +106,7 @@ func TestCreateGrant(t *testing.T) {
 	reply := decodeReply[map[string]any](t, userGrant.Body)
 	assert.NotEmpty(t, reply["id"])
 	assert.Equal(t, map[string]any{"name": "dashboards", "url": "dash.example.test/"}, reply["resource"])
+	assert.Equal(t, false, reply["managed"])
 	assert.Equal(t, "ada", reply["user"])
 	assert.NotContains(t, reply, "group")
 	assert.Equal(t, later.Format(time.RFC3339), reply["expires_at"])

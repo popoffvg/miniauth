@@ -6,19 +6,23 @@ import "net/http"
 type doneFlag string
 
 const (
-	doneResourceAdded   doneFlag = "resource-added"
-	doneResourceDeleted doneFlag = "resource-deleted"
-	doneGranted         doneFlag = "granted"
-	doneGrantRevoked    doneFlag = "revoked"
-	doneTokenRevoked    doneFlag = "token-revoked"
-	doneSignedOut       doneFlag = "signed-out"
-	doneForgotten       doneFlag = "forgotten"
-	donePasskeyDeleted  doneFlag = "passkey-deleted"
-	doneTwoStepOff      doneFlag = "two-step-off"
-	doneUserDisabled    doneFlag = "user-disabled"
-	doneUserEnabled     doneFlag = "user-enabled"
-	doneMemberAdded     doneFlag = "member-added"
-	doneMemberRemoved   doneFlag = "member-removed"
+	doneResourceAdded        doneFlag = "resource-added"
+	doneResourceDeleted      doneFlag = "resource-deleted"
+	doneGranted              doneFlag = "granted"
+	doneGrantRevoked         doneFlag = "revoked"
+	doneTokenRevoked         doneFlag = "token-revoked"
+	doneSignedOut            doneFlag = "signed-out"
+	doneForgotten            doneFlag = "forgotten"
+	donePasskeyDeleted       doneFlag = "passkey-deleted"
+	doneTwoStepOff           doneFlag = "two-step-off"
+	doneUserDisabled         doneFlag = "user-disabled"
+	doneUserEnabled          doneFlag = "user-enabled"
+	doneMemberAdded          doneFlag = "member-added"
+	doneMemberRemoved        doneFlag = "member-removed"
+	doneGroupCreated         doneFlag = "group-created"
+	doneGroupDeleted         doneFlag = "group-deleted"
+	doneGroupResourceAdded   doneFlag = "group-resource-added"
+	doneGroupResourceRemoved doneFlag = "group-resource-removed"
 )
 
 // doneNotices is the fixed message of each flag. A page ignores a flag that is not in this list.
@@ -39,6 +43,10 @@ var doneNotices = []struct {
 	{flag: doneUserEnabled, message: "The user is enabled."},
 	{flag: doneMemberAdded, message: "The user is added to the group."},
 	{flag: doneMemberRemoved, message: "The user is removed from the group."},
+	{flag: doneGroupCreated, message: "The group is created."},
+	{flag: doneGroupDeleted, message: "The group, its memberships, and its grants are deleted."},
+	{flag: doneGroupResourceAdded, message: "The group can now reach the resource."},
+	{flag: doneGroupResourceRemoved, message: "The group no longer reaches the resource."},
 }
 
 func doneNotice(r *http.Request) pageMessage {

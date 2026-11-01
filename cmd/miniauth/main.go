@@ -14,9 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/config"
+	"github.com/popoffvg/miniauth/internal/groupadmin"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
@@ -122,6 +125,10 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err = machine.MigrationDone(ctx); err != nil {
 		return err
 	}
+	if err = reconcileResources(ctx, pool, cfg.Resources); err != nil {
+		return err
+	}
+	logger.Info("miniauth: resources file applied", "resources", len(cfg.Resources))
 	groups, err := postgres.NewGroupRepository(pool)
 	if err != nil {
 		return err
@@ -161,6 +168,14 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
+	groupAdminRepo, err := postgres.NewGroupAdminRepository(pool)
+	if err != nil {
+		return err
+	}
+	groupAdmin, err := groupadmin.NewService(groupAdminRepo, grants)
+	if err != nil {
+		return err
+	}
 
 	options := []api.RouterOption{
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
@@ -171,6 +186,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		withRecovery,
 		api.WithInvites(inviteService),
 		api.WithUserAdmin(useradmin.NewService(userAdminRepo, userService)),
+		api.WithGroupAdmin(groupAdmin),
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
 	if cfg.Google.Enabled() {
@@ -236,6 +252,22 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	return stopServing(shutdownCtx, machine, server, serveErr)
+}
+
+// reconcileResources makes the managed rows equal to the resources file. An error stops the start.
+func reconcileResources(ctx context.Context, pool *pgxpool.Pool, entries []access.PredefinedResource) error {
+	store, err := postgres.NewManagedRepository(pool)
+	if err != nil {
+		return err
+	}
+	reconciler, err := access.NewReconciler(store)
+	if err != nil {
+		return err
+	}
+	if err = reconciler.Reconcile(ctx, entries); err != nil {
+		return fmt.Errorf("miniauth: MINIAUTH_RESOURCES_FILE: %w", err)
+	}
+	return nil
 }
 
 func stopTraces(ctx context.Context, stop func(context.Context) error, logger *slog.Logger) {

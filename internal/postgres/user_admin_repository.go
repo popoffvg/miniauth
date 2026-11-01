@@ -92,11 +92,11 @@ func (r *UserAdminRepository) Enable(ctx context.Context, id users.ID) error {
 	return nil
 }
 
-// AddMember keeps a stored pair as it is, so a repeated add is not an error.
+// AddMember keeps a stored pair as it is, so a repeated add is not an error. An unknown group is groups.ErrGroupNotFound.
 func (r *UserAdminRepository) AddMember(ctx context.Context, id users.ID, name groups.Name) error {
 	err := r.q.EnsureGroupMembership(ctx, sqlcgen.EnsureGroupMembershipParams{UserID: pgUUIDBytes(id.Bytes()), Name: name.String()})
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation {
+	if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "group_memberships_user_id_fkey" {
 		return useradmin.ErrUserNotFound
 	}
 	if err != nil {

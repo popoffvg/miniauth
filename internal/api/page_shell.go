@@ -23,7 +23,7 @@ type navSection string
 
 const (
 	navAccount navSection = "Account"
-	// navAdministration is shown only to a member of groups.Admin.
+	// navAdministration is shown only to a member of groups.Admins.
 	navAdministration navSection = "Administration"
 )
 
@@ -41,6 +41,7 @@ var navItems = []navItem{
 	{Path: tokensPath, Section: navAccount, Label: "Tokens", Icon: iconKey},
 	{Path: sessionsPagePath, Section: navAccount, Label: "Security", Icon: iconShield},
 	{Path: usersPagePath, Section: navAdministration, Label: "Users", Icon: iconUsers},
+	{Path: groupsPagePath, Section: navAdministration, Label: "Groups", Icon: iconGroups},
 	{Path: accessPagePath, Section: navAdministration, Label: "Access", Icon: iconLock},
 }
 
@@ -68,5 +69,5 @@ func (s *service) shellFor(r *http.Request, user users.User, current navPath) sh
 	if err != nil {
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: page groups", "err", err)
 	}
-	return shellView{Login: user.Login, Admin: slices.Contains(names, groups.Admin()), Current: current}
+	return shellView{Login: user.Login, Admin: slices.Contains(names, groups.Admins()), Current: current}
 }

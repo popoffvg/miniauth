@@ -1,15 +1,24 @@
-# An invite link creates one account with a grant on one resource. The link works once.
+# An invite link creates one account in one group. The group holds the resource. The link works once.
 POST {{host}}/api/v1/resources
 Authorization: Bearer {{admin_token}}
 {"name": "{{run}}-wiki", "url": "{{origin}}/{{run}}/wiki"}
 HTTP 201
 
+POST {{host}}/api/v1/groups
+Authorization: Bearer {{admin_token}}
+{"name": "{{run}}-readers"}
+HTTP 201
+
+PUT {{host}}/api/v1/groups/{{run}}-readers/resources/{{run}}-wiki
+Authorization: Bearer {{admin_token}}
+HTTP 204
+
 POST {{host}}/api/v1/invites
 Authorization: Bearer {{admin_token}}
-{"resource": "{{run}}-wiki"}
+{"group": "{{run}}-readers"}
 HTTP 201
 [Asserts]
-jsonpath "$.resource" == "{{run}}-wiki"
+jsonpath "$.group" == "{{run}}-readers"
 jsonpath "$.link" startsWith "{{origin}}/invite/"
 jsonpath "$.expires_at" exists
 [Captures]
@@ -39,7 +48,7 @@ login: {{run}}-gina
 password: {{run}}-secret
 HTTP 303
 [Asserts]
-header "Location" == "https://{{public_host}}/{{run}}/wiki"
+header "Location" == "{{origin}}/"
 cookie "__Secure-id_session[HttpOnly]" exists
 cookie "__Secure-id_session[Secure]" exists
 

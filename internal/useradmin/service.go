@@ -13,7 +13,7 @@ import (
 // ListAccounts returns every user in login order.
 // Disable MUST set the disabled time and delete every session of the user in one transaction.
 // Disable, Enable, and AddMember MUST return ErrUserNotFound for a user that is not stored.
-// AddMember of a pair that is stored changes nothing. RemoveMember MUST return ErrNotMember when the pair is not stored.
+// AddMember MUST return groups.ErrGroupNotFound for a group that is not stored. AddMember of a pair that is stored changes nothing. RemoveMember MUST return ErrNotMember when the pair is not stored.
 type Store interface {
 	ListAccounts(ctx context.Context) ([]Account, error)
 	Disable(ctx context.Context, id users.ID, at time.Time) error
@@ -80,13 +80,13 @@ func (s *Service) AddToGroup(ctx context.Context, login users.Login, name groups
 	return s.store.AddMember(ctx, user.ID, name)
 }
 
-// RemoveFromGroup refuses to take the actor out of groups.Admin, so the last admin cannot lock all admins out by mistake.
+// RemoveFromGroup refuses to take the actor out of groups.Admins, so the last admin cannot lock all admins out by mistake.
 func (s *Service) RemoveFromGroup(ctx context.Context, actor Actor, login users.Login, name groups.Name) error {
 	user, err := s.find(ctx, login)
 	if err != nil {
 		return err
 	}
-	if actor.ID == user.ID && name == groups.Admin() {
+	if actor.ID == user.ID && name == groups.Admins() {
 		return ErrSelfAdmin
 	}
 	return s.store.RemoveMember(ctx, user.ID, name)

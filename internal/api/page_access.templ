@@ -82,14 +82,23 @@ templ resourceRows(rows []accessResourceView) {
 			for _, resource := range rows {
 				<tr>
 					<td>
-						<div class="cell-main">{ resource.Name.String() }</div>
+						<div class="cell-main">
+							{ resource.Name.String() }
+							if resource.Managed {
+								@badge(toneConfig, "From config")
+							}
+						</div>
 						<div class="cell-sub"><code>{ resource.URL.String() }</code></div>
 					</td>
 					<td class="num" data-label="Grants">{ strconv.Itoa(resource.Grants) }</td>
 					<td class="actions">
 						@rowMenu(resource.Name.String()) {
-							@confirmPost(accessPagePath+"/resources/"+resource.Name.String()+"/delete", "Delete resource",
-								"Delete “"+resource.Name.String()+"” and its "+countText(resource.Grants, "grant", "grants")+"? Its users lose access at once. This cannot be undone.", "Delete resource")
+							if resource.Managed {
+								<p class="menu-note">The resources file owns this resource. Change the file to change it.</p>
+							} else {
+								@confirmPost(accessPagePath+"/resources/"+resource.Name.String()+"/delete", "Delete resource",
+									"Delete “"+resource.Name.String()+"” and its "+countText(resource.Grants, "grant", "grants")+"? Its users lose access at once. This cannot be undone.", "Delete resource")
+							}
 						}
 					</td>
 				</tr>
@@ -126,16 +135,25 @@ templ grantRows(rows []accessGrantView) {
 						@timeCell(timeText(grant.ExpiresAt))
 					</td>
 					<td data-label="Status">
-						if grant.Expired {
-							@badge(toneExpired, "Expired")
-						} else {
-							@badge(toneActive, "Active")
-						}
+						<div class="tags">
+							if grant.Expired {
+								@badge(toneExpired, "Expired")
+							} else {
+								@badge(toneActive, "Active")
+							}
+							if grant.Managed {
+								@badge(toneConfig, "From config")
+							}
+						</div>
 					</td>
 					<td class="actions">
 						@rowMenu(grant.Resource.String()) {
-							@confirmPost(accessPagePath+"/grants/"+grant.ID.String()+"/revoke", "Revoke grant",
-								"Revoke this grant of “"+grant.Resource.String()+"”? The next request is refused.", "Revoke grant")
+							if grant.Managed {
+								<p class="menu-note">The resources file owns this grant. Change the file to change it.</p>
+							} else {
+								@confirmPost(accessPagePath+"/grants/"+grant.ID.String()+"/revoke", "Revoke grant",
+									"Revoke this grant of “"+grant.Resource.String()+"”? The next request is refused.", "Revoke grant")
+							}
 						}
 					</td>
 				</tr>

@@ -21,7 +21,7 @@ paths:
   /access:
     get:
       description: Lists the resources and their grants, with the forms to change
-        them. Only a member of the group admin opens it; any other user is 403. With
+        them. Only a member of the group admins opens it; any other user is 403. With
         no session it redirects to the login page, which returns here.
       operationId: accessPage
       parameters:
@@ -82,7 +82,7 @@ paths:
   /access/grants:
     post:
       description: 'Gives one user or one group a resource and redirects to GET /access?done=granted.
-        Only a member of the group admin can send it; any other user is 403. Origin
+        Only a member of the group admins can send it; any other user is 403. Origin
         MUST be the public origin, else 403. A login older than 10 minutes starts
         a step-up instead: the page asks for the password of the session user and
         returns to GET /access. A refused change shows the page with a message and
@@ -141,11 +141,11 @@ paths:
   /access/grants/{id}/revoke:
     post:
       description: 'Revokes a grant and redirects to GET /access?done=revoked. The
-        next /auth/check does not count it. Only a member of the group admin can send
-        it; any other user is 403. Origin MUST be the public origin, else 403. A login
-        older than 10 minutes starts a step-up instead: the page asks for the password
-        of the session user and returns to GET /access. A refused change shows the
-        page with a message and 400, 404, or 409.'
+        next /auth/check does not count it. Only a member of the group admins can
+        send it; any other user is 403. Origin MUST be the public origin, else 403.
+        A login older than 10 minutes starts a step-up instead: the page asks for
+        the password of the session user and returns to GET /access. A refused change
+        shows the page with a message and 400, 404, or 409.'
       operationId: revokeForm
       parameters:
       - in: path
@@ -202,7 +202,7 @@ paths:
   /access/resources:
     post:
       description: 'Adds a resource through the access service and redirects to GET
-        /access?done=resource-added. Only a member of the group admin can send it;
+        /access?done=resource-added. Only a member of the group admins can send it;
         any other user is 403. Origin MUST be the public origin, else 403. A login
         older than 10 minutes starts a step-up instead: the page asks for the password
         of the session user and returns to GET /access. A refused change shows the
@@ -261,7 +261,7 @@ paths:
   /access/resources/{name}/delete:
     post:
       description: 'Deletes a resource and its grants and redirects to GET /access?done=resource-deleted.
-        Only a member of the group admin can send it; any other user is 403. Origin
+        Only a member of the group admins can send it; any other user is 403. Origin
         MUST be the public origin, else 403. A login older than 10 minutes starts
         a step-up instead: the page asks for the password of the session user and
         returns to GET /access. A refused change shows the page with a message and
@@ -371,8 +371,8 @@ paths:
     post:
       description: Gives one user or one group one resource. The body names exactly
         one of user (a login) and group. expires_at is RFC 3339 and MUST be in the
-        future; with no expires_at the grant does not expire. An unknown user or resource
-        is 404. A grant that already exists is 409.
+        future; with no expires_at the grant does not expire. An unknown user, group,
+        or resource is 404. A grant that already exists is 409.
       operationId: createGrant
       requestBody:
         content:
@@ -432,7 +432,8 @@ paths:
       - bearerAuth: []
   /api/v1/grants/{id}:
     delete:
-      description: Revokes the grant. The next /auth/check does not count it.
+      description: Revokes the grant. The next /auth/check does not count it. A grant
+        from MINIAUTH_RESOURCES_FILE is 409.
       operationId: revokeGrant
       parameters:
       - in: path
@@ -456,6 +457,138 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+  /api/v1/groups:
+    get:
+      description: Lists every group in name order, with its member count and its
+        resources. A group reaches a resource through a group grant.
+      operationId: listGroups
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiGroupListBody'
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+    post:
+      description: Creates an empty group. A name that is stored is 409.
+      operationId: createGroup
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiCreateGroupRequest'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiGroupBody'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+  /api/v1/groups/{group}:
+    delete:
+      description: Deletes the group, its memberships, and its grants. The built-in
+        groups admins and users are 409. A group that MINIAUTH_RESOURCES_FILE names
+        is 409.
+      operationId: deleteGroup
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
         "503":
           content:
             application/json:
@@ -511,7 +644,7 @@ paths:
       - bearerAuth: []
     put:
       description: 'Adds the user to the group. A member stays a member: the request
-        is idempotent.'
+        is idempotent. An unknown user or group is 404.'
       operationId: addGroupMember
       parameters:
       - in: path
@@ -553,12 +686,108 @@ paths:
           description: Service Unavailable
       security:
       - bearerAuth: []
+  /api/v1/groups/{group}/resources/{name}:
+    delete:
+      description: Revokes the grant of the resource to the group. A group without
+        the resource is 404. A grant from MINIAUTH_RESOURCES_FILE is 409.
+      operationId: removeGroupResource
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+    put:
+      description: 'Gives the group the resource: a group grant with no expiry. A
+        group that has the resource keeps it: the request is idempotent. An unknown
+        group or resource is 404.'
+      operationId: addGroupResource
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
   /api/v1/invites:
     post:
-      description: 'Creates an invite for one resource. The reply holds the one-time
-        link {public URL}/invite/{token}, shown once: only the SHA-256 of the token
-        is stored. The link expires after 7 days. An unknown resource is 404. Without
-        MINIAUTH_PUBLIC_URL it is 503.'
+      description: 'Creates an invite to one group; with no group it is users. The
+        reply holds the one-time link {public URL}/invite/{token}, shown once: only
+        the SHA-256 of the token is stored. The link expires after 7 days. An unknown
+        group is 404. Without MINIAUTH_PUBLIC_URL it is 503.'
       operationId: createInvite
       requestBody:
         content:
@@ -693,7 +922,8 @@ paths:
       - bearerAuth: []
   /api/v1/resources/{name}:
     delete:
-      description: Deletes the resource and its grants.
+      description: Deletes the resource and its grants. A resource from MINIAUTH_RESOURCES_FILE
+        is 409.
       operationId: deleteResource
       parameters:
       - in: path
@@ -716,6 +946,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Conflict
         "503":
           content:
             application/json:
@@ -992,6 +1228,306 @@ paths:
           description: Unauthorized
         "403":
           description: Forbidden
+  /groups:
+    get:
+      description: Lists the groups with their member counts and resources, with the
+        forms to change them. Only a member of the group admins opens it; any other
+        user is 403. With no session it redirects to the login page, which returns
+        here.
+      operationId: groupsPage
+      parameters:
+      - description: Shows only the groups whose name or resource contains this text.
+        in: query
+        name: q
+        schema:
+          description: Shows only the groups whose name or resource contains this
+            text.
+          type: string
+      - description: The result of the last change. The page shows a fixed message
+          for a known value and ignores any other value.
+        in: query
+        name: done
+        schema:
+          description: The result of the last change. The page shows a fixed message
+            for a known value and ignores any other value.
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+    post:
+      description: 'Creates an empty group and redirects to GET /groups?done=group-created.
+        Only a member of the group admins can send it; any other user is 403. Origin
+        MUST be the public origin, else 403. A login older than 10 minutes starts
+        a step-up instead: the page asks for the password of the session user and
+        returns to GET /groups. A refused change shows the page with a message and
+        400, 404, or 409.'
+      operationId: createGroupForm
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiGroupForm'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /groups/{group}/delete:
+    post:
+      description: 'Deletes the group, its memberships, and its grants, and redirects
+        to GET /groups?done=group-deleted. A built-in group or a group from the resources
+        file is 409. Only a member of the group admins can send it; any other user
+        is 403. Origin MUST be the public origin, else 403. A login older than 10
+        minutes starts a step-up instead: the page asks for the password of the session
+        user and returns to GET /groups. A refused change shows the page with a message
+        and 400, 404, or 409.'
+      operationId: deleteGroupForm
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /groups/{group}/resources:
+    post:
+      description: 'Gives the group the resource of the form and redirects to GET
+        /groups?done=group-resource-added. Only a member of the group admins can send
+        it; any other user is 403. Origin MUST be the public origin, else 403. A login
+        older than 10 minutes starts a step-up instead: the page asks for the password
+        of the session user and returns to GET /groups. A refused change shows the
+        page with a message and 400, 404, or 409.'
+      operationId: addGroupResourceForm
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiGroupResourceForm'
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /groups/{group}/resources/{name}/remove:
+    post:
+      description: 'Revokes the grant of the resource to the group and redirects to
+        GET /groups?done=group-resource-removed. A grant from the resources file is
+        409. Only a member of the group admins can send it; any other user is 403.
+        Origin MUST be the public origin, else 403. A login older than 10 minutes
+        starts a step-up instead: the page asks for the password of the session user
+        and returns to GET /groups. A refused change shows the page with a message
+        and 400, 404, or 409.'
+      operationId: removeGroupResourceForm
+      parameters:
+      - in: path
+        name: group
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
   /healthz:
     get:
       operationId: getHealth
@@ -1038,11 +1574,11 @@ paths:
   /invite/accept:
     post:
       description: Accepts the invite in the form. Origin MUST be the public origin,
-        else 403. In one transaction it marks the invite used, creates the user with
-        a password identity, and grants the resource. Then it starts a session and
-        redirects to https, the host, and the path prefix of the resource. A taken
-        login shows the form again with 409, and the invite stays unused. An unknown,
-        used, or expired token is 410.
+        else 403. In one transaction it marks the invite used and creates the user
+        with a password identity in the group of the invite and in users. Then it
+        starts a session and redirects to the overview page. A taken login shows the
+        form again with 409, and the invite stays unused. An unknown, used, or expired
+        token is 410.
       operationId: acceptInvite
       requestBody:
         content:
@@ -2405,9 +2941,9 @@ paths:
   /users:
     get:
       description: Lists the users with their groups and state, with the forms to
-        change them and to make an invite link. Only a member of the group admin opens
-        it; any other user is 403. With no session it redirects to the login page,
-        which returns here.
+        change them and to make an invite link. Only a member of the group admins
+        opens it; any other user is 403. With no session it redirects to the login
+        page, which returns here.
       operationId: usersPage
       parameters:
       - description: Shows only the users whose login or group contains this text.
@@ -2466,7 +3002,7 @@ paths:
     post:
       description: 'Disables the user, deletes every session of the user, and redirects
         to GET /users?done=user-disabled. An admin cannot disable itself: 409. Only
-        a member of the group admin can send it; any other user is 403. Origin MUST
+        a member of the group admins can send it; any other user is 403. Origin MUST
         be the public origin, else 403. A login older than 10 minutes starts a step-up
         instead: the page asks for the password of the session user and returns to
         GET /users. A refused change shows the page with a message and 400, 404, or
@@ -2526,7 +3062,7 @@ paths:
   /users/{login}/enable:
     post:
       description: 'Enables the user and redirects to GET /users?done=user-enabled.
-        Only a member of the group admin can send it; any other user is 403. Origin
+        Only a member of the group admins can send it; any other user is 403. Origin
         MUST be the public origin, else 403. A login older than 10 minutes starts
         a step-up instead: the page asks for the password of the session user and
         returns to GET /users. A refused change shows the page with a message and
@@ -2586,11 +3122,11 @@ paths:
   /users/{login}/groups:
     post:
       description: 'Adds the user to the group of the form and redirects to GET /users?done=member-added.
-        Only a member of the group admin can send it; any other user is 403. Origin
-        MUST be the public origin, else 403. A login older than 10 minutes starts
-        a step-up instead: the page asks for the password of the session user and
-        returns to GET /users. A refused change shows the page with a message and
-        400, 404, or 409.'
+        An unknown group is 404. Only a member of the group admins can send it; any
+        other user is 403. Origin MUST be the public origin, else 403. A login older
+        than 10 minutes starts a step-up instead: the page asks for the password of
+        the session user and returns to GET /users. A refused change shows the page
+        with a message and 400, 404, or 409.'
       operationId: addMemberForm
       parameters:
       - in: path
@@ -2651,7 +3187,7 @@ paths:
   /users/{login}/groups/{group}/remove:
     post:
       description: 'Removes the user from the group and redirects to GET /users?done=member-removed.
-        An admin cannot leave the group admin: 409. Only a member of the group admin
+        An admin cannot leave the group admins: 409. Only a member of the group admins
         can send it; any other user is 403. Origin MUST be the public origin, else
         403. A login older than 10 minutes starts a step-up instead: the page asks
         for the password of the session user and returns to GET /users. A refused
@@ -2715,12 +3251,12 @@ paths:
           description: Service Unavailable
   /users/invites:
     post:
-      description: 'Makes an invite link for the resource of the form and shows it
-        once, with Cache-Control: no-store. Only a member of the group admin can send
-        it; any other user is 403. Origin MUST be the public origin, else 403. A login
-        older than 10 minutes starts a step-up instead: the page asks for the password
-        of the session user and returns to GET /users. A refused change shows the
-        page with a message and 400, 404, or 409.'
+      description: 'Makes an invite link to the group of the form and shows it once,
+        with Cache-Control: no-store. An empty group is users. Only a member of the
+        group admins can send it; any other user is 403. Origin MUST be the public
+        origin, else 403. A login older than 10 minutes starts a step-up instead:
+        the page asks for the password of the session user and returns to GET /users.
+        A refused change shows the page with a message and 400, 404, or 409.'
       operationId: makeInviteForm
       requestBody:
         content:
@@ -2776,12 +3312,20 @@ components:
       required:
       - resource
       type: object
-    ApiCreateInviteRequest:
+    ApiCreateGroupRequest:
       properties:
-        resource:
+        name:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$
           type: string
       required:
-      - resource
+      - name
+      type: object
+    ApiCreateInviteRequest:
+      properties:
+        group:
+          type: string
       type: object
     ApiCreateResourceRequest:
       properties:
@@ -2834,8 +3378,10 @@ components:
         id:
           format: uuid
           type: string
+        managed:
+          type: boolean
         resource:
-          $ref: '#/components/schemas/ApiResourceBody'
+          $ref: '#/components/schemas/ApiGrantResourceBody'
         user:
           type: string
       type: object
@@ -2847,6 +3393,47 @@ components:
           type: array
       required:
       - grants
+      type: object
+    ApiGrantResourceBody:
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+      type: object
+    ApiGroupBody:
+      properties:
+        built_in:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        members:
+          type: integer
+        name:
+          type: string
+        resources:
+          items:
+            $ref: '#/components/schemas/ApiGroupResourceBody'
+          type: array
+      required:
+      - resources
+      type: object
+    ApiGroupListBody:
+      properties:
+        groups:
+          items:
+            $ref: '#/components/schemas/ApiGroupBody'
+          type: array
+      required:
+      - groups
+      type: object
+    ApiGroupResourceBody:
+      properties:
+        managed:
+          type: boolean
+        name:
+          type: string
       type: object
     ApiImportTokenRequest:
       properties:
@@ -2892,10 +3479,10 @@ components:
         expires_at:
           format: date-time
           type: string
+        group:
+          type: string
         link:
           format: uri
-          type: string
-        resource:
           type: string
       type: object
     ApiPasskeyAddRequest:
@@ -2953,6 +3540,8 @@ components:
       type: object
     ApiResourceBody:
       properties:
+        managed:
+          type: boolean
         name:
           type: string
         url:
@@ -3040,6 +3629,22 @@ components:
           type: string
       required:
       - code
+      type: object
+    FormDataApiGroupForm:
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+      - name
+      type: object
+    FormDataApiGroupResourceForm:
+      properties:
+        resource:
+          type: string
+      required:
+      - resource
       type: object
     FormDataApiInviteFormRequest:
       properties:
@@ -3152,10 +3757,9 @@ components:
       type: object
     FormDataApiUserInviteForm:
       properties:
-        resource:
+        group:
+          description: 'The group of the new account. Empty: users.'
           type: string
-      required:
-      - resource
       type: object
   securitySchemes:
     bearerAuth:

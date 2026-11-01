@@ -111,7 +111,7 @@ templ statTile(href string, glyph iconName, label string, value int, action stri
 }
 
 templ groupBadge(name groups.Name) {
-	if name == groups.Admin() {
+	if name == groups.Admins() {
 		@badge(toneAdmin, name.String())
 	} else {
 		<span class="badge badge-plain">{ name.String() }</span>

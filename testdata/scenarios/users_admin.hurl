@@ -1,7 +1,7 @@
 # The users admin API changes groups and the disabled state. A disabled user loses each session.
 GET {{host}}/healthz
 [Options]
-variable: group=admin
+variable: group=admins
 HTTP 204
 
 POST {{host}}/api/v1/users
@@ -60,7 +60,7 @@ X-Forwarded-Uri: /{{run}}/ops
 HTTP 200
 [Asserts]
 header "X-Auth-User" == "{{run}}-ivy"
-header "X-Auth-Groups" == "{{group}}"
+header "X-Auth-Groups" == "{{group}},users"
 
 GET {{host}}/api/v1/users
 Authorization: Bearer {{admin_token}}

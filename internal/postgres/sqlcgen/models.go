@@ -17,6 +17,7 @@ type AccessGrant struct {
 	GroupName    pgtype.Text
 	ExpiresAt    pgtype.Timestamptz
 	CreatedAt    pgtype.Timestamptz
+	Managed      bool
 }
 
 type AccessToken struct {
@@ -41,6 +42,12 @@ type Device struct {
 	LastSeen   pgtype.Timestamptz
 }
 
+type Group struct {
+	Name      string
+	BuiltIn   bool
+	CreatedAt pgtype.Timestamptz
+}
+
 type GroupMembership struct {
 	UserID pgtype.UUID
 	Name   string
@@ -56,12 +63,12 @@ type Identity struct {
 }
 
 type Invite struct {
-	TokenHash    []byte
-	ResourceName string
-	CreatedAt    pgtype.Timestamptz
-	ExpiresAt    pgtype.Timestamptz
-	UsedAt       pgtype.Timestamptz
-	UserID       pgtype.UUID
+	TokenHash []byte
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+	UsedAt    pgtype.Timestamptz
+	UserID    pgtype.UUID
+	GroupName string
 }
 
 type LoginAttempt struct {
@@ -135,6 +142,7 @@ type Resource struct {
 	Name       string
 	Host       string
 	PathPrefix string
+	Managed    bool
 }
 
 type Session struct {

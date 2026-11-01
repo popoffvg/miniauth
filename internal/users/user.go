@@ -44,7 +44,7 @@ type Identity struct {
 }
 
 // Repository stores users and their identities.
-// Create inserts the user and the identity together.
+// Create inserts the user and the identity together, and adds the user to the built-in group users.
 // Create MUST return ErrLoginTaken when the login is already stored.
 // Create MUST NOT write the password. It writes the PHC string.
 // Find and FindByLogin MUST return ErrNotFound when no user matches.

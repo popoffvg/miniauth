@@ -17,7 +17,7 @@ SET used_at = $1
 WHERE token_hash = $2
     AND used_at IS NULL
     AND expires_at > $1
-RETURNING token_hash, resource_name, created_at, expires_at, used_at, user_id
+RETURNING token_hash, created_at, expires_at, used_at, user_id, group_name
 `
 
 type ClaimInviteParams struct {
@@ -30,17 +30,17 @@ func (q *Queries) ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invit
 	var i Invite
 	err := row.Scan(
 		&i.TokenHash,
-		&i.ResourceName,
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.UsedAt,
 		&i.UserID,
+		&i.GroupName,
 	)
 	return i, err
 }
 
 const getInvite = `-- name: GetInvite :one
-SELECT token_hash, resource_name, created_at, expires_at, used_at, user_id
+SELECT token_hash, created_at, expires_at, used_at, user_id, group_name
 FROM invites
 WHERE token_hash = $1
 `
@@ -50,31 +50,31 @@ func (q *Queries) GetInvite(ctx context.Context, tokenHash []byte) (Invite, erro
 	var i Invite
 	err := row.Scan(
 		&i.TokenHash,
-		&i.ResourceName,
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.UsedAt,
 		&i.UserID,
+		&i.GroupName,
 	)
 	return i, err
 }
 
 const insertInvite = `-- name: InsertInvite :exec
-INSERT INTO invites (token_hash, resource_name, created_at, expires_at)
+INSERT INTO invites (token_hash, group_name, created_at, expires_at)
 VALUES ($1, $2, $3, $4)
 `
 
 type InsertInviteParams struct {
-	TokenHash    []byte
-	ResourceName string
-	CreatedAt    pgtype.Timestamptz
-	ExpiresAt    pgtype.Timestamptz
+	TokenHash []byte
+	GroupName string
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
 }
 
 func (q *Queries) InsertInvite(ctx context.Context, arg InsertInviteParams) error {
 	_, err := q.db.Exec(ctx, insertInvite,
 		arg.TokenHash,
-		arg.ResourceName,
+		arg.GroupName,
 		arg.CreatedAt,
 		arg.ExpiresAt,
 	)

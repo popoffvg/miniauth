@@ -55,6 +55,18 @@ func (r *AccessRepository) DeleteResource(ctx context.Context, name access.Resou
 	return nil
 }
 
+// FindGrant returns access.ErrGrantNotFound for a missing id.
+func (r *AccessRepository) FindGrant(ctx context.Context, id access.GrantID) (access.Grant, error) {
+	row, err := r.q.GetAccessGrant(ctx, pgUUIDBytes(id.Bytes()))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return access.Grant{}, access.ErrGrantNotFound
+	}
+	if err != nil {
+		return access.Grant{}, accessError("find grant", err)
+	}
+	return grantFromRow(row)
+}
+
 // FindResource returns access.ErrResourceNotFound for a missing name.
 func (r *AccessRepository) FindResource(ctx context.Context, name access.ResourceName) (access.Resource, error) {
 	row, err := r.q.GetResource(ctx, name.String())
@@ -184,6 +196,7 @@ func grantEntryFromRow(row sqlcgen.ListAccessGrantEntriesRow) (access.GrantEntry
 		GroupName:    row.GroupName,
 		ExpiresAt:    row.ExpiresAt,
 		CreatedAt:    row.CreatedAt,
+		Managed:      row.Managed,
 	})
 	if err != nil {
 		return access.GrantEntry{}, err
@@ -215,7 +228,7 @@ func resourceFromRow(row sqlcgen.Resource) (access.Resource, error) {
 	if err != nil {
 		return access.Resource{}, fmt.Errorf("postgres: resource row: %w", err)
 	}
-	return access.Resource{Name: name, URL: access.ResourceURL{Host: host, Prefix: prefix}}, nil
+	return access.Resource{Name: name, URL: access.ResourceURL{Host: host, Prefix: prefix}, Managed: row.Managed}, nil
 }
 
 func grantFromRow(row sqlcgen.AccessGrant) (access.Grant, error) {
@@ -249,6 +262,7 @@ func grantFromRow(row sqlcgen.AccessGrant) (access.Grant, error) {
 		Subject:   subject,
 		Expiry:    expiry,
 		CreatedAt: row.CreatedAt.Time.UTC(),
+		Managed:   row.Managed,
 	}, nil
 }
 
@@ -264,6 +278,8 @@ func accessError(action string, err error) error {
 			return access.ErrResourceNotFound
 		case pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "access_grants_user_id_fkey":
 			return access.ErrUnknownUser
+		case pgErr.Code == pgForeignKeyViolation && pgErr.ConstraintName == "access_grants_group_name_fkey":
+			return access.ErrUnknownGroup
 		default:
 			return fmt.Errorf("postgres: %s: %s (SQLSTATE %s)", action, pgErr.ConstraintName, pgErr.Code)
 		}

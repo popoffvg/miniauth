@@ -162,3 +162,15 @@ func (r *Repository) ListGrants(_ context.Context, resource access.ResourceName)
 	}
 	return found, nil
 }
+
+// FindGrant returns the grant with the id.
+func (r *Repository) FindGrant(_ context.Context, id access.GrantID) (access.Grant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, grant := range r.grants {
+		if grant.ID == id {
+			return grant, nil
+		}
+	}
+	return access.Grant{}, access.ErrGrantNotFound
+}

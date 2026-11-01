@@ -39,13 +39,16 @@ type accessPageView struct {
 	TotalGrants    int
 }
 
+// accessResourceView is one resource row. A Managed row comes from the resources file and offers no delete.
 type accessResourceView struct {
-	Name   access.ResourceName
-	URL    access.ResourceURL
-	Grants int
+	Name    access.ResourceName
+	URL     access.ResourceURL
+	Grants  int
+	Managed bool
 }
 
 // accessGrantView names exactly one of User and Group. A zero ExpiresAt never expires.
+// A Managed grant comes from the resources file and offers no revoke.
 type accessGrantView struct {
 	ID        access.GrantID
 	Resource  access.ResourceName
@@ -53,6 +56,7 @@ type accessGrantView struct {
 	Group     groups.Name
 	ExpiresAt time.Time
 	Expired   bool
+	Managed   bool
 }
 
 func newAccessPageView(r *http.Request, resources []access.Resource, entries []access.GrantEntry, now time.Time) accessPageView {
@@ -63,7 +67,7 @@ func newAccessPageView(r *http.Request, resources []access.Resource, entries []a
 	}
 	view := accessPageView{Query: query, Filter: filter, Choices: resources, TotalResources: len(resources), TotalGrants: len(entries)}
 	for _, resource := range resources {
-		row := accessResourceView{Name: resource.Name, URL: resource.URL}
+		row := accessResourceView{Name: resource.Name, URL: resource.URL, Managed: resource.Managed}
 		for _, entry := range entries {
 			if entry.Grant.Resource == resource.Name {
 				row.Grants++
@@ -74,7 +78,7 @@ func newAccessPageView(r *http.Request, resources []access.Resource, entries []a
 		}
 	}
 	for _, entry := range entries {
-		grant := accessGrantView{ID: entry.Grant.ID, Resource: entry.Grant.Resource, User: entry.UserLogin, Expired: !entry.Grant.Expiry.ActiveAt(now)}
+		grant := accessGrantView{ID: entry.Grant.ID, Resource: entry.Grant.Resource, User: entry.UserLogin, Expired: !entry.Grant.Expiry.ActiveAt(now), Managed: entry.Grant.Managed}
 		grant.Group, _ = entry.Grant.Subject.Group()
 		grant.ExpiresAt, _ = entry.Grant.Expiry.Time()
 		if filter == grantFilterActive && grant.Expired || filter == grantFilterExpired && !grant.Expired {

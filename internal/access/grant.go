@@ -141,10 +141,12 @@ func (e Expiry) ActiveAt(now time.Time) bool {
 }
 
 // Grant gives one subject one resource until it expires or is revoked.
+// A Managed grant comes from the resources file: only the reconciler changes it. It is always a group grant.
 type Grant struct {
 	ID        GrantID
 	Resource  ResourceName
 	Subject   Subject
 	Expiry    Expiry
 	CreatedAt time.Time
+	Managed   bool
 }
