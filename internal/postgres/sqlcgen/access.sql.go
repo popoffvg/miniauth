@@ -11,6 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deferConstraints = `-- name: DeferConstraints :exec
+SET CONSTRAINTS ALL DEFERRED
+`
+
+// resources_url_unique is the one deferrable constraint.
+func (q *Queries) DeferConstraints(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deferConstraints)
+	return err
+}
+
 const deleteAccessGrant = `-- name: DeleteAccessGrant :execrows
 DELETE FROM access_grants
 WHERE id = $1
@@ -326,6 +336,26 @@ func (q *Queries) ListResourcesByHost(ctx context.Context, host string) ([]Resou
 		return nil, err
 	}
 	return items, nil
+}
+
+const unmanagedResourceHasURL = `-- name: UnmanagedResourceHasURL :one
+SELECT EXISTS (
+    SELECT 1 FROM resources
+    WHERE host = $1 AND path_prefix = $2 AND name <> $3 AND NOT managed
+) AS taken
+`
+
+type UnmanagedResourceHasURLParams struct {
+	Host       string
+	PathPrefix string
+	Name       string
+}
+
+func (q *Queries) UnmanagedResourceHasURL(ctx context.Context, arg UnmanagedResourceHasURLParams) (bool, error) {
+	row := q.db.QueryRow(ctx, unmanagedResourceHasURL, arg.Host, arg.PathPrefix, arg.Name)
+	var taken bool
+	err := row.Scan(&taken)
+	return taken, err
 }
 
 const upsertManagedGroupGrant = `-- name: UpsertManagedGroupGrant :exec

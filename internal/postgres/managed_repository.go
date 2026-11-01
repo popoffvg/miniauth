@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -30,12 +29,17 @@ func NewManagedRepository(db transactionalDB) (*ManagedRepository, error) {
 var _ access.ManagedStore = (*ManagedRepository)(nil)
 
 // InTransaction commits when fn returns nil and rolls back otherwise.
+// The URL check waits for the commit, so two managed resources can swap their URLs.
 func (r *ManagedRepository) InTransaction(ctx context.Context, fn func(access.ManagedWriter) error) error {
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
-		return fn(&managedWriter{q: sqlcgen.New(tx)})
+		q := sqlcgen.New(tx)
+		if err := q.DeferConstraints(ctx); err != nil {
+			return accessError("defer the URL check", err)
+		}
+		return fn(&managedWriter{q: q})
 	})
 	if err != nil {
-		return fmt.Errorf("postgres: reconcile resources: %w", err)
+		return accessError("reconcile resources", err)
 	}
 	return nil
 }
@@ -77,8 +81,20 @@ func (w *managedWriter) EnsureGroup(ctx context.Context, name groups.Name, at ti
 	return nil
 }
 
+// PutManagedResource checks an unmanaged URL itself: the deferred URL check fails only at the commit.
 func (w *managedWriter) PutManagedResource(ctx context.Context, resource access.Resource) error {
-	err := w.q.UpsertManagedResource(ctx, sqlcgen.UpsertManagedResourceParams{
+	taken, err := w.q.UnmanagedResourceHasURL(ctx, sqlcgen.UnmanagedResourceHasURLParams{
+		Host:       resource.URL.Host.String(),
+		PathPrefix: resource.URL.Prefix.String(),
+		Name:       resource.Name.String(),
+	})
+	if err != nil {
+		return accessError("find unmanaged resource", err)
+	}
+	if taken {
+		return access.ErrDuplicateResource
+	}
+	err = w.q.UpsertManagedResource(ctx, sqlcgen.UpsertManagedResourceParams{
 		Name:       resource.Name.String(),
 		Host:       resource.URL.Host.String(),
 		PathPrefix: resource.URL.Prefix.String(),

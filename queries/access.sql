@@ -91,3 +91,13 @@ WHERE managed
 -- name: DeleteStaleManagedResources :execrows
 DELETE FROM resources
 WHERE managed AND NOT (name = ANY(sqlc.arg(keep)::text[]));
+
+-- name: DeferConstraints :exec
+-- resources_url_unique is the one deferrable constraint.
+SET CONSTRAINTS ALL DEFERRED;
+
+-- name: UnmanagedResourceHasURL :one
+SELECT EXISTS (
+    SELECT 1 FROM resources
+    WHERE host = sqlc.arg(host) AND path_prefix = sqlc.arg(path_prefix) AND name <> sqlc.arg(name) AND NOT managed
+) AS taken;
