@@ -225,8 +225,8 @@ func (s *service) routes() []route {
 			handler: s.disableUserAPI,
 			request: new(userLoginPath),
 			status:  http.StatusNoContent,
-			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
-			doc:     "Disables the user and deletes every session of the user in one transaction. The next /auth/check of the user is refused. A disabled user stays disabled.",
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable},
+			doc:     "Disables the user and deletes every session of the user in one transaction. The next /auth/check of the user is refused. A disabled user stays disabled. A change of the same user at the same moment is 409.",
 		},
 		{
 			method:  http.MethodPost,
@@ -235,8 +235,8 @@ func (s *service) routes() []route {
 			handler: s.enableUserAPI,
 			request: new(userLoginPath),
 			status:  http.StatusNoContent,
-			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
-			doc:     "Enables the user. The user signs in again; no session comes back.",
+			errors:  []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable},
+			doc:     "Enables the user. The user signs in again; no session comes back. A change of the same user at the same moment is 409.",
 		},
 		{
 			method:  http.MethodPut,

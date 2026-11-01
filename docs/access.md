@@ -103,4 +103,4 @@ Each browser gets a device cookie. A device has at most one session: a new login
 - `POST /logout` deletes the session of the request.
 - `POST /logout/everywhere` deletes every session of the user.
 
-A disabled user loses every session at once, and the next `/auth/check` is refused.
+A disabled user loses every session at once, and the next `/auth/check` is refused. A user is active or disabled. Disable moves an active user to disabled, and enable moves it back. A disable of a user who is disabled already, or an enable of an active user, changes nothing. An admin cannot disable its own account. Two changes of one user at the same moment cannot both succeed: the second gets 409.

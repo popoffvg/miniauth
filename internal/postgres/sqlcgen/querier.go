@@ -55,8 +55,11 @@ type Querier interface {
 	DeleteUserPasskey(ctx context.Context, arg DeleteUserPasskeyParams) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID pgtype.UUID) error
 	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)
+	// Zero rows means the user is not stored or is disabled already.
+	DisableActiveUser(ctx context.Context, arg DisableActiveUserParams) (int64, error)
 	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
-	EnableUser(ctx context.Context, id pgtype.UUID) (int64, error)
+	// Zero rows means the user is not stored or is active already.
+	EnableDisabledUser(ctx context.Context, id pgtype.UUID) (int64, error)
 	EnsureGroup(ctx context.Context, arg EnsureGroupParams) error
 	EnsureGroupMembership(ctx context.Context, arg EnsureGroupMembershipParams) error
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)

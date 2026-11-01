@@ -70,7 +70,14 @@ SELECT
 FROM users
 ORDER BY users.login;
 
--- name: EnableUser :execrows
+-- name: DisableActiveUser :execrows
+-- Zero rows means the user is not stored or is disabled already.
+UPDATE users
+SET disabled_at = sqlc.arg(disabled_at)
+WHERE id = sqlc.arg(id) AND disabled_at IS NULL;
+
+-- name: EnableDisabledUser :execrows
+-- Zero rows means the user is not stored or is active already.
 UPDATE users
 SET disabled_at = NULL
-WHERE id = $1;
+WHERE id = $1 AND disabled_at IS NOT NULL;

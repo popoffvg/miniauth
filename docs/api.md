@@ -12,8 +12,8 @@ Each admin route needs `Authorization: Bearer <admin token>`. `MINIAUTH_ADMIN_TO
 | --- | --- |
 | `POST /api/v1/users` | Creates a user with a password. Body: `login`, `password`. 201; a taken login is 409. |
 | `GET /api/v1/users` | Lists every user with the groups, the state, the device count, and the last time a device was seen. |
-| `POST /api/v1/users/{login}/disable` | Disables the user and deletes every session of the user. 204. |
-| `POST /api/v1/users/{login}/enable` | Enables the user. The user signs in again. 204. |
+| `POST /api/v1/users/{login}/disable` | Disables the user and deletes every session of the user. 204. A change of the same user at the same moment is 409. |
+| `POST /api/v1/users/{login}/enable` | Enables the user. The user signs in again. 204. A change of the same user at the same moment is 409. |
 
 A login has 1 to 64 characters, stored in lower case. The first and last are a letter or a digit. The rest can also be `.`, `_`, `@`, `+`, or `-`. An unknown login is 404.
 

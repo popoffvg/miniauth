@@ -66,8 +66,8 @@ func (s *service) disableUserForm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *service) enableUserForm(w http.ResponseWriter, r *http.Request) {
-	s.changeUsers(w, r, doneUserEnabled, func(ctx context.Context, _ useradmin.Actor, login users.Login, _ url.Values) error {
-		return s.userAdmin.Enable(ctx, login)
+	s.changeUsers(w, r, doneUserEnabled, func(ctx context.Context, actor useradmin.Actor, login users.Login, _ url.Values) error {
+		return s.userAdmin.Enable(ctx, actor, login)
 	})
 }
 

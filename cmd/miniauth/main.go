@@ -185,7 +185,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		api.WithAccessAdmin(grants),
 		withRecovery,
 		api.WithInvites(inviteService),
-		api.WithUserAdmin(useradmin.NewService(userAdminRepo, userService)),
+		api.WithUserAdmin(useradmin.NewService(userAdminRepo, userService, logger)),
 		api.WithGroupAdmin(groupAdmin),
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
