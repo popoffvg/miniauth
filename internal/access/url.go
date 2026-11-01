@@ -108,9 +108,13 @@ func (u ResourceURL) MarshalText() ([]byte, error) {
 	return []byte(u.String()), nil
 }
 
-// UnmarshalText parses text with ParseResourceURL, so it needs a scheme that MarshalText does not write.
+// UnmarshalText parses an absolute URL with ParseResourceURL, or the scheme-less form that MarshalText writes.
 func (u *ResourceURL) UnmarshalText(text []byte) error {
-	parsed, err := ParseResourceURL(string(text))
+	raw := strings.TrimSpace(string(text))
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	parsed, err := ParseResourceURL(raw)
 	if err != nil {
 		return err
 	}

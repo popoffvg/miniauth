@@ -33,7 +33,7 @@ A login has 1 to 64 characters, stored in lower case. The first and last are a l
 
 | Route | What it does |
 | --- | --- |
-| `POST /api/v1/resources` | Creates a resource. Body: `name`, `url`. 201; a taken name, or a taken host and path, is 409. |
+| `POST /api/v1/resources` | Creates a resource. Body: `name`, `url`. `url` is an absolute URL, or the host and path form that a reply shows, such as `dash.example.test/mcp`. 201; a taken name, or a taken host and path, is 409. |
 | `GET /api/v1/resources` | Lists the resources in name order. |
 | `DELETE /api/v1/resources/{name}` | Deletes the resource and its grants. 204 or 404; a managed resource is 409. |
 | `POST /api/v1/grants` | Grants a resource. Body: `resource`, exactly one of `user` and `group`, optional `expires_at` (RFC 3339, in the future). 201 with the grant `id`. |

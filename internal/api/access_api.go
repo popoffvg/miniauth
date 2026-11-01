@@ -25,7 +25,7 @@ func WithAccessAdmin(admin *access.Service) RouterOption {
 // The tags describe the shape. ParseResourceName and ParseResourceURL decide acceptance.
 type createResourceRequest struct {
 	Name access.ResourceName `json:"name" required:"true" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$" doc:"Stored in lower case."`
-	URL  access.ResourceURL  `json:"url" required:"true" format:"uri" doc:"An absolute http or https URL with no query. Only the host and the path are stored."`
+	URL  access.ResourceURL  `json:"url" required:"true" format:"uri" doc:"An absolute http or https URL with no query, or the host and the path prefix with no scheme, such as dash.example.test/mcp. Only the host and the path are stored."`
 }
 
 // resourceBody names a resource. URL is the host and the path prefix, with no scheme.
