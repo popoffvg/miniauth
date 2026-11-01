@@ -7,8 +7,8 @@ import (
 	"github.com/popoffvg/miniauth/internal/tokens"
 )
 
-// MaxStateLength is the longest state the server sends back to the client.
-const MaxStateLength = 1024
+// MaxStateBytes is the longest state the server sends back to the client.
+const MaxStateBytes = 1024
 
 // State is the value the client sends to the authorization endpoint and gets back in the redirect.
 // It is the client's CSRF guard, not a secret of this server.
@@ -18,7 +18,7 @@ type State struct {
 
 // ParseState reads the state. An empty state is allowed: PKCE already binds the code to the client.
 func ParseState(raw string) (State, error) {
-	if len(raw) > MaxStateLength || strings.IndexFunc(raw, unicode.IsControl) >= 0 {
+	if len(raw) > MaxStateBytes || strings.IndexFunc(raw, unicode.IsControl) >= 0 {
 		return State{}, ErrState
 	}
 	return State{value: raw}, nil

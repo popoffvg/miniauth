@@ -33,11 +33,6 @@ ON CONFLICT (user_id, client_id, resource) WHERE revoked_at IS NULL
 DO UPDATE SET created_at = oauth_consents.created_at
 RETURNING id, user_id, client_id, resource, created_at, revoked_at;
 
--- name: GetOAuthConsent :one
-SELECT id, user_id, client_id, resource, created_at, revoked_at
-FROM oauth_consents
-WHERE id = $1;
-
 -- name: ListActiveOAuthConsents :many
 SELECT
     c.id,
@@ -112,3 +107,19 @@ WHERE secret_hash = $1;
 -- name: InsertOAuthAccessToken :exec
 INSERT INTO oauth_access_tokens (token_id, consent_id)
 VALUES ($1, $2);
+
+-- name: LockOAuthConsentForIssue :one
+-- FOR SHARE makes a revoke of the consent wait until the token issue commits.
+-- An issue that starts after the revoke reads the revoked row.
+SELECT id, user_id, client_id, resource, created_at, revoked_at
+FROM oauth_consents
+WHERE id = $1
+FOR SHARE;
+
+-- name: LockOAuthClientConsents :exec
+-- FOR UPDATE waits for every token issue under the client's consents,
+-- so the access token delete that follows sees their tokens.
+SELECT id
+FROM oauth_consents
+WHERE client_id = $1
+FOR UPDATE;

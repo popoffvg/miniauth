@@ -174,8 +174,8 @@ func tokensPage(view pageView) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			if view.ShowApps {
-				templ_7745c5c3_Err = connectedApps(view.Apps).Render(ctx, templ_7745c5c3_Buffer)
+			if view.ShowConsents {
+				templ_7745c5c3_Err = consentTable(view.Consents).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

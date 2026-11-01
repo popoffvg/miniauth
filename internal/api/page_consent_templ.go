@@ -196,7 +196,7 @@ func consentPage(view consentPageView) templ.Component {
 	})
 }
 
-func connectedApps(apps []oauth.ConsentEntry) templ.Component {
+func consentTable(consents []oauth.ConsentEntry) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -221,7 +221,7 @@ func connectedApps(apps []oauth.ConsentEntry) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if len(apps) == 0 {
+		if len(consents) == 0 {
 			templ_7745c5c3_Err = emptyState(iconKey, "No connected apps.", "An app connects when you allow it on the consent page.").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -231,15 +231,15 @@ func connectedApps(apps []oauth.ConsentEntry) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, app := range apps {
+			for _, consent := range consents {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<tr><td><div class=\"cell-main\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var13 string
-				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(app.ClientName.String())
+				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(consent.ClientName.String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_consent.templ`, Line: 59, Col: 59}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_consent.templ`, Line: 59, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -250,9 +250,9 @@ func connectedApps(apps []oauth.ConsentEntry) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var14 string
-				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(app.Consent.Resource.String())
+				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(consent.Consent.Resource.String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_consent.templ`, Line: 60, Col: 70}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_consent.templ`, Line: 60, Col: 74}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -262,7 +262,7 @@ func connectedApps(apps []oauth.ConsentEntry) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = timeCell(timeText(app.Consent.CreatedAt)).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = timeCell(timeText(consent.Consent.CreatedAt)).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -282,14 +282,14 @@ func connectedApps(apps []oauth.ConsentEntry) templ.Component {
 						}()
 					}
 					ctx = templ.InitializeContext(ctx)
-					templ_7745c5c3_Err = confirmPost(appsPath+"/"+app.Consent.ID.String()+"/revoke", "Disconnect app",
-						"Disconnect “"+app.ClientName.String()+"”? Its tokens stop working. It asks again at the next connection.", "Disconnect").Render(ctx, templ_7745c5c3_Buffer)
+					templ_7745c5c3_Err = confirmPost(consentsPath+"/"+consent.Consent.ID.String()+"/revoke", "Disconnect app",
+						"Disconnect “"+consent.ClientName.String()+"”? Its tokens stop working. It asks again at the next connection.", "Disconnect").Render(ctx, templ_7745c5c3_Buffer)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					return nil
 				})
-				templ_7745c5c3_Err = rowMenu(app.ClientName.String()).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = rowMenu(consent.ClientName.String()).Render(templ.WithChildren(ctx, templ_7745c5c3_Var15), templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

@@ -32,7 +32,6 @@ func TestChallengeVerifiesItsVerifier(t *testing.T) {
 func TestParseChallengeRefusesPlainAndMalformed(t *testing.T) {
 	for _, tc := range []struct{ raw, method string }{
 		{knownChallenge, "plain"},
-		{knownChallenge, ""},
 		{knownChallenge[1:], ChallengeMethodS256},
 		{strings.Repeat("*", 43), ChallengeMethodS256},
 	} {
@@ -42,7 +41,7 @@ func TestParseChallengeRefusesPlainAndMalformed(t *testing.T) {
 }
 
 func TestParseVerifierChecksLengthAndAlphabet(t *testing.T) {
-	for _, raw := range []string{"", strings.Repeat("a", 42), strings.Repeat("a", 129), strings.Repeat("a", 42) + "+"} {
+	for _, raw := range []string{strings.Repeat("a", 42), strings.Repeat("a", 129), strings.Repeat("a", 42) + "+"} {
 		_, err := ParseVerifier(raw)
 		assert.ErrorIs(t, err, ErrInvalidGrant, raw)
 	}

@@ -25,7 +25,7 @@ type Code struct {
 	raw [32]byte
 }
 
-// NewCode returns 32 random bytes.
+// NewCode makes a code the token endpoint takes once and within CodeLifetime.
 func NewCode() (Code, error) {
 	var code Code
 	if _, err := rand.Read(code.raw[:]); err != nil {
@@ -54,7 +54,7 @@ func (c Code) Reveal() string {
 	return base64.RawURLEncoding.EncodeToString(c.raw[:])
 }
 
-// Hash returns the value to store.
+// Hash is the only form of the code the database keeps.
 func (c Code) Hash() CodeHash {
 	return CodeHash(sha256.Sum256(c.raw[:]))
 }
@@ -69,4 +69,10 @@ type AuthorizationCode struct {
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
 	UsedAt      time.Time
+}
+
+// IsRedeemableWith reports whether the code is unexpired at now and the exchange repeats the redirect URI and the verifier.
+// The redirect URI compares exactly: a loopback port that matched at the authorization MUST be the same here.
+func (c AuthorizationCode) IsRedeemableWith(redirectURI RedirectURI, verifier Verifier, now time.Time) bool {
+	return c.ExpiresAt.After(now) && c.RedirectURI.value == redirectURI.value && c.Challenge.Verifies(verifier)
 }

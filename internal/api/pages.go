@@ -118,9 +118,9 @@ type pageView struct {
 	Enrollment *enrollmentView
 	// RecoveryCodes is set only on pageRecoveryCodes.
 	RecoveryCodes []totp.RecoveryCode
-	// ShowApps shows the connected apps on the token page. It is false while OAuth is off.
-	ShowApps bool
-	Apps     []oauth.ConsentEntry
+	// ShowConsents shows the consents, as connected apps, on the token page. It is false while OAuth is off.
+	ShowConsents bool
+	Consents     []oauth.ConsentEntry
 }
 
 // pageCSP allows the stylesheet of this origin and nothing else. form-action is not set:

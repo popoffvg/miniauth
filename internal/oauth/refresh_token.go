@@ -30,7 +30,7 @@ type RefreshSecret struct {
 	raw string
 }
 
-// NewRefreshSecret returns "idr_" and 32 random bytes in base64url.
+// NewRefreshSecret uses its own marker, so /auth/check never reads a refresh token as an access token.
 func NewRefreshSecret() (RefreshSecret, error) {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -57,7 +57,7 @@ func (s RefreshSecret) Reveal() string {
 	return s.raw
 }
 
-// Hash returns the value to store.
+// Hash is the only form of the refresh token the database keeps.
 func (s RefreshSecret) Hash() RefreshHash {
 	return RefreshHash(sha256.Sum256([]byte(s.raw)))
 }
@@ -69,4 +69,9 @@ type RefreshToken struct {
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	UsedAt    time.Time
+}
+
+// IsLiveAt reports whether the refresh token is unexpired at now.
+func (r RefreshToken) IsLiveAt(now time.Time) bool {
+	return r.ExpiresAt.After(now)
 }

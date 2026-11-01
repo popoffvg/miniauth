@@ -1897,12 +1897,11 @@ paths:
           description: Unauthorized
   /oauth/authorize:
     get:
-      description: 'The OAuth authorization endpoint. An unknown client_id or a redirect_uri
-        the client did not register is a 400 page: nothing goes to that URI. Any other
-        refused request redirects to the client with error and state. With no session
-        it redirects to the login page, which returns here. A client the user approved
-        before for the resource gets a code at once with 302; else the consent page
-        shows. resource MUST equal the URL of a resource of the access API.'
+      description: 'The OAuth authorization endpoint. An unknown client_id or an unregistered
+        redirect_uri is a 400 page: nothing goes to that URI. Any other refusal redirects
+        to the client with error and state. With no session it sends the browser to
+        the login page first. A client the user approved before for the resource gets
+        a code at once with 302.'
       operationId: oauthAuthorize
       parameters:
       - in: query
@@ -2064,13 +2063,11 @@ paths:
           description: Service Unavailable
   /oauth/token:
     post:
-      description: 'The OAuth token endpoint, for a public client. grant_type=authorization_code
-        spends the code once; the client_id, redirect_uri, and code_verifier MUST
-        match the request. grant_type=refresh_token rotates the refresh token. A code
-        or refresh token sent a second time ends the consent and all its tokens. The
-        access token is an idp_ token for one resource that expires in one hour; /auth/check
-        reads it. Errors are RFC 6749 JSON: 400 invalid_request, invalid_grant, or
-        unsupported_grant_type; 401 invalid_client.'
+      description: The OAuth token endpoint, for a public client. A code spends once,
+        and client_id, redirect_uri, and code_verifier MUST match the authorization
+        request. A refresh rotates the refresh token. A code or refresh token sent
+        twice ends the consent and all its tokens. The access token is an idp_ token
+        for one resource for one hour. Errors are RFC 6749 JSON.
       operationId: oauthToken
       requestBody:
         content:
@@ -2788,13 +2785,13 @@ paths:
               schema:
                 type: string
           description: Service Unavailable
-  /tokens/apps/{id}/revoke:
+  /tokens/consents/{id}/revoke:
     post:
       description: 'Disconnects one app of the session user: it revokes the consent
         and deletes its access and refresh tokens, then redirects to GET /tokens?done=app-revoked.
         The next connection shows the consent page again. Origin MUST be the public
         origin, else 403. A consent of another user is 404.'
-      operationId: revokeApp
+      operationId: revokeConsent
       parameters:
       - in: path
         name: id

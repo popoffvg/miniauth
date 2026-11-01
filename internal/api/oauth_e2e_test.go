@@ -5,12 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/stretchr/testify/assert"
@@ -80,14 +80,17 @@ func TestOAuthEndToEnd(t *testing.T) {
 	oauthRepo, err := postgres.NewOAuthRepository(pool)
 	require.NoError(t, err)
 
-	server := httptest.NewUnstartedServer(nil)
-	host := server.Listener.Addr().String()
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	host := listener.Addr().String()
 	base := "https://" + host
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
 	grants := access.NewService(accessRepo, nil)
 	mcp := createResource(t, grants, "mcp", host, "/mcp")
 	grantResource(t, grants, mcp, access.UserSubject(owner.id))
+	oauthServer, err := oauth.NewService(oauthRepo, accounts)
+	require.NoError(t, err)
 	router, err := NewRouter(
 		accounts,
 		sessions.NewService(postgres.NewSessionRepository(pool)),
@@ -100,17 +103,17 @@ func TestOAuthEndToEnd(t *testing.T) {
 		WithLogin(loginflow.NewLoginFlows(postgres.NewFlowStore(pool)), passwords),
 		WithAccessTokens(accessTokens),
 		WithURLGrants(grants),
-		WithOAuth(oauth.NewService(oauthRepo, accounts), grants),
+		WithOAuth(oauthServer, grants),
 	)
 	require.NoError(t, err)
-	server.Config.Handler = router
+	server := &httptest.Server{Listener: listener, Config: &http.Server{Handler: router}}
 	server.StartTLS()
 	t.Cleanup(server.Close)
 
 	browser := newBrowser(t, server)
 	resource := base + "/mcp"
 	var client mcpClient
-	var access, refresh string
+	var accessToken, refreshToken, oldRefreshToken string
 
 	t.Run("an admin registers the client", func(t *testing.T) {
 		resp := adminJSON(t, server.Client(), http.MethodPost, base+oauthClientsPath,
@@ -137,10 +140,10 @@ func TestOAuthEndToEnd(t *testing.T) {
 		missing := forwardedGet(t, server.Client(), base, protectedResourceMetadataPath+"/other")
 		assert.Equal(t, http.StatusNotFound, missing.status)
 
-		server := forwardedGet(t, server.Client(), base, authorizationServerMetadataPath)
-		require.Equal(t, http.StatusOK, server.status)
-		assert.Contains(t, server.body, `"token_endpoint":"`+base+oauthTokenPath+`"`)
-		assert.Contains(t, server.body, `"code_challenge_methods_supported":["S256"]`)
+		metadataReply := forwardedGet(t, server.Client(), base, authorizationServerMetadataPath)
+		require.Equal(t, http.StatusOK, metadataReply.status)
+		assert.Contains(t, metadataReply.body, `"token_endpoint":"`+base+`/oauth/token"`)
+		assert.Contains(t, metadataReply.body, `"code_challenge_methods_supported":["S256"]`)
 	})
 
 	authorizeURL := func(state string) string {
@@ -150,7 +153,9 @@ func TestOAuthEndToEnd(t *testing.T) {
 	t.Run("no session sends the browser to the login page and back", func(t *testing.T) {
 		resp := get(t, browser, authorizeURL("s1"))
 		require.Equal(t, http.StatusSeeOther, resp.status)
-		assert.Equal(t, base+"/login?return="+url.QueryEscape(authorizeURL("s1")), resp.header.Get("Location"))
+		toLogin := mustURL(t, resp.header.Get("Location"))
+		assert.Equal(t, "/login", toLogin.Path)
+		assert.Equal(t, authorizeURL("s1"), toLogin.Query().Get("return"))
 		openLogin(t, browser, base, authorizeURL("s1"))
 		loggedIn := submitLogin(t, browser, base, base, owner.login, owner.password)
 		require.Equal(t, http.StatusSeeOther, loggedIn.status)
@@ -211,37 +216,36 @@ func TestOAuthEndToEnd(t *testing.T) {
 		})
 		require.Equal(t, http.StatusOK, resp.status, resp.body)
 		assert.Equal(t, "no-store", resp.header.Get("Cache-Control"))
-		access, refresh = readTokens(t, resp.body)
-		assert.True(t, strings.HasPrefix(access, tokens.SecretMarker))
-		assert.True(t, strings.HasPrefix(refresh, oauth.RefreshMarker))
+		accessToken, refreshToken = readTokens(t, resp.body)
+		assert.True(t, strings.HasPrefix(accessToken, "idp_"))
+		assert.True(t, strings.HasPrefix(refreshToken, "idr_"))
 
-		assert.Equal(t, http.StatusOK, mcpCheck(t, server.Client(), base, access, "/mcp/sse").status)
-		assert.Equal(t, http.StatusForbidden, mcpCheck(t, server.Client(), base, access, "/other").status)
-		assert.Equal(t, http.StatusUnauthorized, mcpCheck(t, server.Client(), base, refresh, "/mcp").status)
+		assert.Equal(t, http.StatusOK, mcpCheck(t, server.Client(), base, accessToken, "/mcp/sse").status)
+		assert.Equal(t, http.StatusForbidden, mcpCheck(t, server.Client(), base, accessToken, "/other").status)
+		assert.Equal(t, http.StatusUnauthorized, mcpCheck(t, server.Client(), base, refreshToken, "/mcp").status)
 		assert.Empty(t, listTokens(t, accessTokens, owner.id), "the token page MUST NOT list an OAuth token")
 	})
 
 	t.Run("a refresh rotates both tokens", func(t *testing.T) {
 		resp := tokenRequestFor(t, server.Client(), base, url.Values{
-			"grant_type": {grantRefreshToken}, "client_id": {client.id}, "refresh_token": {refresh},
+			"grant_type": {grantRefreshToken}, "client_id": {client.id}, "refresh_token": {refreshToken},
 		})
 		require.Equal(t, http.StatusOK, resp.status, resp.body)
 		newAccess, newRefresh := readTokens(t, resp.body)
-		assert.NotEqual(t, refresh, newRefresh)
+		assert.NotEqual(t, refreshToken, newRefresh)
 		assert.Equal(t, http.StatusOK, mcpCheck(t, server.Client(), base, newAccess, "/mcp").status)
-		access, refresh = newAccess, refresh+"|"+newRefresh
+		accessToken, refreshToken, oldRefreshToken = newAccess, newRefresh, refreshToken
 	})
 
 	t.Run("a refresh token used twice ends the consent", func(t *testing.T) {
-		old, current, _ := strings.Cut(refresh, "|")
 		resp := tokenRequestFor(t, server.Client(), base, url.Values{
-			"grant_type": {grantRefreshToken}, "client_id": {client.id}, "refresh_token": {old},
+			"grant_type": {grantRefreshToken}, "client_id": {client.id}, "refresh_token": {oldRefreshToken},
 		})
 		assert.Equal(t, http.StatusBadRequest, resp.status)
 		assert.Contains(t, resp.body, `"invalid_grant"`)
-		assert.Equal(t, http.StatusUnauthorized, mcpCheck(t, server.Client(), base, access, "/mcp").status)
+		assert.Equal(t, http.StatusUnauthorized, mcpCheck(t, server.Client(), base, accessToken, "/mcp").status)
 		again := tokenRequestFor(t, server.Client(), base, url.Values{
-			"grant_type": {grantRefreshToken}, "client_id": {client.id}, "refresh_token": {current},
+			"grant_type": {grantRefreshToken}, "client_id": {client.id}, "refresh_token": {refreshToken},
 		})
 		assert.Equal(t, http.StatusBadRequest, again.status)
 	})
@@ -271,7 +275,7 @@ func TestOAuthEndToEnd(t *testing.T) {
 			"redirect_uri": {client.redirect}, "code_verifier": {client.verifier},
 		})
 		require.Equal(t, http.StatusOK, resp.status, resp.body)
-		access, _ = readTokens(t, resp.body)
+		accessToken, _ = readTokens(t, resp.body)
 	})
 
 	t.Run("deny sends access_denied", func(t *testing.T) {
@@ -286,14 +290,14 @@ func TestOAuthEndToEnd(t *testing.T) {
 		page := get(t, browser, base+tokensPath)
 		require.Equal(t, http.StatusOK, page.status)
 		assert.Contains(t, page.body, "Connected apps")
-		start := strings.Index(page.body, `action="`+appsPath+"/")
+		start := strings.Index(page.body, `action="`+consentsPath+"/")
 		require.GreaterOrEqual(t, start, 0)
 		action, _, found := strings.Cut(page.body[start+len(`action="`):], `"`)
 		require.True(t, found)
 		resp := postForm(t, browser, base+action, base, url.Values{})
 		require.Equal(t, http.StatusSeeOther, resp.status)
-		assert.Equal(t, base+withDone(tokensPath, doneAppRevoked), resp.header.Get("Location"))
-		assert.Equal(t, http.StatusUnauthorized, mcpCheck(t, server.Client(), base, access, "/mcp").status)
+		assert.Equal(t, base+"/tokens?done=consent-revoked", resp.header.Get("Location"))
+		assert.Equal(t, http.StatusUnauthorized, mcpCheck(t, server.Client(), base, accessToken, "/mcp").status)
 	})
 
 	t.Run("an admin deletes the client", func(t *testing.T) {
@@ -304,7 +308,7 @@ func TestOAuthEndToEnd(t *testing.T) {
 	})
 }
 
-func adminJSON(t *testing.T, client *http.Client, method, target, body string) reply {
+func adminJSON(t *testing.T, httpClient *http.Client, method, target, body string) reply {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), method, target, strings.NewReader(body))
 	require.NoError(t, err)
@@ -312,11 +316,11 @@ func adminJSON(t *testing.T, client *http.Client, method, target, body string) r
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return do(t, client, req)
+	return do(t, httpClient, req)
 }
 
 // mcpCheck is /auth/check as the proxy sends it for an MCP client. An empty token sends no Authorization.
-func mcpCheck(t *testing.T, client *http.Client, base, token, uri string) reply {
+func mcpCheck(t *testing.T, httpClient *http.Client, base, token, uri string) reply {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+"/auth/check", nil)
 	require.NoError(t, err)
@@ -327,30 +331,30 @@ func mcpCheck(t *testing.T, client *http.Client, base, token, uri string) reply 
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-Host", strings.TrimPrefix(base, "https://"))
 	req.Header.Set("X-Forwarded-Uri", uri)
-	return do(t, client, req)
+	return do(t, httpClient, req)
 }
 
-func forwardedGet(t *testing.T, client *http.Client, base, path string) reply {
+func forwardedGet(t *testing.T, httpClient *http.Client, base, path string) reply {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+path, nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-Host", strings.TrimPrefix(base, "https://"))
-	return do(t, client, req)
+	return do(t, httpClient, req)
 }
 
-func tokenRequestFor(t *testing.T, client *http.Client, base string, form url.Values) reply {
+func tokenRequestFor(t *testing.T, httpClient *http.Client, base string, form url.Values) reply {
 	t.Helper()
-	return postForm(t, client, base+oauthTokenPath, "", form)
+	return postForm(t, httpClient, base+oauthTokenPath, "", form)
 }
 
 func readTokens(t *testing.T, body string) (string, string) {
 	t.Helper()
-	var reply tokenResponse
-	require.NoError(t, json.Unmarshal([]byte(body), &reply))
-	assert.Equal(t, "Bearer", reply.TokenType)
-	assert.Equal(t, int64(time.Hour/time.Second), reply.ExpiresIn)
-	return reply.AccessToken, reply.RefreshToken
+	var tokenReply tokenResponse
+	require.NoError(t, json.Unmarshal([]byte(body), &tokenReply))
+	assert.Equal(t, "Bearer", tokenReply.TokenType)
+	assert.Equal(t, int64(3600), tokenReply.ExpiresIn)
+	return tokenReply.AccessToken, tokenReply.RefreshToken
 }
 
 func mustURL(t *testing.T, raw string) *url.URL {

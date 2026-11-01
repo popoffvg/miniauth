@@ -16,12 +16,12 @@ const MaxClientNameRunes = 64
 // ClientID identifies one registered client. It is not a secret: a client sends it in the clear.
 type ClientID uuid.UUID
 
-// NewClientID returns a random UUID.
+// NewClientID is random: a client id tells nothing about other clients.
 func NewClientID() ClientID {
 	return ClientID(uuid.New())
 }
 
-// ClientIDFromBytes returns the id for the 16 UUID bytes.
+// ClientIDFromBytes reads a stored id. It does not check that the client exists.
 func ClientIDFromBytes(b [16]byte) ClientID {
 	return ClientID(b)
 }
@@ -39,12 +39,12 @@ func (id ClientID) String() string {
 	return uuid.UUID(id).String()
 }
 
-// Bytes returns the 16-byte UUID form.
+// Bytes is the form the database stores.
 func (id ClientID) Bytes() [16]byte {
 	return uuid.UUID(id)
 }
 
-// MarshalText encodes the UUID text form.
+// MarshalText writes the value a client sends as client_id.
 func (id ClientID) MarshalText() ([]byte, error) {
 	text, err := uuid.UUID(id).MarshalText()
 	if err != nil {
@@ -72,12 +72,12 @@ func (n ClientName) String() string {
 	return n.value
 }
 
-// MarshalText encodes the name.
+// MarshalText writes the name the consent page shows.
 func (n ClientName) MarshalText() ([]byte, error) {
 	return []byte(n.value), nil
 }
 
-// UnmarshalText parses text with ParseClientName.
+// UnmarshalText refuses a JSON name that breaks the name rules, so the admin API answers 400.
 func (n *ClientName) UnmarshalText(text []byte) error {
 	parsed, err := ParseClientName(string(text))
 	if err != nil {

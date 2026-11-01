@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"strings"
 
+	"golang.org/x/oauth2"
+
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -41,8 +43,7 @@ func (c Challenge) Verifies(verifier Verifier) bool {
 	if c.value == "" || verifier.raw == "" {
 		return false
 	}
-	sum := sha256.Sum256([]byte(verifier.raw))
-	encoded := base64.RawURLEncoding.EncodeToString(sum[:])
+	encoded := oauth2.S256ChallengeFromVerifier(verifier.raw)
 	return subtle.ConstantTimeCompare([]byte(encoded), []byte(c.value)) == 1
 }
 

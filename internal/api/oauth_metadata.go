@@ -19,7 +19,7 @@ const (
 	oauthTokenPath                = "/oauth/token" // #nosec G101 -- a path, not a secret.
 )
 
-// resourceDirectory names the resource of a URL for the OAuth routes. It reads no grant.
+// resourceDirectory names the resource of a URL for the OAuth routes and /auth/check. It reads no grant.
 type resourceDirectory interface {
 	MatchResource(ctx context.Context, target access.RequestURL) (access.Resource, error)
 	FindResourceByURL(ctx context.Context, url access.ResourceURL) (access.Resource, error)
@@ -57,13 +57,13 @@ type protectedResourcePath struct {
 	Path string `path:"path" description:"The path prefix of the resource, with no leading slash."`
 }
 
-func (s *service) oauthServerReady() bool {
+func (s *service) isOAuthServerReady() bool {
 	return s.oauth != nil && s.oauthResources != nil && s.publicURL.Origin() != ""
 }
 
-func (s *service) authorizationServerMetadata(w http.ResponseWriter, _ *http.Request) {
+func (s *service) serveAuthorizationServerMetadata(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	if !s.oauthServerReady() {
+	if !s.isOAuthServerReady() {
 		writeProblem(w, http.StatusServiceUnavailable, "The OAuth server is not configured.")
 		return
 	}
@@ -82,9 +82,9 @@ func (s *service) authorizationServerMetadata(w http.ResponseWriter, _ *http.Req
 
 // protectedResourceMetadata answers for the resource whose host is X-Forwarded-Host and whose prefix is the path.
 // A URL that is not exactly a resource is 404.
-func (s *service) protectedResourceMetadata(w http.ResponseWriter, r *http.Request) {
+func (s *service) serveProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	if !s.oauthServerReady() {
+	if !s.isOAuthServerReady() {
 		writeProblem(w, http.StatusServiceUnavailable, "The OAuth server is not configured.")
 		return
 	}
@@ -118,9 +118,9 @@ func (s *service) protectedResourceMetadata(w http.ResponseWriter, r *http.Reque
 // bearerChallenge is the WWW-Authenticate value of a 401 from /auth/check.
 // With OAuth on, it names the metadata of the resource that covers the forwarded URL,
 // so an MCP client finds the authorization server.
-func (s *service) bearerChallenge(r *http.Request, invalid bool) string {
+func (s *service) bearerChallenge(r *http.Request, isInvalidToken bool) string {
 	var params []string
-	if invalid {
+	if isInvalidToken {
 		params = append(params, `error="invalid_token"`)
 	}
 	if metadata := s.resourceMetadataURL(r); metadata != "" {
@@ -134,7 +134,7 @@ func (s *service) bearerChallenge(r *http.Request, invalid bool) string {
 
 // resourceMetadataURL is empty when OAuth is off or no resource covers the forwarded URL.
 func (s *service) resourceMetadataURL(r *http.Request) string {
-	if !s.oauthServerReady() {
+	if !s.isOAuthServerReady() {
 		return ""
 	}
 	forwarded, ok := forwardedURL(r, s.domain, s.publicURL)

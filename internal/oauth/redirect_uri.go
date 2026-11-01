@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// maxRedirectURILength keeps a stored URI and a redirect Location short.
-const maxRedirectURILength = 2048
+// maxRedirectURIBytes keeps a stored URI and a redirect Location short.
+const maxRedirectURIBytes = 2048
 
 // RedirectURI is where the browser takes the authorization code back to the client.
 // It is https, or http on a loopback host for a native client. It has no fragment and no user info.
@@ -17,7 +17,7 @@ type RedirectURI struct {
 
 // ParseRedirectURI reads a registered or a requested redirect URI.
 func ParseRedirectURI(raw string) (RedirectURI, error) {
-	if raw == "" || len(raw) > maxRedirectURILength || strings.ContainsAny(raw, "#\r\n") {
+	if raw == "" || len(raw) > maxRedirectURIBytes || strings.ContainsAny(raw, "#\r\n") {
 		return RedirectURI{}, ErrRedirectURI
 	}
 	parsed, err := url.Parse(raw)
@@ -77,12 +77,12 @@ func (u RedirectURI) String() string {
 	return u.value
 }
 
-// MarshalText encodes the URI.
+// MarshalText writes the URI as the admin registered it, with no port normalised.
 func (u RedirectURI) MarshalText() ([]byte, error) {
 	return []byte(u.value), nil
 }
 
-// UnmarshalText parses text with ParseRedirectURI.
+// UnmarshalText refuses a JSON redirect URI that ParseRedirectURI refuses, so the admin API answers 400.
 func (u *RedirectURI) UnmarshalText(text []byte) error {
 	parsed, err := ParseRedirectURI(string(text))
 	if err != nil {

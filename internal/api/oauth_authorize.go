@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"reflect"
 
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/oauth"
@@ -25,11 +26,22 @@ const (
 	consentActionDeny  = "deny"
 )
 
-// authorizeParams are the parameters the consent form sends again, in this order.
+// authorizeParams are the query names of authorizeRequest in field order: the parameters the consent form sends again.
 // The POST checks them again: a hidden field is not trusted.
-var authorizeParams = []string{"response_type", "client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "resource"}
+var authorizeParams = queryParamNames(reflect.TypeFor[authorizeRequest]())
 
-// authorizeRequest documents the query of GET /oauth/authorize. The consent form sends the same fields.
+func queryParamNames(request reflect.Type) []string {
+	var names []string
+	for i := range request.NumField() {
+		if name, ok := request.Field(i).Tag.Lookup("query"); ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// authorizeRequest documents the query of GET /oauth/authorize and the consent form.
+// A field with a query tag is a parameter the consent form sends again; the button has none.
 type authorizeRequest struct {
 	ResponseType        string `query:"response_type" formData:"response_type" required:"true" enum:"code"`
 	ClientID            string `query:"client_id" formData:"client_id" required:"true" format:"uuid"`
@@ -41,7 +53,6 @@ type authorizeRequest struct {
 	Action              string `formData:"action" enum:"allow,deny" description:"The consent form only."`
 }
 
-// authorizeRefusal is a refused authorization request.
 // A refusal with a message is a page: the redirect URI is not trusted, so nothing goes back to the client.
 // Any other refusal goes back to the client as the OAuth error code.
 type authorizeRefusal struct {
@@ -49,7 +60,6 @@ type authorizeRefusal struct {
 	code    oauthErrorCode
 }
 
-// consentPageView is the data of the consent page.
 type consentPageView struct {
 	Login        users.Login
 	ClientName   oauth.ClientName
@@ -66,25 +76,25 @@ type consentField struct {
 
 // authorizePage shows the consent page, or sends a code at once to a client the user approved before.
 func (s *service) authorizePage(w http.ResponseWriter, r *http.Request) {
-	if !s.oauthServerReady() {
+	if !s.isOAuthServerReady() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgOAuthUnavailable)
 		return
 	}
 	request, refusal, err := s.readAuthorizeRequest(r.Context(), r.URL.Query())
-	if s.authorizeRefused(w, r, request, refusal, err, http.StatusFound) {
+	if s.writeAuthorizeRefusal(w, r, request, refusal, err, http.StatusFound) {
 		return
 	}
 	user, _, ok := s.browserPageUser(w, r, oauthAuthorizePath+"?"+r.URL.RawQuery, msgOAuthFailed)
 	if !ok {
 		return
 	}
-	approved, err := s.oauth.HasConsent(r.Context(), user.ID, request)
+	isApproved, err := s.oauth.HasConsent(r.Context(), user.ID, request)
 	if err != nil {
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: oauth consent", "err", err)
 		renderDenied(w, r, http.StatusInternalServerError, msgOAuthFailed)
 		return
 	}
-	if approved {
+	if isApproved {
 		s.sendCode(w, r, user, request, http.StatusFound)
 		return
 	}
@@ -108,7 +118,7 @@ func (s *service) answerConsent(w http.ResponseWriter, r *http.Request) {
 		renderDenied(w, r, http.StatusForbidden, msgCrossOrigin)
 		return
 	}
-	if !s.oauthServerReady() {
+	if !s.isOAuthServerReady() {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgOAuthUnavailable)
 		return
 	}
@@ -118,7 +128,7 @@ func (s *service) answerConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request, refusal, err := s.readAuthorizeRequest(r.Context(), r.PostForm)
-	if s.authorizeRefused(w, r, request, refusal, err, http.StatusSeeOther) {
+	if s.writeAuthorizeRefusal(w, r, request, refusal, err, http.StatusSeeOther) {
 		return
 	}
 	query := url.Values{}
@@ -161,8 +171,8 @@ func (s *service) redirectToClient(w http.ResponseWriter, r *http.Request, reque
 	http.Redirect(w, r, request.RedirectURI.WithParams(params), status)
 }
 
-// authorizeRefused writes the refusal and returns true when the request MUST stop.
-func (s *service) authorizeRefused(w http.ResponseWriter, r *http.Request, request oauth.AuthorizeRequest, refusal authorizeRefusal, err error, status int) bool {
+// writeAuthorizeRefusal writes the refusal and returns true when the request MUST stop.
+func (s *service) writeAuthorizeRefusal(w http.ResponseWriter, r *http.Request, request oauth.AuthorizeRequest, refusal authorizeRefusal, err error, status int) bool {
 	switch {
 	case err != nil:
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: oauth authorize", "err", err)
@@ -219,8 +229,8 @@ func (s *service) readAuthorizeRequest(ctx context.Context, values url.Values) (
 
 var errNotAResource = errors.New("api: oauth resource is not a resource of the access API")
 
-// oauthResource reads the resource parameter. It MUST equal the host and the prefix of a stored resource,
-// so a token reaches one MCP server and /auth/check still asks for a grant on it.
+// oauthResource reads the resource parameter. The value MUST equal the host and the prefix of a stored resource.
+// That keeps a token on one MCP server, and /auth/check still asks for a grant on it.
 func (s *service) oauthResource(ctx context.Context, raw string) (tokens.Scope, error) {
 	scope, err := tokens.ParseScope(raw)
 	if err != nil {

@@ -172,26 +172,6 @@ func (q *Queries) GetOAuthCode(ctx context.Context, codeHash []byte) (OauthCode,
 	return i, err
 }
 
-const getOAuthConsent = `-- name: GetOAuthConsent :one
-SELECT id, user_id, client_id, resource, created_at, revoked_at
-FROM oauth_consents
-WHERE id = $1
-`
-
-func (q *Queries) GetOAuthConsent(ctx context.Context, id pgtype.UUID) (OauthConsent, error) {
-	row := q.db.QueryRow(ctx, getOAuthConsent, id)
-	var i OauthConsent
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.ClientID,
-		&i.Resource,
-		&i.CreatedAt,
-		&i.RevokedAt,
-	)
-	return i, err
-}
-
 const getOAuthRefreshToken = `-- name: GetOAuthRefreshToken :one
 SELECT secret_hash, consent_id, created_at, expires_at, used_at
 FROM oauth_refresh_tokens
@@ -379,6 +359,43 @@ func (q *Queries) ListOAuthClients(ctx context.Context) ([]OauthClient, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockOAuthClientConsents = `-- name: LockOAuthClientConsents :exec
+SELECT id
+FROM oauth_consents
+WHERE client_id = $1
+FOR UPDATE
+`
+
+// FOR UPDATE waits for every token issue under the client's consents,
+// so the access token delete that follows sees their tokens.
+func (q *Queries) LockOAuthClientConsents(ctx context.Context, clientID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockOAuthClientConsents, clientID)
+	return err
+}
+
+const lockOAuthConsentForIssue = `-- name: LockOAuthConsentForIssue :one
+SELECT id, user_id, client_id, resource, created_at, revoked_at
+FROM oauth_consents
+WHERE id = $1
+FOR SHARE
+`
+
+// FOR SHARE makes a revoke of the consent wait until the token issue commits.
+// An issue that starts after the revoke reads the revoked row.
+func (q *Queries) LockOAuthConsentForIssue(ctx context.Context, id pgtype.UUID) (OauthConsent, error) {
+	row := q.db.QueryRow(ctx, lockOAuthConsentForIssue, id)
+	var i OauthConsent
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ClientID,
+		&i.Resource,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
 }
 
 const revokeUserOAuthConsent = `-- name: RevokeUserOAuthConsent :execrows

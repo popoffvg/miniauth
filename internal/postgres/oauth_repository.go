@@ -31,7 +31,7 @@ func NewOAuthRepository(db transactionalDB) (*OAuthRepository, error) {
 
 var _ oauth.Store = (*OAuthRepository)(nil)
 
-// CreateClient inserts the client.
+// CreateClient stores the redirect URIs as the admin wrote them.
 func (r *OAuthRepository) CreateClient(ctx context.Context, client oauth.Client) error {
 	uris := make([]string, 0, len(client.RedirectURIs))
 	for _, uri := range client.RedirectURIs {
@@ -78,10 +78,14 @@ func (r *OAuthRepository) ListClients(ctx context.Context) ([]oauth.Client, erro
 	return out, nil
 }
 
-// DeleteClient deletes the access tokens of the client first: the cascade removes only their links.
+// DeleteClient locks the consents of the client first, so no token issue under them is in flight.
+// It deletes their access tokens next: the cascade removes only the links.
 func (r *OAuthRepository) DeleteClient(ctx context.Context, id oauth.ClientID) error {
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
 		q := sqlcgen.New(tx)
+		if err := q.LockOAuthClientConsents(ctx, pgUUIDBytes(id.Bytes())); err != nil {
+			return oauthError("lock oauth client consents", err)
+		}
 		if err := q.DeleteOAuthClientAccessTokens(ctx, pgUUIDBytes(id.Bytes())); err != nil {
 			return oauthError("delete oauth client tokens", err)
 		}
@@ -182,7 +186,7 @@ func (r *OAuthRepository) EndConsent(ctx context.Context, id oauth.ConsentID, at
 	return nil
 }
 
-// CreateCode inserts the hash of the code.
+// CreateCode stores the hash, never the code.
 func (r *OAuthRepository) CreateCode(ctx context.Context, code oauth.AuthorizationCode) error {
 	err := r.q.InsertOAuthCode(ctx, sqlcgen.InsertOAuthCodeParams{
 		CodeHash:    code.Hash[:],
@@ -198,10 +202,10 @@ func (r *OAuthRepository) CreateCode(ctx context.Context, code oauth.Authorizati
 	return nil
 }
 
-// InTransaction commits when fn returns nil and rolls back otherwise.
+// InTransaction rolls back the claim on any error, so a refused exchange leaves the code or refresh token unspent.
 func (r *OAuthRepository) InTransaction(ctx context.Context, fn func(oauth.Transaction) error) error {
 	err := pgx.BeginFunc(ctx, r.db, func(tx pgx.Tx) error {
-		return fn(&oauthTransaction{q: sqlcgen.New(tx), tokens: NewTokenRepository(tx)})
+		return fn(&oauthTransaction{q: sqlcgen.New(tx), tokenRepo: NewTokenRepository(tx)})
 	})
 	if err != nil {
 		return fmt.Errorf("postgres: oauth token request: %w", err)
@@ -210,14 +214,14 @@ func (r *OAuthRepository) InTransaction(ctx context.Context, fn func(oauth.Trans
 }
 
 type oauthTransaction struct {
-	q      *sqlcgen.Queries
-	tokens *TokenRepository
+	q         *sqlcgen.Queries
+	tokenRepo *TokenRepository
 }
 
 // ClaimCode is one conditional UPDATE. A parallel claim waits for the row lock and then sees used_at set.
 func (t *oauthTransaction) ClaimCode(ctx context.Context, hash oauth.CodeHash, at time.Time) (oauth.AuthorizationCode, oauth.Consent, error) {
 	row, err := t.q.ClaimOAuthCode(ctx, sqlcgen.ClaimOAuthCodeParams{UsedAt: pgTime(at), CodeHash: hash[:]})
-	claimed := err == nil
+	isClaimed := err == nil
 	if errors.Is(err, pgx.ErrNoRows) {
 		row, err = t.q.GetOAuthCode(ctx, hash[:])
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -235,7 +239,7 @@ func (t *oauthTransaction) ClaimCode(ctx context.Context, hash oauth.CodeHash, a
 	if err != nil {
 		return oauth.AuthorizationCode{}, oauth.Consent{}, err
 	}
-	if !claimed {
+	if !isClaimed {
 		return code, consent, oauth.ErrCodeReused
 	}
 	return code, consent, nil
@@ -244,7 +248,7 @@ func (t *oauthTransaction) ClaimCode(ctx context.Context, hash oauth.CodeHash, a
 // ClaimRefresh is one conditional UPDATE, like ClaimCode.
 func (t *oauthTransaction) ClaimRefresh(ctx context.Context, hash oauth.RefreshHash, at time.Time) (oauth.RefreshToken, oauth.Consent, error) {
 	row, err := t.q.ClaimOAuthRefreshToken(ctx, sqlcgen.ClaimOAuthRefreshTokenParams{UsedAt: pgTime(at), SecretHash: hash[:]})
-	claimed := err == nil
+	isClaimed := err == nil
 	if errors.Is(err, pgx.ErrNoRows) {
 		row, err = t.q.GetOAuthRefreshToken(ctx, hash[:])
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -262,7 +266,7 @@ func (t *oauthTransaction) ClaimRefresh(ctx context.Context, hash oauth.RefreshH
 	if err != nil {
 		return oauth.RefreshToken{}, oauth.Consent{}, err
 	}
-	if !claimed {
+	if !isClaimed {
 		return refresh, consent, oauth.ErrRefreshReused
 	}
 	return refresh, consent, nil
@@ -270,7 +274,7 @@ func (t *oauthTransaction) ClaimRefresh(ctx context.Context, hash oauth.RefreshH
 
 // CreateAccessToken stores the token in access_tokens and links it to the consent.
 func (t *oauthTransaction) CreateAccessToken(ctx context.Context, token tokens.Token, hash tokens.Hash, consent oauth.ConsentID) error {
-	if err := t.tokens.Create(ctx, token, hash); err != nil {
+	if err := t.tokenRepo.Create(ctx, token, hash); err != nil {
 		return err
 	}
 	err := t.q.InsertOAuthAccessToken(ctx, sqlcgen.InsertOAuthAccessTokenParams{
@@ -283,7 +287,6 @@ func (t *oauthTransaction) CreateAccessToken(ctx context.Context, token tokens.T
 	return nil
 }
 
-// CreateRefresh inserts the hash of the refresh token.
 func (t *oauthTransaction) CreateRefresh(ctx context.Context, refresh oauth.RefreshToken) error {
 	err := t.q.InsertOAuthRefreshToken(ctx, sqlcgen.InsertOAuthRefreshTokenParams{
 		SecretHash: refresh.Hash[:],
@@ -298,7 +301,10 @@ func (t *oauthTransaction) CreateRefresh(ctx context.Context, refresh oauth.Refr
 }
 
 func (t *oauthTransaction) consent(ctx context.Context, id oauth.ConsentID) (oauth.Consent, error) {
-	row, err := t.q.GetOAuthConsent(ctx, pgUUIDBytes(id.Bytes()))
+	row, err := t.q.LockOAuthConsentForIssue(ctx, pgUUIDBytes(id.Bytes()))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return oauth.Consent{}, oauth.ErrInvalidGrant
+	}
 	if err != nil {
 		return oauth.Consent{}, oauthError("load oauth consent", err)
 	}

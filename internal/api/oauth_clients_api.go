@@ -35,8 +35,8 @@ func newOAuthClientBody(client oauth.Client) oauthClientBody {
 	return oauthClientBody{ClientID: client.ID, Name: client.Name, RedirectURIs: client.RedirectURIs, CreatedAt: client.CreatedAt}
 }
 
-// oauthAdminReady writes 503 and returns false when the router has no OAuth service.
-func (s *service) oauthAdminReady(w http.ResponseWriter) bool {
+// requireOAuthService writes 503 and returns false when the router has no OAuth service.
+func (s *service) requireOAuthService(w http.ResponseWriter) bool {
 	if s.oauth == nil {
 		writeProblem(w, http.StatusServiceUnavailable, "The OAuth API is not configured.")
 		return false
@@ -45,7 +45,7 @@ func (s *service) oauthAdminReady(w http.ResponseWriter) bool {
 }
 
 func (s *service) createOAuthClient(w http.ResponseWriter, r *http.Request) {
-	if !s.oauthAdminReady(w) {
+	if !s.requireOAuthService(w) {
 		return
 	}
 	body, err := decodeJSON[createOAuthClientRequest](w, r, maxAccessBody)
@@ -62,7 +62,7 @@ func (s *service) createOAuthClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *service) listOAuthClients(w http.ResponseWriter, r *http.Request) {
-	if !s.oauthAdminReady(w) {
+	if !s.requireOAuthService(w) {
 		return
 	}
 	clients, err := s.oauth.ListClients(r.Context())
@@ -78,7 +78,7 @@ func (s *service) listOAuthClients(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *service) deleteOAuthClient(w http.ResponseWriter, r *http.Request) {
-	if !s.oauthAdminReady(w) {
+	if !s.requireOAuthService(w) {
 		return
 	}
 	id, err := oauth.ParseClientID(r.PathValue("id"))

@@ -70,7 +70,6 @@ type Querier interface {
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
 	GetOAuthClient(ctx context.Context, id pgtype.UUID) (OauthClient, error)
 	GetOAuthCode(ctx context.Context, codeHash []byte) (OauthCode, error)
-	GetOAuthConsent(ctx context.Context, id pgtype.UUID) (OauthConsent, error)
 	GetOAuthRefreshToken(ctx context.Context, secretHash []byte) (OauthRefreshToken, error)
 	GetOpenPasswordReset(ctx context.Context, arg GetOpenPasswordResetParams) (GetOpenPasswordResetRow, error)
 	GetPendingIdentityLink(ctx context.Context, arg GetPendingIdentityLinkParams) (GetPendingIdentityLinkRow, error)
@@ -110,6 +109,12 @@ type Querier interface {
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, error)
 	ListUserPasskeys(ctx context.Context, userID pgtype.UUID) ([]Passkey, error)
+	// FOR UPDATE waits for every token issue under the client's consents,
+	// so the access token delete that follows sees their tokens.
+	LockOAuthClientConsents(ctx context.Context, clientID pgtype.UUID) error
+	// FOR SHARE makes a revoke of the consent wait until the token issue commits.
+	// An issue that starts after the revoke reads the revoked row.
+	LockOAuthConsentForIssue(ctx context.Context, id pgtype.UUID) (OauthConsent, error)
 	LockOpenPasswordReset(ctx context.Context, arg LockOpenPasswordResetParams) (pgtype.UUID, error)
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
 	Ping(ctx context.Context) (int32, error)

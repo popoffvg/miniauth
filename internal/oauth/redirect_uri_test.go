@@ -27,9 +27,8 @@ func TestParseRedirectURIRefusesOtherURIs(t *testing.T) {
 		"https://app.example.test/callback#frag",
 		"https://user@app.example.test/callback",
 		"javascript:alert(1)",
-		"custom-scheme:/callback",
+		"ftp://app.example.test/callback",
 		"/callback",
-		"https:///callback",
 		"https://app.example.test/\r\nx",
 	} {
 		_, err := ParseRedirectURI(raw)

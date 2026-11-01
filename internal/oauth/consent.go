@@ -12,12 +12,12 @@ import (
 // ConsentID identifies one consent. It is not a secret.
 type ConsentID uuid.UUID
 
-// NewConsentID returns a random UUID.
+// NewConsentID is random: a consent id tells nothing about other consents.
 func NewConsentID() ConsentID {
 	return ConsentID(uuid.New())
 }
 
-// ConsentIDFromBytes returns the id for the 16 UUID bytes.
+// ConsentIDFromBytes reads a stored id. It does not check that the consent exists.
 func ConsentIDFromBytes(b [16]byte) ConsentID {
 	return ConsentID(b)
 }
@@ -35,12 +35,12 @@ func (id ConsentID) String() string {
 	return uuid.UUID(id).String()
 }
 
-// Bytes returns the 16-byte UUID form.
+// Bytes is the form the database stores.
 func (id ConsentID) Bytes() [16]byte {
 	return uuid.UUID(id)
 }
 
-// MarshalText encodes the UUID text form.
+// MarshalText writes the id that the revoke route of the token page carries.
 func (id ConsentID) MarshalText() ([]byte, error) {
 	text, err := uuid.UUID(id).MarshalText()
 	if err != nil {
@@ -60,9 +60,14 @@ type Consent struct {
 	RevokedAt time.Time
 }
 
-// Revoked reports whether the user or a reused secret ended the consent.
-func (c Consent) Revoked() bool {
+// IsRevoked reports whether the user or a reused secret ended the consent.
+func (c Consent) IsRevoked() bool {
 	return !c.RevokedAt.IsZero()
+}
+
+// IsGrantedTo reports whether a token request of client may use the consent.
+func (c Consent) IsGrantedTo(client ClientID) bool {
+	return !c.IsRevoked() && c.ClientID == client
 }
 
 // ConsentEntry is an active consent with the name of its client, for the token page.

@@ -12,8 +12,8 @@ import (
 const (
 	grantAuthorizationCode = "authorization_code"
 	grantRefreshToken      = "refresh_token"
-	// maxTokenRequestBody fits a code, a verifier, a redirect URI, and a resource, form-encoded.
-	maxTokenRequestBody = 8 << 10
+	// maxTokenRequestBytes fits a code, a verifier, a redirect URI, and a resource, form-encoded.
+	maxTokenRequestBytes = 8 << 10
 )
 
 // tokenRequest documents the form of POST /oauth/token.
@@ -26,7 +26,7 @@ type tokenRequest struct {
 	RefreshToken string `formData:"refresh_token" description:"refresh_token only."`
 }
 
-// tokenResponse is the RFC 6749 token reply. It holds two clear secrets.
+// tokenResponse is the RFC 6749 token reply. Its access and refresh tokens are clear text.
 type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
@@ -62,7 +62,7 @@ func (s *service) exchangeToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	if !s.oauthServerReady() {
+	if !s.isOAuthServerReady() {
 		writeOAuthError(w, http.StatusServiceUnavailable, errTemporarilyUnavailable, "The OAuth server is not configured.")
 		return
 	}
@@ -71,7 +71,7 @@ func (s *service) exchangeToken(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusBadRequest, errInvalidRequest, "The content type must be application/x-www-form-urlencoded.")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxTokenRequestBody)
+	r.Body = http.MaxBytesReader(w, r.Body, maxTokenRequestBytes)
 	if r.ParseForm() != nil {
 		writeOAuthError(w, http.StatusBadRequest, errInvalidRequest, "The form is not valid.")
 		return

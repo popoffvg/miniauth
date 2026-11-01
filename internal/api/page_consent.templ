@@ -33,7 +33,7 @@ templ consentPage(view consentPageView) {
 	}
 }
 
-templ connectedApps(apps []oauth.ConsentEntry) {
+templ consentTable(consents []oauth.ConsentEntry) {
 	<section class="card" aria-labelledby="apps-title">
 		<div class="card-header">
 			<div>
@@ -41,7 +41,7 @@ templ connectedApps(apps []oauth.ConsentEntry) {
 				<p>Apps you allowed to sign in as you. Each app reaches one resource. Disconnect ends its tokens at once.</p>
 			</div>
 		</div>
-		if len(apps) == 0 {
+		if len(consents) == 0 {
 			@emptyState(iconKey, "No connected apps.", "An app connects when you allow it on the consent page.")
 		} else {
 			<table class="table">
@@ -54,17 +54,17 @@ templ connectedApps(apps []oauth.ConsentEntry) {
 					</tr>
 				</thead>
 				<tbody>
-					for _, app := range apps {
+					for _, consent := range consents {
 						<tr>
-							<td><div class="cell-main">{ app.ClientName.String() }</div></td>
-							<td data-label="Resource"><code>{ app.Consent.Resource.String() }</code></td>
+							<td><div class="cell-main">{ consent.ClientName.String() }</div></td>
+							<td data-label="Resource"><code>{ consent.Consent.Resource.String() }</code></td>
 							<td class="num" data-label="Connected">
-								@timeCell(timeText(app.Consent.CreatedAt))
+								@timeCell(timeText(consent.Consent.CreatedAt))
 							</td>
 							<td class="actions">
-								@rowMenu(app.ClientName.String()) {
-									@confirmPost(appsPath+"/"+app.Consent.ID.String()+"/revoke", "Disconnect app",
-										"Disconnect “"+app.ClientName.String()+"”? Its tokens stop working. It asks again at the next connection.", "Disconnect")
+								@rowMenu(consent.ClientName.String()) {
+									@confirmPost(consentsPath+"/"+consent.Consent.ID.String()+"/revoke", "Disconnect app",
+										"Disconnect “"+consent.ClientName.String()+"”? Its tokens stop working. It asks again at the next connection.", "Disconnect")
 								}
 							</td>
 						</tr>

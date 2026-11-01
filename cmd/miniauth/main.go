@@ -166,6 +166,10 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
+	oauthServer, err := oauth.NewService(oauthRepo, userService)
+	if err != nil {
+		return err
+	}
 
 	options := []api.RouterOption{
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
@@ -176,7 +180,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		withRecovery,
 		api.WithInvites(inviteService),
 		api.WithUserAdmin(useradmin.NewService(userAdminRepo, userService)),
-		api.WithOAuth(oauth.NewService(oauthRepo, userService), grants),
+		api.WithOAuth(oauthServer, grants),
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
 	if cfg.Google.Enabled() {

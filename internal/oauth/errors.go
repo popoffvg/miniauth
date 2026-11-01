@@ -11,7 +11,7 @@ var (
 	ErrRedirectURI = errors.New("oauth: redirect URI is not valid")
 	// ErrChallenge means the PKCE challenge is missing, is not S256, or is malformed.
 	ErrChallenge = errors.New("oauth: PKCE challenge is not valid")
-	// ErrState means the state is longer than MaxStateLength or has a control character.
+	// ErrState means the state is longer than MaxStateBytes bytes or has a control character.
 	ErrState = errors.New("oauth: state is not valid")
 	// ErrInvalidGrant means the code or the refresh token is malformed, unknown, used, expired,
 	// or bound to another client, redirect URI, or verifier. The token endpoint answers invalid_grant.
