@@ -68,6 +68,14 @@ task check     # lint, vet, gosec, tests with coverage
 
 CI runs golangci-lint, go vet, gosec (results in the Security tab), and the tests with a gocov report. CodeRabbit reviews each pull request with the rules in `.coderabbit.yaml`.
 
+### Integration scenarios
+
+The black-box scenarios are Hurl files in `testdata/scenarios/`. `TestScenarios` in `internal/api/e2e_test.go` builds the image, starts it once with PostgreSQL, and runs each file as its own subtest. Each file gets a fresh run id, so its logins and resources are unique and the files run in any order. The image runs with `MINIAUTH_MAIL=log`. Hurl cannot read the container log, so the runner reads the reset link of `recovery.hurl` from the log and passes its token to `recovery_reset.hurl`.
+
+Run one scenario with `go test ./internal/api -run TestScenarios/<name>`, for example `TestScenarios/login_logout`. It needs a Docker daemon.
+
+Google, Telegram, passkey, and TOTP logins stay in the Go tests. They need a fake OIDC provider, a signed Telegram payload, a WebAuthn authenticator, or a fixed clock, and Hurl has none of these. The expiry cases need the clock too. The login backoff also stays in Go: every scenario uses one client IP, so a backoff in one file would refuse the logins of the others.
+
 ### Amp orbs
 
 `.agents/setup` installs the toolchain from `mise.toml`, downloads both Go modules,
@@ -81,7 +89,7 @@ New login shells in this checkout load the toolchain and set
 loopback only. It uses trust authentication and has durability disabled. It MUST
 NOT hold real data. No secrets are required for these tests.
 
-The Docker-based Hurl test needs a Docker daemon. This orb setup does not install
-or start Docker. Without its socket, that test is skipped. The PostgreSQL
+The Docker-based Hurl scenarios need a Docker daemon. This orb setup does not install
+or start Docker. Without its socket, they are skipped. The PostgreSQL
 integration tests use the supervised database and do not need Docker or
 `task test:integration`.
