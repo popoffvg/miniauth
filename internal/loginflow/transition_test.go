@@ -120,24 +120,16 @@ func TestLoginFlowNext(t *testing.T) {
 			}),
 		},
 		{
-			name:  "recovery alone does not complete",
-			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorRecovery, UserID: ada},
-			want: with(base, func(f *LoginFlow) {
-				f.UserID = ada
-				f.Factors = Factors(FactorRecovery)
-				f.Version = 4
-			}),
+			name:    "recovery alone is refused",
+			state:   base,
+			event:   Event{Kind: EventStepPassed, Factor: FactorRecovery, UserID: ada},
+			wantErr: ErrNoTransition,
 		},
 		{
-			name:  "totp alone does not complete",
-			state: base,
-			event: Event{Kind: EventStepPassed, Factor: FactorTOTP, UserID: ada},
-			want: with(base, func(f *LoginFlow) {
-				f.UserID = ada
-				f.Factors = Factors(FactorTOTP)
-				f.Version = 4
-			}),
+			name:    "totp alone is refused",
+			state:   base,
+			event:   Event{Kind: EventStepPassed, Factor: FactorTOTP, UserID: ada},
+			wantErr: ErrNoTransition,
 		},
 		{
 			name:  "google completes",

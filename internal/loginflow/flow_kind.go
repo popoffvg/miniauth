@@ -22,3 +22,8 @@ func ParseFlowKind(raw string) (FlowKind, error) {
 		return "", fmt.Errorf("loginflow: flow kind %q", raw)
 	}
 }
+
+// accepts reports whether a flow of kind k counts factor f. A step-up counts the password only.
+func (k FlowKind) accepts(f Factor) bool {
+	return k != KindStepUp || f == FactorPassword
+}
