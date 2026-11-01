@@ -19,14 +19,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/access"
-	"github.com/popoffvg/miniauth/internal/googlestep"
-	"github.com/popoffvg/miniauth/internal/googlestep/oidctest"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/providers/google"
+	"github.com/popoffvg/miniauth/internal/providers/google/oidctest"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -62,11 +62,11 @@ func TestGoogleLoginEndToEnd(t *testing.T) {
 	accounts := users.NewService(accountRepo)
 	login, err := users.ParseLogin(rawLogin)
 	require.NoError(t, err)
-	password, err := users.NewPassword(rawPassword)
+	userPassword, err := users.NewPassword(rawPassword)
 	require.NoError(t, err)
-	account, err := accounts.Create(ctx, login, password)
+	account, err := accounts.Create(ctx, login, userPassword)
 	require.NoError(t, err)
-	passwords, err := passwordstep.NewService(accountRepo, postgres.NewAttemptRepository(pool))
+	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 
 	provider := oidctest.New(t)
@@ -78,11 +78,11 @@ func TestGoogleLoginEndToEnd(t *testing.T) {
 	app := createResource(t, grants, "app", server.Listener.Addr().String(), "/app")
 	grantResource(t, grants, app, access.UserSubject(account.ID))
 	flowStore := postgres.NewFlowStore(pool)
-	step, err := googlestep.NewStep(googlestep.Config{
-		Issuer:       googlestep.Issuer(provider.Issuer()),
-		ClientID:     googlestep.ParseClientID(oidctest.ClientID),
-		ClientSecret: googlestep.ParseClientSecret(oidctest.ClientSecret),
-		RedirectURL:  googlestep.RedirectURL(base + GoogleCallbackPath),
+	step, err := google.NewStep(google.Config{
+		Issuer:       google.Issuer(provider.Issuer()),
+		ClientID:     google.ParseClientID(oidctest.ClientID),
+		ClientSecret: google.ParseClientSecret(oidctest.ClientSecret),
+		RedirectURL:  google.RedirectURL(base + GoogleCallbackPath),
 	}, accountRepo, flowStore, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = step.Close() })

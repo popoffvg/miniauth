@@ -6,7 +6,7 @@ import (
 
 	"rsc.io/qr"
 
-	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 )
 
 // qrQuietZone is the light border a QR reader needs, in modules.
@@ -23,7 +23,7 @@ type qrImage struct {
 }
 
 // newQRImage draws uri. The image carries the TOTP secret, so the page MUST NOT be cached.
-func newQRImage(uri totpstep.KeyURI) (qrImage, error) {
+func newQRImage(uri totp.KeyURI) (qrImage, error) {
 	code, err := qr.Encode(uri.Reveal(), qr.M)
 	if err != nil {
 		return qrImage{}, fmt.Errorf("api: QR code: %w", err)

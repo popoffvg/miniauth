@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -21,10 +21,10 @@ func NewRecoveryAttemptRepository(db sqlcgen.DBTX) *RecoveryAttemptRepository {
 	return &RecoveryAttemptRepository{q: sqlcgen.New(db)}
 }
 
-var _ passwordstep.AttemptStore = (*RecoveryAttemptRepository)(nil)
+var _ password.AttemptStore = (*RecoveryAttemptRepository)(nil)
 
 // Record inserts one request.
-func (r *RecoveryAttemptRepository) Record(ctx context.Context, attempt passwordstep.Attempt) error {
+func (r *RecoveryAttemptRepository) Record(ctx context.Context, attempt password.Attempt) error {
 	err := r.q.InsertRecoveryAttempt(ctx, sqlcgen.InsertRecoveryAttemptParams{
 		Login:       attempt.Login.String(),
 		Ip:          attempt.IP.Addr(),
@@ -38,23 +38,23 @@ func (r *RecoveryAttemptRepository) Record(ctx context.Context, attempt password
 }
 
 // CountFailures counts the failures of login and of ip at or after since.
-// The table holds only passwordstep.KindRecovery, so kind does not filter.
-func (r *RecoveryAttemptRepository) CountFailures(ctx context.Context, _ passwordstep.AttemptKind, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
+// The table holds only password.KindRecovery, so kind does not filter.
+func (r *RecoveryAttemptRepository) CountFailures(ctx context.Context, _ password.AttemptKind, login users.Login, ip password.ClientIP, since time.Time) (password.RecentFailures, error) {
 	byLogin, err := r.q.CountRecoveryLoginFailures(ctx, sqlcgen.CountRecoveryLoginFailuresParams{
 		Login: login.String(),
 		Since: pgTime(since),
 	})
 	if err != nil {
-		return passwordstep.RecentFailures{}, fmt.Errorf("postgres: count recovery login failures: %w", err)
+		return password.RecentFailures{}, fmt.Errorf("postgres: count recovery login failures: %w", err)
 	}
 	byIP, err := r.q.CountRecoveryIPFailures(ctx, sqlcgen.CountRecoveryIPFailuresParams{
 		Ip:    ip.Addr(),
 		Since: pgTime(since),
 	})
 	if err != nil {
-		return passwordstep.RecentFailures{}, fmt.Errorf("postgres: count recovery IP failures: %w", err)
+		return password.RecentFailures{}, fmt.Errorf("postgres: count recovery IP failures: %w", err)
 	}
-	return passwordstep.RecentFailures{
+	return password.RecentFailures{
 		Login: failureCount(byLogin.Failures, byLogin.LastFailure),
 		IP:    failureCount(byIP.Failures, byIP.LastFailure),
 	}, nil

@@ -9,7 +9,7 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/telegramstep"
+	"github.com/popoffvg/miniauth/internal/providers/telegram"
 )
 
 // TelegramCallbackPath is the data-auth-url path of the widget. The bot domain MUST be the host of MINIAUTH_PUBLIC_URL.
@@ -29,13 +29,13 @@ type telegramCallbackRequest struct {
 
 // telegramWidget is the data of the Telegram Login Widget on a page. The zero value shows no widget.
 type telegramWidget struct {
-	BotName telegramstep.BotName
+	BotName telegram.BotName
 	AuthURL string
 }
 
 // WithTelegram offers the Telegram widget on the login page.
 // links keeps an unknown Telegram account until a password login in the same browser.
-func WithTelegram(step *telegramstep.Step, links *identitylink.Service) RouterOption {
+func WithTelegram(step *telegram.Step, links *identitylink.Service) RouterOption {
 	return func(s *service) {
 		s.telegram = step
 		s.links = links
@@ -82,14 +82,14 @@ func (s *service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
 	}
-	data, err := telegramstep.ParseAuthData(query)
+	data, err := telegram.ParseAuthData(query)
 	if err != nil {
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
 	}
 	outcome, err := s.telegram.Finish(r.Context(), machine, data)
 	switch {
-	case errors.Is(err, telegramstep.ErrBadHash), errors.Is(err, telegramstep.ErrStale), errors.Is(err, telegramstep.ErrReplay):
+	case errors.Is(err, telegram.ErrBadHash), errors.Is(err, telegram.ErrStale), errors.Is(err, telegram.ErrReplay):
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: telegram data refused", "err", err)
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return

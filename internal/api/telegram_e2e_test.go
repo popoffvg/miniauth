@@ -18,13 +18,13 @@ import (
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/providers/password"
+	"github.com/popoffvg/miniauth/internal/providers/telegram"
+	"github.com/popoffvg/miniauth/internal/providers/telegram/telegramtest"
 	"github.com/popoffvg/miniauth/internal/sessions"
-	"github.com/popoffvg/miniauth/internal/telegramstep"
-	"github.com/popoffvg/miniauth/internal/telegramstep/telegramtest"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -45,18 +45,18 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 	accounts := users.NewService(accountRepo)
 	login, err := users.ParseLogin(rawLogin)
 	require.NoError(t, err)
-	password, err := users.NewPassword(rawPassword)
+	userPassword, err := users.NewPassword(rawPassword)
 	require.NoError(t, err)
-	account, err := accounts.Create(ctx, login, password)
+	account, err := accounts.Create(ctx, login, userPassword)
 	require.NoError(t, err)
-	passwords, err := passwordstep.NewService(accountRepo, postgres.NewAttemptRepository(pool))
+	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 
-	botName, err := telegramstep.ParseBotName(telegramtest.BotName)
+	botName, err := telegram.ParseBotName(telegramtest.BotName)
 	require.NoError(t, err)
-	step, err := telegramstep.NewStep(telegramstep.Config{
+	step, err := telegram.NewStep(telegram.Config{
 		BotName:  botName,
-		BotToken: telegramstep.ParseBotToken(telegramtest.BotToken),
+		BotToken: telegram.ParseBotToken(telegramtest.BotToken),
 	}, accountRepo, postgres.NewTelegramProofRepository(pool))
 	require.NoError(t, err)
 
@@ -140,7 +140,7 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 	t.Run("an old auth_date is refused", func(t *testing.T) {
 		browser := newBrowser(t, server)
 		openLogin(t, browser, base, base+"/app")
-		resp := callback(browser, signed(1001, time.Now().Add(-telegramstep.MaxAge-time.Minute)))
+		resp := callback(browser, signed(1001, time.Now().Add(-telegram.MaxAge-time.Minute)))
 		assert.Equal(t, http.StatusBadRequest, resp.status)
 		assert.Contains(t, resp.body, string(msgTelegramFailed))
 		assert.Empty(t, sessionCookies(resp))

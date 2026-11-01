@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 )
 
 func TestRenderPageSetsHeaders(t *testing.T) {
@@ -48,7 +48,7 @@ func TestRenderStepsShowsTheTOTPFormAfterThePassword(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/login", nil)
 	flow := loginflow.LoginFlow{NeedsSecond: true, Factors: loginflow.Factors(loginflow.FactorPassword)}
-	(&service{totp: &totpstep.Service{}}).renderSteps(rec, req, http.StatusOK, flow, "")
+	(&service{totp: &totp.Service{}}).renderSteps(rec, req, http.StatusOK, flow, "")
 	assert.Contains(t, rec.Body.String(), `action="/login/totp"`)
 	assert.Contains(t, rec.Body.String(), `href="/login/recovery-code"`)
 	assert.NotContains(t, rec.Body.String(), `name="password"`)

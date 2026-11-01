@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passkeystep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
+	"github.com/popoffvg/miniauth/internal/providers/passkey"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -26,36 +26,36 @@ func TestPasskeyRepository(t *testing.T) {
 	ada := createAccount(t, users.NewService(accounts), "ada")
 	bea := createAccount(t, users.NewService(accounts), "bea")
 	repo := postgres.NewPasskeyRepository(pool)
-	name, err := passkeystep.ParseName("laptop")
+	name, err := passkey.ParseName("laptop")
 	require.NoError(t, err)
 	created := time.Now().UTC().Truncate(time.Microsecond)
-	passkey := passkeystep.Passkey{
-		ID:             passkeystep.NewID(),
+	passkeyRow := passkey.Passkey{
+		ID:             passkey.NewID(),
 		UserID:         ada.ID,
-		CredentialID:   passkeystep.CredentialID("credential-1"),
-		PublicKey:      passkeystep.PublicKey("cose-key"),
+		CredentialID:   passkey.CredentialID("credential-1"),
+		PublicKey:      passkey.PublicKey("cose-key"),
 		SignCount:      3,
-		Transports:     []passkeystep.Transport{"internal", "hybrid"},
-		AAGUID:         passkeystep.AAGUID{1, 2, 3},
+		Transports:     []passkey.Transport{"internal", "hybrid"},
+		AAGUID:         passkey.AAGUID{1, 2, 3},
 		BackupEligible: true,
 		Name:           name,
 		CreatedAt:      created,
 	}
-	require.NoError(t, repo.Create(ctx, passkey))
+	require.NoError(t, repo.Create(ctx, passkeyRow))
 
 	t.Run("a credential id is stored once", func(t *testing.T) {
-		again := passkey
-		again.ID = passkeystep.NewID()
+		again := passkeyRow
+		again.ID = passkey.NewID()
 		again.UserID = bea.ID
-		require.ErrorIs(t, repo.Create(ctx, again), passkeystep.ErrDuplicate)
+		require.ErrorIs(t, repo.Create(ctx, again), passkey.ErrDuplicate)
 	})
 
 	t.Run("find by credential returns the row", func(t *testing.T) {
-		got, err := repo.FindByCredential(ctx, passkey.CredentialID)
+		got, err := repo.FindByCredential(ctx, passkeyRow.CredentialID)
 		require.NoError(t, err)
-		assert.Equal(t, passkey, got)
-		_, err = repo.FindByCredential(ctx, passkeystep.CredentialID("other"))
-		require.ErrorIs(t, err, passkeystep.ErrUnknownCredential)
+		assert.Equal(t, passkeyRow, got)
+		_, err = repo.FindByCredential(ctx, passkey.CredentialID("other"))
+		require.ErrorIs(t, err, passkey.ErrUnknownCredential)
 	})
 
 	t.Run("one use wins for one counter value", func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestPasskeyRepository(t *testing.T) {
 		var wg sync.WaitGroup
 		for range 4 {
 			wg.Go(func() {
-				wrote, err := repo.RecordUse(ctx, passkey.ID, 3, 4, created)
+				wrote, err := repo.RecordUse(ctx, passkeyRow.ID, 3, 4, created)
 				assert.NoError(t, err)
 				if wrote {
 					wins.Add(1)
@@ -72,14 +72,14 @@ func TestPasskeyRepository(t *testing.T) {
 		}
 		wg.Wait()
 		assert.Equal(t, int32(1), wins.Load())
-		got, err := repo.FindByCredential(ctx, passkey.CredentialID)
+		got, err := repo.FindByCredential(ctx, passkeyRow.CredentialID)
 		require.NoError(t, err)
-		assert.Equal(t, passkeystep.SignCount(4), got.SignCount)
+		assert.Equal(t, passkey.SignCount(4), got.SignCount)
 		assert.Equal(t, created, got.LastUsedAt)
 	})
 
 	t.Run("a passkey of another user is not deleted", func(t *testing.T) {
-		require.ErrorIs(t, repo.Delete(ctx, bea.ID, passkey.ID), passkeystep.ErrNotFound)
+		require.ErrorIs(t, repo.Delete(ctx, bea.ID, passkeyRow.ID), passkey.ErrNotFound)
 		list, err := repo.List(ctx, ada.ID)
 		require.NoError(t, err)
 		require.Len(t, list, 1)
@@ -90,10 +90,10 @@ func TestPasskeyRepository(t *testing.T) {
 
 	t.Run("a disabled user has no credential", func(t *testing.T) {
 		require.NoError(t, accounts.Disable(ctx, ada.ID, time.Now()))
-		_, err := repo.FindByCredential(ctx, passkey.CredentialID)
-		require.ErrorIs(t, err, passkeystep.ErrUnknownCredential)
-		require.NoError(t, repo.Delete(ctx, ada.ID, passkey.ID))
-		require.ErrorIs(t, repo.Delete(ctx, ada.ID, passkey.ID), passkeystep.ErrNotFound)
+		_, err := repo.FindByCredential(ctx, passkeyRow.CredentialID)
+		require.ErrorIs(t, err, passkey.ErrUnknownCredential)
+		require.NoError(t, repo.Delete(ctx, ada.ID, passkeyRow.ID))
+		require.ErrorIs(t, repo.Delete(ctx, ada.ID, passkeyRow.ID), passkey.ErrNotFound)
 	})
 }
 

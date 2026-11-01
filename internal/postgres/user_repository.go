@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -30,8 +30,8 @@ func NewUserRepository(db sqlcgen.DBTX) *UserRepository {
 }
 
 var (
-	_ users.Repository           = (*UserRepository)(nil)
-	_ passwordstep.IdentityStore = (*UserRepository)(nil)
+	_ users.Repository       = (*UserRepository)(nil)
+	_ password.IdentityStore = (*UserRepository)(nil)
 )
 
 // Create inserts the user and the password identity in one statement.

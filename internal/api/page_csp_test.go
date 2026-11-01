@@ -10,12 +10,12 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passkeystep"
-	"github.com/popoffvg/miniauth/internal/telegramstep"
+	"github.com/popoffvg/miniauth/internal/providers/passkey"
+	"github.com/popoffvg/miniauth/internal/providers/telegram"
 )
 
 func TestPageCSPAddsTheSourcesOfEachFeature(t *testing.T) {
-	bot, err := telegramstep.ParseBotName("minibot")
+	bot, err := telegram.ParseBotName("minibot")
 	require.NoError(t, err)
 	widget := telegramWidget{BotName: bot, AuthURL: "https://id.example.test" + TelegramCallbackPath}
 	tests := []struct {
@@ -37,8 +37,8 @@ func TestPageCSPAddsTheSourcesOfEachFeature(t *testing.T) {
 
 func TestLoginPageWithPasskeyAndTelegramAllowsBothScripts(t *testing.T) {
 	s := &service{
-		passkeys:  &passkeystep.Service{},
-		telegram:  &telegramstep.Step{},
+		passkeys:  &passkey.Service{},
+		telegram:  &telegram.Step{},
 		links:     &identitylink.Service{},
 		publicURL: PublicURL{origin: "https://id.example.test"},
 	}

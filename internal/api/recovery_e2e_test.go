@@ -17,10 +17,10 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
@@ -67,11 +67,11 @@ func TestPasswordRecoveryEndToEnd(t *testing.T) {
 	accounts := users.NewService(accountRepo)
 	email, err := users.ParseEmail(rawEmail)
 	require.NoError(t, err)
-	password, err := users.NewPassword(oldPassword)
+	userPassword, err := users.NewPassword(oldPassword)
 	require.NoError(t, err)
-	account, err := accounts.Create(ctx, email.Login(), password)
+	account, err := accounts.Create(ctx, email.Login(), userPassword)
 	require.NoError(t, err)
-	passwords, err := passwordstep.NewService(accountRepo, postgres.NewAttemptRepository(pool))
+	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 
 	server := httptest.NewUnstartedServer(nil)
@@ -228,9 +228,9 @@ func TestPasswordRecoveryEndToEnd(t *testing.T) {
 	})
 
 	t.Run("the backoff answers 429", func(t *testing.T) {
-		clock.Advance(passwordstep.BackoffWindow + time.Second)
+		clock.Advance(password.BackoffWindow + time.Second)
 		target := "flood@example.test"
-		for range passwordstep.FreeFailures {
+		for range password.FreeFailures {
 			require.Equal(t, http.StatusOK, submitRecover(t, browser, base, base, target).status)
 		}
 		resp := submitRecover(t, browser, base, base, target)
@@ -264,9 +264,9 @@ func submitRecover(t *testing.T, browser *http.Client, base, origin, email strin
 	return submitForm(t, browser, base+"/recover", origin, url.Values{"email": {email}})
 }
 
-func submitReset(t *testing.T, browser *http.Client, base, origin, token, password string) reply {
+func submitReset(t *testing.T, browser *http.Client, base, origin, token, userPassword string) reply {
 	t.Helper()
-	return submitForm(t, browser, base+"/recover/reset", origin, url.Values{"token": {token}, "password": {password}})
+	return submitForm(t, browser, base+"/recover/reset", origin, url.Values{"token": {token}, "password": {userPassword}})
 }
 
 func submitForm(t *testing.T, browser *http.Client, target, origin string, form url.Values) reply {

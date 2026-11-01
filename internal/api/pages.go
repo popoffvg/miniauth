@@ -8,9 +8,9 @@ import (
 	"github.com/a-h/templ"
 
 	"github.com/popoffvg/miniauth/internal/invites"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/tokens"
-	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -116,7 +116,7 @@ type pageView struct {
 	// Enrollment is set only on pageTOTPEnroll.
 	Enrollment *enrollmentView
 	// RecoveryCodes is set only on pageRecoveryCodes.
-	RecoveryCodes []totpstep.RecoveryCode
+	RecoveryCodes []totp.RecoveryCode
 }
 
 // pageCSP allows the stylesheet of this origin and nothing else. form-action is not set:

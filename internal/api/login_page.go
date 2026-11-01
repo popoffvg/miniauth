@@ -10,8 +10,8 @@ import (
 	"github.com/popoffvg/sfsm"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
-	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/providers/password"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -66,12 +66,12 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 		s.renderSteps(w, r, status, machine.Get(), message)
 	}
 	login, loginErr := users.ParseLogin(r.PostForm.Get("login"))
-	password, passwordErr := users.NewPassword(r.PostForm.Get("password"))
+	userPassword, passwordErr := users.NewPassword(r.PostForm.Get("password"))
 	if loginErr != nil || passwordErr != nil {
 		retry(http.StatusOK, msgWrongCredentials)
 		return
 	}
-	userID, err := s.passwords.Verify(r.Context(), machine, login, password, ip)
+	userID, err := s.passwords.Verify(r.Context(), machine, login, userPassword, ip)
 	if stepFailed(w, r, err, retry) {
 		return
 	}
@@ -81,24 +81,24 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 // openLoginForm runs the checks of a login form POST and opens the flow in the flow cookie.
 // available is false when the step service is missing.
 // It returns false after it wrote a reply. Else the caller MUST close the machine.
-func (s *service) openLoginForm(w http.ResponseWriter, r *http.Request, available bool) (loginMachine, passwordstep.ClientIP, bool) {
+func (s *service) openLoginForm(w http.ResponseWriter, r *http.Request, available bool) (loginMachine, password.ClientIP, bool) {
 	if !s.sameOrigin(r) {
 		renderDenied(w, r, http.StatusForbidden, msgCrossOrigin)
-		return nil, passwordstep.ClientIP{}, false
+		return nil, password.ClientIP{}, false
 	}
 	if s.flows == nil || !available {
 		renderDenied(w, r, http.StatusServiceUnavailable, msgLoginUnavailable)
-		return nil, passwordstep.ClientIP{}, false
+		return nil, password.ClientIP{}, false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxLoginFormBody)
 	if r.ParseForm() != nil {
 		renderDenied(w, r, http.StatusBadRequest, msgBadForm)
-		return nil, passwordstep.ClientIP{}, false
+		return nil, password.ClientIP{}, false
 	}
 	ip, err := clientIP(r)
 	if err != nil {
 		renderDenied(w, r, http.StatusBadRequest, msgBadForm)
-		return nil, passwordstep.ClientIP{}, false
+		return nil, password.ClientIP{}, false
 	}
 	machine, ok := s.openFlow(w, r)
 	return machine, ip, ok
@@ -128,15 +128,15 @@ func (s *service) openFlow(w http.ResponseWriter, r *http.Request) (loginMachine
 // stepFailed answers the error of a login step and reports whether it wrote a reply.
 // retry shows the form of the step again with a message.
 func stepFailed(w http.ResponseWriter, r *http.Request, err error, retry func(status int, message pageMessage)) bool {
-	var tooSoon *passwordstep.TooSoonError
+	var tooSoon *password.TooSoonError
 	switch {
 	case err == nil:
 		return false
-	case errors.Is(err, passwordstep.ErrWrongCredentials):
+	case errors.Is(err, password.ErrWrongCredentials):
 		retry(http.StatusOK, msgWrongCredentials)
-	case errors.Is(err, totpstep.ErrWrongCode), errors.Is(err, totpstep.ErrInvalidCode):
+	case errors.Is(err, totp.ErrWrongCode), errors.Is(err, totp.ErrInvalidCode):
 		retry(http.StatusOK, msgWrongCode)
-	case errors.Is(err, totpstep.ErrKeyMissing):
+	case errors.Is(err, totp.ErrKeyMissing):
 		renderDenied(w, r, http.StatusServiceUnavailable, msgLoginUnavailable)
 	case errors.As(err, &tooSoon):
 		w.Header().Set("Retry-After", retryAfter(tooSoon.RetryAt))

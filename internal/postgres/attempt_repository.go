@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -22,10 +22,10 @@ func NewAttemptRepository(db sqlcgen.DBTX) *AttemptRepository {
 	return &AttemptRepository{q: sqlcgen.New(db)}
 }
 
-var _ passwordstep.AttemptStore = (*AttemptRepository)(nil)
+var _ password.AttemptStore = (*AttemptRepository)(nil)
 
 // Record inserts one attempt.
-func (r *AttemptRepository) Record(ctx context.Context, attempt passwordstep.Attempt) error {
+func (r *AttemptRepository) Record(ctx context.Context, attempt password.Attempt) error {
 	err := r.q.InsertLoginAttempt(ctx, sqlcgen.InsertLoginAttemptParams{
 		Login:       attempt.Login.String(),
 		Ip:          attempt.IP.Addr(),
@@ -40,23 +40,23 @@ func (r *AttemptRepository) Record(ctx context.Context, attempt passwordstep.Att
 }
 
 // CountFailures counts the failures of login for kind, and of ip for every kind, at or after since.
-func (r *AttemptRepository) CountFailures(ctx context.Context, kind passwordstep.AttemptKind, login users.Login, ip passwordstep.ClientIP, since time.Time) (passwordstep.RecentFailures, error) {
+func (r *AttemptRepository) CountFailures(ctx context.Context, kind password.AttemptKind, login users.Login, ip password.ClientIP, since time.Time) (password.RecentFailures, error) {
 	byLogin, err := r.q.CountLoginFailures(ctx, sqlcgen.CountLoginFailuresParams{
 		Login: login.String(),
 		Kind:  string(kind),
 		Since: pgTime(since),
 	})
 	if err != nil {
-		return passwordstep.RecentFailures{}, fmt.Errorf("postgres: count login failures: %w", err)
+		return password.RecentFailures{}, fmt.Errorf("postgres: count login failures: %w", err)
 	}
 	byIP, err := r.q.CountIPFailures(ctx, sqlcgen.CountIPFailuresParams{
 		Ip:    ip.Addr(),
 		Since: pgTime(since),
 	})
 	if err != nil {
-		return passwordstep.RecentFailures{}, fmt.Errorf("postgres: count IP failures: %w", err)
+		return password.RecentFailures{}, fmt.Errorf("postgres: count IP failures: %w", err)
 	}
-	return passwordstep.RecentFailures{
+	return password.RecentFailures{
 		Login: failureCount(byLogin.Failures, byLogin.LastFailure),
 		IP:    failureCount(byIP.Failures, byIP.LastFailure),
 	}, nil
@@ -70,8 +70,8 @@ func (r *AttemptRepository) Cleanup(ctx context.Context, before time.Time) error
 	return nil
 }
 
-func failureCount(failures int64, last pgtype.Timestamptz) passwordstep.FailureCount {
-	count := passwordstep.FailureCount{Failures: int(failures)}
+func failureCount(failures int64, last pgtype.Timestamptz) password.FailureCount {
+	count := password.FailureCount{Failures: int(failures)}
 	if last.Valid {
 		count.LastFailure = last.Time.UTC()
 	}

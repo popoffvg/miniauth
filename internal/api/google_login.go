@@ -7,9 +7,9 @@ import (
 
 	"github.com/popoffvg/sfsm"
 
-	"github.com/popoffvg/miniauth/internal/googlestep"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/providers/google"
 )
 
 const (
@@ -29,7 +29,7 @@ type googleCallbackRequest struct {
 
 // WithGoogle offers the Google step on the login page while the step is available.
 // links keeps an unknown Google account until a password login in the same browser.
-func WithGoogle(step *googlestep.Step, links *identitylink.Service) RouterOption {
+func WithGoogle(step *google.Step, links *identitylink.Service) RouterOption {
 	return func(s *service) {
 		s.google = step
 		s.links = links
@@ -73,7 +73,7 @@ func (s *service) googleLogin(w http.ResponseWriter, r *http.Request) {
 		clearFlowCookie(w)
 		renderDenied(w, r, http.StatusBadRequest, msgFlowExpired)
 		return
-	case errors.Is(err, googlestep.ErrUnavailable):
+	case errors.Is(err, google.ErrUnavailable):
 		renderDenied(w, r, http.StatusServiceUnavailable, msgGoogleUnavailable)
 		return
 	case err != nil:
@@ -117,12 +117,12 @@ func (s *service) googleCallback(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = machine.Close() }()
 
 	query := r.URL.Query()
-	outcome, err := s.google.Finish(r.Context(), machine, id, verifier, googlestep.State(query.Get("state")), googlestep.Code(query.Get("code")))
+	outcome, err := s.google.Finish(r.Context(), machine, id, verifier, google.State(query.Get("state")), google.Code(query.Get("code")))
 	switch {
-	case errors.Is(err, googlestep.ErrBadCallback), errors.Is(err, googlestep.ErrBadToken):
+	case errors.Is(err, google.ErrBadCallback), errors.Is(err, google.ErrBadToken):
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgGoogleFailed)
 		return
-	case errors.Is(err, googlestep.ErrUnavailable):
+	case errors.Is(err, google.ErrUnavailable):
 		renderDenied(w, r, http.StatusServiceUnavailable, msgGoogleUnavailable)
 		return
 	case errors.Is(err, sfsm.ErrStaleState), errors.Is(err, loginflow.ErrNoTransition):
@@ -142,10 +142,10 @@ func (s *service) googleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // googleVerifierFromRequest reads the verifier cookie. The error MUST NOT contain the cookie value.
-func googleVerifierFromRequest(r *http.Request) (googlestep.Verifier, error) {
+func googleVerifierFromRequest(r *http.Request) (google.Verifier, error) {
 	cookie, err := r.Cookie(googleVerifierCookieName)
 	if err != nil {
-		return googlestep.Verifier{}, googlestep.ErrBadCallback
+		return google.Verifier{}, google.ErrBadCallback
 	}
-	return googlestep.ParseVerifier(cookie.Value)
+	return google.ParseVerifier(cookie.Value)
 }

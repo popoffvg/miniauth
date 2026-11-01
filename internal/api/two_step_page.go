@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/totpstep"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -25,7 +25,7 @@ const (
 
 // enrollmentView is the secret of a TOTP enrollment. The handler MUST set Cache-Control: no-store.
 type enrollmentView struct {
-	Secret totpstep.Secret
+	Secret totp.Secret
 	QR     qrImage
 }
 
@@ -38,7 +38,7 @@ type twoStepView struct {
 
 // WithTOTP serves the TOTP step, the recovery code step, and TOTP enrollment.
 // The password step MUST report the users of totp as needing a second factor.
-func WithTOTP(totp *totpstep.Service) RouterOption {
+func WithTOTP(totp *totp.Service) RouterOption {
 	return func(s *service) {
 		s.totp = totp
 	}
@@ -69,13 +69,13 @@ func (s *service) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	code, err := totpstep.ParseCode(r.PostForm.Get("code"))
-	var codes []totpstep.RecoveryCode
+	code, err := totp.ParseCode(r.PostForm.Get("code"))
+	var codes []totp.RecoveryCode
 	if err == nil {
 		codes, err = s.totp.Confirm(r.Context(), user.ID, code)
 	}
 	switch {
-	case errors.Is(err, totpstep.ErrInvalidCode), errors.Is(err, totpstep.ErrWrongCode):
+	case errors.Is(err, totp.ErrInvalidCode), errors.Is(err, totp.ErrWrongCode):
 		enrollment, pendingErr := s.totp.Pending(r.Context(), user)
 		if pendingErr != nil {
 			s.twoStepFailed(w, r, pendingErr)
@@ -145,7 +145,7 @@ func (s *service) twoStepView(r *http.Request, userID users.ID) (twoStepView, er
 	return twoStepView{Shown: true, On: on, CanEnroll: !on && s.totp.EnrollmentOn()}, nil
 }
 
-func (s *service) renderEnrollment(w http.ResponseWriter, r *http.Request, user users.User, enrollment totpstep.Enrollment, message pageMessage) {
+func (s *service) renderEnrollment(w http.ResponseWriter, r *http.Request, user users.User, enrollment totp.Enrollment, message pageMessage) {
 	image, err := newQRImage(enrollment.URI)
 	if err != nil {
 		s.twoStepFailed(w, r, err)
@@ -159,11 +159,11 @@ func (s *service) renderEnrollment(w http.ResponseWriter, r *http.Request, user 
 // twoStepFailed answers an error of an enrollment step.
 func (s *service) twoStepFailed(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, totpstep.ErrEnrolled):
+	case errors.Is(err, totp.ErrEnrolled):
 		http.Redirect(w, r, sessionsPagePath, http.StatusSeeOther)
-	case errors.Is(err, totpstep.ErrNoEnrollment):
+	case errors.Is(err, totp.ErrNoEnrollment):
 		renderDenied(w, r, http.StatusBadRequest, msgTwoStepExpired)
-	case errors.Is(err, totpstep.ErrKeyMissing):
+	case errors.Is(err, totp.ErrKeyMissing):
 		renderDenied(w, r, http.StatusServiceUnavailable, msgTwoStepUnavailable)
 	default:
 		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: two-step login", "err", err)

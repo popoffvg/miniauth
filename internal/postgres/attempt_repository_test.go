@@ -10,9 +10,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/users"
 )
 
@@ -39,9 +39,9 @@ func TestAttemptRepositoryCountsFailures(t *testing.T) {
 	home := mustClientIP(t, "2001:db8:0:1::1")
 	sameNet := mustClientIP(t, "2001:db8:0:1::99")
 	other := mustClientIP(t, "192.0.2.1")
-	record := func(login users.Login, ip passwordstep.ClientIP, ok bool, at time.Time) {
+	record := func(login users.Login, ip password.ClientIP, ok bool, at time.Time) {
 		t.Helper()
-		err := repo.Record(ctx, passwordstep.Attempt{Kind: passwordstep.KindPassword, Login: login, IP: ip, Succeeded: ok, AttemptedAt: at})
+		err := repo.Record(ctx, password.Attempt{Kind: password.KindPassword, Login: login, IP: ip, Succeeded: ok, AttemptedAt: at})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,26 +52,26 @@ func TestAttemptRepositoryCountsFailures(t *testing.T) {
 	record(ada, home, false, start.Add(3*time.Minute))
 	record(bea, sameNet, false, start.Add(4*time.Minute))
 
-	got, err := repo.CountFailures(ctx, passwordstep.KindPassword, mustLogin(t, " ADA "), home, start)
+	got, err := repo.CountFailures(ctx, password.KindPassword, mustLogin(t, " ADA "), home, start)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := passwordstep.RecentFailures{
+	want := password.RecentFailures{
 		// The success at +2m resets the login count.
-		Login: passwordstep.FailureCount{Failures: 1, LastFailure: start.Add(3 * time.Minute)},
+		Login: password.FailureCount{Failures: 1, LastFailure: start.Add(3 * time.Minute)},
 		// The success does not reset the IP count. bea counts: one /64 is one client.
-		IP: passwordstep.FailureCount{Failures: 3, LastFailure: start.Add(4 * time.Minute)},
+		IP: password.FailureCount{Failures: 3, LastFailure: start.Add(4 * time.Minute)},
 	}
 	if got != want {
 		t.Fatalf("CountFailures() = %+v, want %+v", got, want)
 	}
 
-	got, err = repo.CountFailures(ctx, passwordstep.KindPassword, bea, other, start.Add(90*time.Second))
+	got, err = repo.CountFailures(ctx, password.KindPassword, bea, other, start.Add(90*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = passwordstep.RecentFailures{
-		Login: passwordstep.FailureCount{Failures: 1, LastFailure: start.Add(4 * time.Minute)},
+	want = password.RecentFailures{
+		Login: password.FailureCount{Failures: 1, LastFailure: start.Add(4 * time.Minute)},
 	}
 	if got != want {
 		t.Fatalf("CountFailures() since +90s = %+v, want %+v", got, want)
@@ -80,12 +80,12 @@ func TestAttemptRepositoryCountsFailures(t *testing.T) {
 	if err = repo.Cleanup(ctx, start.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	got, err = repo.CountFailures(ctx, passwordstep.KindPassword, ada, other, start)
+	got, err = repo.CountFailures(ctx, password.KindPassword, ada, other, start)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = passwordstep.RecentFailures{
-		Login: passwordstep.FailureCount{Failures: 1, LastFailure: start.Add(3 * time.Minute)},
+	want = password.RecentFailures{
+		Login: password.FailureCount{Failures: 1, LastFailure: start.Add(3 * time.Minute)},
 	}
 	if got != want {
 		t.Fatalf("CountFailures() after cleanup = %+v, want %+v", got, want)
@@ -98,29 +98,29 @@ func TestAttemptRepositoryPasswordSuccessKeepsTheSecondFactorCount(t *testing.T)
 	start := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
 	ada := mustLogin(t, "ada")
 	ip := mustClientIP(t, "192.0.2.7")
-	record := func(kind passwordstep.AttemptKind, ok bool, at time.Time) {
+	record := func(kind password.AttemptKind, ok bool, at time.Time) {
 		t.Helper()
-		err := repo.Record(ctx, passwordstep.Attempt{Kind: kind, Login: ada, IP: ip, Succeeded: ok, AttemptedAt: at})
+		err := repo.Record(ctx, password.Attempt{Kind: kind, Login: ada, IP: ip, Succeeded: ok, AttemptedAt: at})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	record(passwordstep.KindSecondFactor, false, start)
-	record(passwordstep.KindPassword, true, start.Add(time.Minute))
-	record(passwordstep.KindSecondFactor, false, start.Add(2*time.Minute))
+	record(password.KindSecondFactor, false, start)
+	record(password.KindPassword, true, start.Add(time.Minute))
+	record(password.KindSecondFactor, false, start.Add(2*time.Minute))
 
-	got, err := repo.CountFailures(ctx, passwordstep.KindSecondFactor, ada, ip, start)
+	got, err := repo.CountFailures(ctx, password.KindSecondFactor, ada, ip, start)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := passwordstep.RecentFailures{
-		Login: passwordstep.FailureCount{Failures: 2, LastFailure: start.Add(2 * time.Minute)},
-		IP:    passwordstep.FailureCount{Failures: 2, LastFailure: start.Add(2 * time.Minute)},
+	want := password.RecentFailures{
+		Login: password.FailureCount{Failures: 2, LastFailure: start.Add(2 * time.Minute)},
+		IP:    password.FailureCount{Failures: 2, LastFailure: start.Add(2 * time.Minute)},
 	}
 	if got != want {
 		t.Fatalf("CountFailures(second factor) = %+v, want %+v", got, want)
 	}
-	got, err = repo.CountFailures(ctx, passwordstep.KindPassword, ada, ip, start)
+	got, err = repo.CountFailures(ctx, password.KindPassword, ada, ip, start)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestPasswordStepOnLoginFlow(t *testing.T) {
 	}
 	store := postgres.NewFlowStore(pool)
 	flows := loginflow.NewLoginFlows(store)
-	step, err := passwordstep.NewService(postgres.NewUserRepository(pool), postgres.NewAttemptRepository(pool))
+	step, err := password.NewService(postgres.NewUserRepository(pool), postgres.NewAttemptRepository(pool))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestPasswordStepOnLoginFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	open := func(t *testing.T) (loginflow.FlowID, passwordstep.Flow) {
+	open := func(t *testing.T) (loginflow.FlowID, password.Flow) {
 		t.Helper()
 		id, secret, err := flows.Start(ctx, returnURL)
 		if err != nil {
@@ -183,10 +183,10 @@ func TestPasswordStepOnLoginFlow(t *testing.T) {
 	t.Run("wrong password and unknown login keep the flow", func(t *testing.T) {
 		id, flow := open(t)
 		ip := mustClientIP(t, "192.0.2.11")
-		if _, err := step.Verify(ctx, flow, mustLogin(t, "ada"), wrong, ip); !errors.Is(err, passwordstep.ErrWrongCredentials) {
+		if _, err := step.Verify(ctx, flow, mustLogin(t, "ada"), wrong, ip); !errors.Is(err, password.ErrWrongCredentials) {
 			t.Fatalf("wrong password error = %v", err)
 		}
-		if _, err := step.Verify(ctx, flow, mustLogin(t, "nobody"), right, ip); !errors.Is(err, passwordstep.ErrWrongCredentials) {
+		if _, err := step.Verify(ctx, flow, mustLogin(t, "nobody"), right, ip); !errors.Is(err, password.ErrWrongCredentials) {
 			t.Fatalf("unknown login error = %v", err)
 		}
 		stored, err := store.Load(ctx, id)
@@ -201,14 +201,14 @@ func TestPasswordStepOnLoginFlow(t *testing.T) {
 	t.Run("five failures from one IP start the backoff", func(t *testing.T) {
 		_, flow := open(t)
 		ip := mustClientIP(t, "198.51.100.7")
-		for i := range passwordstep.FreeFailures {
+		for i := range password.FreeFailures {
 			guess := mustLogin(t, fmt.Sprintf("guess%d", i))
-			if _, err := step.Verify(ctx, flow, guess, wrong, ip); !errors.Is(err, passwordstep.ErrWrongCredentials) {
+			if _, err := step.Verify(ctx, flow, guess, wrong, ip); !errors.Is(err, password.ErrWrongCredentials) {
 				t.Fatalf("failure error = %v", err)
 			}
 		}
 		_, err := step.Verify(ctx, flow, mustLogin(t, "ada"), right, ip)
-		if !errors.Is(err, passwordstep.ErrTooSoon) {
+		if !errors.Is(err, password.ErrTooSoon) {
 			t.Fatalf("sixth try error = %v, want ErrTooSoon", err)
 		}
 		_, err = step.Verify(ctx, flow, mustLogin(t, "ada"), right, mustClientIP(t, "203.0.113.1"))
@@ -227,9 +227,9 @@ func mustLogin(t *testing.T, raw string) users.Login {
 	return login
 }
 
-func mustClientIP(t *testing.T, raw string) passwordstep.ClientIP {
+func mustClientIP(t *testing.T, raw string) password.ClientIP {
 	t.Helper()
-	ip, err := passwordstep.NewClientIP(netip.MustParseAddr(raw))
+	ip, err := password.NewClientIP(netip.MustParseAddr(raw))
 	if err != nil {
 		t.Fatal(err)
 	}

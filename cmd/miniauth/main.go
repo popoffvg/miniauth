@@ -17,19 +17,19 @@ import (
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/api"
 	"github.com/popoffvg/miniauth/internal/config"
-	"github.com/popoffvg/miniauth/internal/googlestep"
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passkeystep"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
+	"github.com/popoffvg/miniauth/internal/providers/google"
+	"github.com/popoffvg/miniauth/internal/providers/passkey"
+	"github.com/popoffvg/miniauth/internal/providers/password"
+	"github.com/popoffvg/miniauth/internal/providers/telegram"
+	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/sessions"
-	"github.com/popoffvg/miniauth/internal/telegramstep"
 	"github.com/popoffvg/miniauth/internal/telemetry"
 	"github.com/popoffvg/miniauth/internal/tokens"
-	"github.com/popoffvg/miniauth/internal/totpstep"
 	"github.com/popoffvg/miniauth/internal/useradmin"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -129,11 +129,11 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	accounts := postgres.NewUserRepository(pool)
 	flowStore := postgres.NewFlowStore(pool)
 	attempts := postgres.NewAttemptRepository(pool)
-	totp, err := totpstep.NewService(postgres.NewTOTPRepository(pool), attempts, cfg.TOTPKey)
+	totpService, err := totp.NewService(postgres.NewTOTPRepository(pool), attempts, cfg.TOTPKey)
 	if err != nil {
 		return err
 	}
-	passwords, err := passwordstep.NewService(accounts, attempts, passwordstep.WithSecondFactors(totp))
+	passwords, err := password.NewService(accounts, attempts, password.WithSecondFactors(totpService))
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	options := []api.RouterOption{
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
 		api.WithLogin(loginflow.NewLoginFlows(flowStore), passwords),
-		api.WithTOTP(totp),
+		api.WithTOTP(totpService),
 		api.WithURLGrants(grants),
 		api.WithAccessAdmin(grants),
 		withRecovery,
@@ -174,23 +174,23 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
 	if cfg.Google.Enabled() {
-		google, googleErr := startGoogle(ctx, logger, cfg, accounts, flowStore, totp)
+		googleStep, googleErr := startGoogle(ctx, logger, cfg, accounts, flowStore, totpService)
 		if googleErr != nil {
 			return googleErr
 		}
-		defer func() { _ = google.Close() }()
-		options = append(options, api.WithGoogle(google, links))
+		defer func() { _ = googleStep.Close() }()
+		options = append(options, api.WithGoogle(googleStep, links))
 	}
 	if cfg.Telegram.Enabled() {
-		telegram, telegramErr := telegramstep.NewStep(
-			telegramstep.Config{BotName: cfg.Telegram.Name, BotToken: cfg.Telegram.Token, SecondFactors: totp},
+		telegramStep, telegramErr := telegram.NewStep(
+			telegram.Config{BotName: cfg.Telegram.Name, BotToken: cfg.Telegram.Token, SecondFactors: totpService},
 			accounts,
 			postgres.NewTelegramProofRepository(pool),
 		)
 		if telegramErr != nil {
 			return telegramErr
 		}
-		options = append(options, api.WithTelegram(telegram, links))
+		options = append(options, api.WithTelegram(telegramStep, links))
 	}
 	if passkeys, ok := passkeyService(cfg, postgres.NewPasskeyRepository(pool), flowStore, logger); ok {
 		options = append(options, api.WithPasskeys(passkeys))
@@ -264,35 +264,35 @@ func stopServing(ctx context.Context, machine *lifecycle.Machine, server *http.S
 
 // startGoogle builds the Google step and runs its discovery in the background.
 // The step is offered only after the first discovery succeeds. Close stops the discovery.
-func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, identities googlestep.IdentityStore, challenges loginflow.ChallengeStore, secondFactors loginflow.SecondFactors) (*googlestep.Step, error) {
-	step, err := googlestep.NewStep(googlestep.Config{
-		Issuer:        googlestep.GoogleIssuer,
+func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, identities google.IdentityStore, challenges loginflow.ChallengeStore, secondFactors loginflow.SecondFactors) (*google.Step, error) {
+	step, err := google.NewStep(google.Config{
+		Issuer:        google.GoogleIssuer,
 		ClientID:      cfg.Google.ID,
 		ClientSecret:  cfg.Google.Secret,
-		RedirectURL:   googlestep.RedirectURL(cfg.PublicURL.Origin() + api.GoogleCallbackPath),
+		RedirectURL:   google.RedirectURL(cfg.PublicURL.Origin() + api.GoogleCallbackPath),
 		SecondFactors: secondFactors,
 	}, identities, challenges, logger)
 	if err != nil {
 		return nil, err
 	}
-	go step.Watch(ctx, googlestep.DiscoveryInterval)
+	go step.Watch(ctx, google.DiscoveryInterval)
 	return step, nil
 }
 
 // passkeyService is false when the public URL gives no relying party id, such as an IP address.
 // The passkey routes then answer 503 and the other routes still work.
-func passkeyService(cfg config.Config, passkeys passkeystep.Store, challenges loginflow.ChallengeStore, logger *slog.Logger) (*passkeystep.Service, bool) {
+func passkeyService(cfg config.Config, passkeys passkey.Store, challenges loginflow.ChallengeStore, logger *slog.Logger) (*passkey.Service, bool) {
 	origin, err := url.Parse(cfg.PublicURL.Origin())
 	if err != nil {
 		logger.Warn("miniauth: passkeys are off", "err", err)
 		return nil, false
 	}
-	party, err := passkeystep.NewRelyingParty(cfg.Cookie, origin)
+	party, err := passkey.NewRelyingParty(cfg.Cookie, origin)
 	if err != nil {
 		logger.Warn("miniauth: passkeys are off", "err", err)
 		return nil, false
 	}
-	service, err := passkeystep.NewService(party, passkeys, challenges)
+	service, err := passkey.NewService(party, passkeys, challenges)
 	if err != nil {
 		logger.Warn("miniauth: passkeys are off", "err", err)
 		return nil, false

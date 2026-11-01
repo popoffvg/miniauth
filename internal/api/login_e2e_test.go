@@ -17,10 +17,10 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/loginflow"
-	"github.com/popoffvg/miniauth/internal/passwordstep"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/postgres/postgrestest"
 	"github.com/popoffvg/miniauth/internal/postgres/sqlcgen"
+	"github.com/popoffvg/miniauth/internal/providers/password"
 	"github.com/popoffvg/miniauth/internal/sessions"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -42,11 +42,11 @@ func TestLoginPageEndToEnd(t *testing.T) {
 	accounts := users.NewService(accountRepo)
 	login, err := users.ParseLogin(rawLogin)
 	require.NoError(t, err)
-	password, err := users.NewPassword(rawPassword)
+	userPassword, err := users.NewPassword(rawPassword)
 	require.NoError(t, err)
-	account, err := accounts.Create(ctx, login, password)
+	account, err := accounts.Create(ctx, login, userPassword)
 	require.NoError(t, err)
-	passwords, err := passwordstep.NewService(accountRepo, postgres.NewAttemptRepository(pool))
+	passwords, err := password.NewService(accountRepo, postgres.NewAttemptRepository(pool))
 	require.NoError(t, err)
 
 	server := httptest.NewUnstartedServer(nil)
@@ -162,7 +162,7 @@ func TestLoginPageEndToEnd(t *testing.T) {
 	t.Run("the backoff answers 429", func(t *testing.T) {
 		openLogin(t, browser, base, base+"/app")
 		// The IP count already has one failure from the wrong password above.
-		for range passwordstep.FreeFailures - 1 {
+		for range password.FreeFailures - 1 {
 			resp := submitLogin(t, browser, base, base, rawLogin, rawPassword+"x")
 			require.Equal(t, http.StatusOK, resp.status)
 		}
@@ -205,9 +205,9 @@ func openLogin(t *testing.T, browser *http.Client, base, returnTo string) reply 
 	return resp
 }
 
-func submitLogin(t *testing.T, browser *http.Client, base, origin, login, password string) reply {
+func submitLogin(t *testing.T, browser *http.Client, base, origin, login, userPassword string) reply {
 	t.Helper()
-	req := loginRequest(t, base, login, password)
+	req := loginRequest(t, base, login, userPassword)
 	if origin != "" {
 		req.Header.Set("Origin", origin)
 	}
@@ -215,9 +215,9 @@ func submitLogin(t *testing.T, browser *http.Client, base, origin, login, passwo
 }
 
 // submitLoginWithCookie sends flowCookie instead of the cookie in the jar.
-func submitLoginWithCookie(t *testing.T, browser *http.Client, base string, flowCookie *http.Cookie, login, password string) reply {
+func submitLoginWithCookie(t *testing.T, browser *http.Client, base string, flowCookie *http.Cookie, login, userPassword string) reply {
 	t.Helper()
-	req := loginRequest(t, base, login, password)
+	req := loginRequest(t, base, login, userPassword)
 	req.Header.Set("Origin", base)
 	req.AddCookie(&http.Cookie{Name: flowCookie.Name, Value: flowCookie.Value})
 	plain := *browser
@@ -225,9 +225,9 @@ func submitLoginWithCookie(t *testing.T, browser *http.Client, base string, flow
 	return do(t, &plain, req)
 }
 
-func loginRequest(t *testing.T, base, login, password string) *http.Request {
+func loginRequest(t *testing.T, base, login, userPassword string) *http.Request {
 	t.Helper()
-	form := url.Values{"login": {login}, "password": {password}}
+	form := url.Values{"login": {login}, "password": {userPassword}}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, base+"/login", strings.NewReader(form.Encode()))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
