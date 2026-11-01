@@ -38,8 +38,10 @@ func TestApplyCountsEachTransition(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	state := EnrollmentState{Stage: StagePending, Version: 3, CreatedAt: created}
 
-	again, err := state.apply(EnrollmentEvent{Kind: EventBegin, At: created.Add(time.Minute)})
+	enrollment := NewEnrollmentID()
+	again, err := state.apply(EnrollmentEvent{Kind: EventBegin, At: created.Add(time.Minute), Enrollment: enrollment})
 	require.NoError(t, err)
+	assert.Equal(t, enrollment, again.Enrollment, "begin names the new enrollment")
 	assert.Equal(t, EnrollmentVersion(4), again.Version, "a new secret is a write")
 	assert.Equal(t, created.Add(time.Minute), again.CreatedAt, "begin names the new enrollment")
 

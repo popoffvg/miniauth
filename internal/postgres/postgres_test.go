@@ -78,8 +78,8 @@ func TestMigrateAppliesALowerNumberThatArrivesLater(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	const late = "00017_totp.sql"
-	// 00021 alters the table of 00017, so it arrives with it.
-	arriveLate := map[string]bool{late: true, "00021_totp_version.sql": true}
+	// 00021 and 00022 alter the table of 00017, so they arrive with it.
+	arriveLate := map[string]bool{late: true, "00021_totp_version.sql": true, "00022_totp_enrollment_id.sql": true}
 	early := fstest.MapFS{}
 	names, err := fs.Glob(migrations.FS, "*.sql")
 	require.NoError(t, err)

@@ -49,6 +49,7 @@ func (r *TOTPRepository) Find(ctx context.Context, userID users.ID) (totp.Creden
 		CreatedAt:   row.CreatedAt.Time.UTC(),
 		ConfirmedAt: optionalTime(row.ConfirmedAt),
 		Version:     totp.EnrollmentVersion(row.Version),
+		Enrollment:  totp.EnrollmentIDFromBytes(row.EnrollmentID.Bytes),
 	}, nil
 }
 
@@ -67,19 +68,22 @@ func (r *TOTPRepository) Write(ctx context.Context, userID users.ID, prev, next 
 			SealedSecret: next.Cause.Sealed,
 			CreatedAt:    pgTime(next.CreatedAt),
 			Version:      int64(next.Version),
+			EnrollmentID: pgUUIDBytes(next.Enrollment.Bytes()),
 		})
 	case next.Stage == totp.StagePending:
 		n, err = r.q.ReplacePendingTOTP(ctx, sqlcgen.ReplacePendingTOTPParams{
-			SealedSecret: next.Cause.Sealed,
-			CreatedAt:    pgTime(next.CreatedAt),
-			NextVersion:  int64(next.Version),
-			UserID:       id,
-			PrevVersion:  int64(prev.Version),
+			SealedSecret:     next.Cause.Sealed,
+			CreatedAt:        pgTime(next.CreatedAt),
+			NextVersion:      int64(next.Version),
+			NextEnrollmentID: pgUUIDBytes(next.Enrollment.Bytes()),
+			UserID:           id,
+			PrevEnrollmentID: pgUUIDBytes(prev.Enrollment.Bytes()),
+			PrevVersion:      int64(prev.Version),
 		})
 	case next.Stage == totp.StageConfirmed:
 		n, err = r.confirm(ctx, id, prev, next)
 	default:
-		n, err = r.delete(ctx, id, prev.Version)
+		n, err = r.delete(ctx, id, prev.Enrollment, prev.Version)
 	}
 	if err != nil {
 		return fmt.Errorf("postgres: write TOTP %s: %w", next.Stage, err)
@@ -104,12 +108,12 @@ func (r *TOTPRepository) confirm(ctx context.Context, id pgtype.UUID, prev, next
 		q := r.q.WithTx(tx)
 		var err error
 		n, err = q.ConfirmTOTP(ctx, sqlcgen.ConfirmTOTPParams{
-			ConfirmedAt: pgTime(next.Cause.At),
-			LastStep:    int64(next.Cause.Step),
-			NextVersion: int64(next.Version),
-			UserID:      id,
-			CreatedAt:   pgTime(prev.CreatedAt),
-			PrevVersion: int64(prev.Version),
+			ConfirmedAt:  pgTime(next.Cause.At),
+			LastStep:     int64(next.Cause.Step),
+			NextVersion:  int64(next.Version),
+			UserID:       id,
+			EnrollmentID: pgUUIDBytes(prev.Enrollment.Bytes()),
+			PrevVersion:  int64(prev.Version),
 		})
 		if err != nil || n == 0 {
 			return err
@@ -128,9 +132,9 @@ func (r *TOTPRepository) confirm(ctx context.Context, id pgtype.UUID, prev, next
 	return n, nil
 }
 
-// UseStep stores step when it is later than the stored step.
-func (r *TOTPRepository) UseStep(ctx context.Context, userID users.ID, step totp.TimeStep) (bool, error) {
-	n, err := r.q.UseTOTPStep(ctx, sqlcgen.UseTOTPStepParams{Step: int64(step), UserID: pgUUIDBytes(userID.Bytes())})
+// UseStep stores step when the row is still enrollment and step is later than the stored step.
+func (r *TOTPRepository) UseStep(ctx context.Context, userID users.ID, enrollment totp.EnrollmentID, step totp.TimeStep) (bool, error) {
+	n, err := r.q.UseTOTPStep(ctx, sqlcgen.UseTOTPStepParams{Step: int64(step), UserID: pgUUIDBytes(userID.Bytes()), EnrollmentID: pgUUIDBytes(enrollment.Bytes())})
 	if err != nil {
 		return false, fmt.Errorf("postgres: use TOTP step: %w", err)
 	}
@@ -150,10 +154,10 @@ func (r *TOTPRepository) UseRecoveryCode(ctx context.Context, userID users.ID, h
 	return n == 1, nil
 }
 
-// delete removes the credential at version and the recovery codes in one transaction.
+// delete removes the credential of enrollment at version and the recovery codes in one transaction.
 // The credential goes first: its row lock makes a confirm that holds the row finish first.
 // The confirm moves the version, so this delete then changes zero rows and the codes stay with their credential.
-func (r *TOTPRepository) delete(ctx context.Context, id pgtype.UUID, version totp.EnrollmentVersion) (int64, error) {
+func (r *TOTPRepository) delete(ctx context.Context, id pgtype.UUID, enrollment totp.EnrollmentID, version totp.EnrollmentVersion) (int64, error) {
 	if r.begin == nil {
 		return 0, errors.New("postgres: TOTP repository cannot begin a transaction")
 	}
@@ -161,7 +165,7 @@ func (r *TOTPRepository) delete(ctx context.Context, id pgtype.UUID, version tot
 	err := pgx.BeginFunc(ctx, r.begin, func(tx pgx.Tx) error {
 		q := r.q.WithTx(tx)
 		var err error
-		n, err = q.DeleteTOTP(ctx, sqlcgen.DeleteTOTPParams{UserID: id, Version: int64(version)})
+		n, err = q.DeleteTOTP(ctx, sqlcgen.DeleteTOTPParams{UserID: id, EnrollmentID: pgUUIDBytes(enrollment.Bytes()), Version: int64(version)})
 		if err != nil || n == 0 {
 			return err
 		}

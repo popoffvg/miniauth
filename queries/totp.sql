@@ -1,30 +1,30 @@
 -- name: InsertPendingTOTP :execrows
 -- Zero rows means another request stored a row first.
-INSERT INTO totp_credentials (user_id, sealed_secret, created_at, version)
-VALUES (sqlc.arg(user_id), sqlc.arg(sealed_secret), sqlc.arg(created_at), sqlc.arg(version))
+INSERT INTO totp_credentials (user_id, sealed_secret, created_at, version, enrollment_id)
+VALUES (sqlc.arg(user_id), sqlc.arg(sealed_secret), sqlc.arg(created_at), sqlc.arg(version), sqlc.arg(enrollment_id))
 ON CONFLICT (user_id) DO NOTHING;
 
 -- name: ReplacePendingTOTP :execrows
 -- A confirmed row is not replaced.
 UPDATE totp_credentials
-SET sealed_secret = sqlc.arg(sealed_secret), created_at = sqlc.arg(created_at), last_step = 0, version = sqlc.arg(next_version)
+SET sealed_secret = sqlc.arg(sealed_secret), created_at = sqlc.arg(created_at), last_step = 0, version = sqlc.arg(next_version),
+    enrollment_id = sqlc.arg(next_enrollment_id)
 WHERE user_id = sqlc.arg(user_id)
     AND confirmed_at IS NULL
+    AND enrollment_id = sqlc.arg(prev_enrollment_id)
     AND version = sqlc.arg(prev_version);
 
 -- name: GetTOTPCredential :one
-SELECT user_id, sealed_secret, last_step, created_at, confirmed_at, version
+SELECT user_id, sealed_secret, last_step, created_at, confirmed_at, version, enrollment_id
 FROM totp_credentials
 WHERE user_id = $1;
 
 -- name: ConfirmTOTP :execrows
--- created_at names the enrollment. A deleted and new row starts at version 1 again,
--- so the version alone does not keep an older page from confirming a newer enrollment.
 UPDATE totp_credentials
 SET confirmed_at = sqlc.arg(confirmed_at), last_step = sqlc.arg(last_step), version = sqlc.arg(next_version)
 WHERE user_id = sqlc.arg(user_id)
     AND confirmed_at IS NULL
-    AND created_at = sqlc.arg(created_at)
+    AND enrollment_id = sqlc.arg(enrollment_id)
     AND version = sqlc.arg(prev_version);
 
 -- name: UseTOTPStep :execrows
@@ -32,12 +32,14 @@ WHERE user_id = sqlc.arg(user_id)
 UPDATE totp_credentials
 SET last_step = sqlc.arg(step)
 WHERE user_id = sqlc.arg(user_id)
+    AND enrollment_id = sqlc.arg(enrollment_id)
     AND confirmed_at IS NOT NULL
     AND last_step < sqlc.arg(step);
 
 -- name: DeleteTOTP :execrows
 DELETE FROM totp_credentials
 WHERE user_id = sqlc.arg(user_id)
+    AND enrollment_id = sqlc.arg(enrollment_id)
     AND version = sqlc.arg(version);
 
 -- name: InsertRecoveryCodes :exec

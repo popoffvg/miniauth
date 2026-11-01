@@ -166,6 +166,7 @@ type TotpCredential struct {
 	CreatedAt    pgtype.Timestamptz
 	ConfirmedAt  pgtype.Timestamptz
 	Version      int64
+	EnrollmentID pgtype.UUID
 }
 
 type User struct {
