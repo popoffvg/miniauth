@@ -26,7 +26,7 @@ A login has 1 to 64 characters, stored in lower case. The first and last are a l
 | `DELETE /api/v1/groups/{group}` | Deletes the group, its memberships, and its grants. 204. A built-in group, or a group that `MINIAUTH_RESOURCES_FILE` names, is 409. |
 | `PUT /api/v1/groups/{group}/members/{login}` | Adds the user to the group. Idempotent. 204; an unknown user or group is 404. |
 | `DELETE /api/v1/groups/{group}/members/{login}` | Removes the user from the group. 204; a user not in the group is 404. |
-| `PUT /api/v1/groups/{group}/resources/{name}` | Gives the group the resource, with no expiry. Idempotent. 204; an unknown group or resource is 404. |
+| `PUT /api/v1/groups/{group}/resources/{name}` | Gives the group the resource, with no expiry. Idempotent: an active grant stays, and an expired grant is replaced by one with no expiry. 204; an unknown group or resource is 404. |
 | `DELETE /api/v1/groups/{group}/resources/{name}` | Revokes the grant of the resource to the group. 204; a group without the resource is 404; a managed grant is 409. |
 
 ### Access

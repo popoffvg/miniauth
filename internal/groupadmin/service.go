@@ -77,16 +77,39 @@ func (s *Service) Delete(ctx context.Context, name groups.Name) error {
 	return s.store.DeleteGroup(ctx, name)
 }
 
-// AddResource grants the resource to the group with no expiry. A group that has the resource keeps it.
+// AddResource grants the resource to the group with no expiry. A group that has an active grant keeps it.
+// An expired grant is replaced by a grant with no expiry.
 func (s *Service) AddResource(ctx context.Context, name groups.Name, resource access.ResourceName) error {
 	if _, err := s.store.FindGroup(ctx, name); err != nil {
 		return err
 	}
 	_, err := s.grants.GrantTo(ctx, resource, access.Grantee{Group: name}, access.Expiry{})
-	if errors.Is(err, access.ErrDuplicateGrant) {
-		return nil
+	if !errors.Is(err, access.ErrDuplicateGrant) {
+		return err
 	}
+	entry, err := s.groupGrant(ctx, name, resource)
+	if err != nil || entry.Grant.Expiry.ActiveAt(s.now()) {
+		return err
+	}
+	if err = s.grants.Revoke(ctx, entry.Grant.ID); err != nil {
+		return err
+	}
+	_, err = s.grants.GrantTo(ctx, resource, access.Grantee{Group: name}, access.Expiry{})
 	return err
+}
+
+// groupGrant returns the grant of the resource to the group, or ErrNotGranted.
+func (s *Service) groupGrant(ctx context.Context, name groups.Name, resource access.ResourceName) (access.GrantEntry, error) {
+	entries, err := s.grants.ListGrants(ctx, access.GrantFilter{Resource: resource})
+	if err != nil {
+		return access.GrantEntry{}, err
+	}
+	for _, entry := range entries {
+		if group, ok := entry.Grant.Subject.Group(); ok && group == name {
+			return entry, nil
+		}
+	}
+	return access.GrantEntry{}, ErrNotGranted
 }
 
 // RemoveResource revokes the grant of the resource to the group.
@@ -95,14 +118,9 @@ func (s *Service) RemoveResource(ctx context.Context, name groups.Name, resource
 	if _, err := s.store.FindGroup(ctx, name); err != nil {
 		return err
 	}
-	entries, err := s.grants.ListGrants(ctx, access.GrantFilter{Resource: resource})
+	entry, err := s.groupGrant(ctx, name, resource)
 	if err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		if group, ok := entry.Grant.Subject.Group(); ok && group == name {
-			return s.grants.Revoke(ctx, entry.Grant.ID)
-		}
-	}
-	return ErrNotGranted
+	return s.grants.Revoke(ctx, entry.Grant.ID)
 }

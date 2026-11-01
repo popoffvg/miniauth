@@ -739,8 +739,8 @@ paths:
       - bearerAuth: []
     put:
       description: 'Gives the group the resource: a group grant with no expiry. A
-        group that has the resource keeps it: the request is idempotent. An unknown
-        group or resource is 404.'
+        group with an active grant keeps it: the request is idempotent. An expired
+        grant is replaced by one with no expiry. An unknown group or resource is 404.'
       operationId: addGroupResource
       parameters:
       - in: path
