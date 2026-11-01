@@ -41,6 +41,11 @@ SELECT
     last_used_at
 FROM access_tokens
 WHERE user_id = $1
+  AND NOT EXISTS (
+      SELECT 1
+      FROM oauth_access_tokens o
+      WHERE o.token_id = access_tokens.id
+  )
 ORDER BY created_at, id;
 
 -- name: RevokeAccessToken :execrows

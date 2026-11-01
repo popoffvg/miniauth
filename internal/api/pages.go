@@ -8,6 +8,7 @@ import (
 	"github.com/a-h/templ"
 
 	"github.com/popoffvg/miniauth/internal/invites"
+	"github.com/popoffvg/miniauth/internal/oauth"
 	"github.com/popoffvg/miniauth/internal/providers/totp"
 	"github.com/popoffvg/miniauth/internal/recovery"
 	"github.com/popoffvg/miniauth/internal/tokens"
@@ -117,6 +118,9 @@ type pageView struct {
 	Enrollment *enrollmentView
 	// RecoveryCodes is set only on pageRecoveryCodes.
 	RecoveryCodes []totp.RecoveryCode
+	// ShowApps shows the connected apps on the token page. It is false while OAuth is off.
+	ShowApps bool
+	Apps     []oauth.ConsentEntry
 }
 
 // pageCSP allows the stylesheet of this origin and nothing else. form-action is not set:

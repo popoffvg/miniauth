@@ -88,6 +88,45 @@ type LoginFlow struct {
 	Challenge     []byte
 }
 
+type OauthAccessToken struct {
+	TokenID   pgtype.UUID
+	ConsentID pgtype.UUID
+}
+
+type OauthClient struct {
+	ID           pgtype.UUID
+	Name         string
+	RedirectUris []string
+	CreatedAt    pgtype.Timestamptz
+}
+
+type OauthCode struct {
+	CodeHash    []byte
+	ConsentID   pgtype.UUID
+	RedirectUri string
+	Challenge   string
+	CreatedAt   pgtype.Timestamptz
+	ExpiresAt   pgtype.Timestamptz
+	UsedAt      pgtype.Timestamptz
+}
+
+type OauthConsent struct {
+	ID        pgtype.UUID
+	UserID    pgtype.UUID
+	ClientID  pgtype.UUID
+	Resource  string
+	CreatedAt pgtype.Timestamptz
+	RevokedAt pgtype.Timestamptz
+}
+
+type OauthRefreshToken struct {
+	SecretHash []byte
+	ConsentID  pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+	ExpiresAt  pgtype.Timestamptz
+	UsedAt     pgtype.Timestamptz
+}
+
 type Passkey struct {
 	ID             pgtype.UUID
 	UserID         pgtype.UUID

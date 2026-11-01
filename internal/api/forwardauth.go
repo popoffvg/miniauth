@@ -89,7 +89,7 @@ func (s *service) unauthenticated(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusFound)
 		return
 	}
-	w.Header().Set("WWW-Authenticate", "Bearer")
+	w.Header().Set("WWW-Authenticate", s.bearerChallenge(r, false))
 	w.WriteHeader(http.StatusUnauthorized)
 }
 

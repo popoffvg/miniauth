@@ -12,6 +12,7 @@ import (
 
 	"github.com/popoffvg/miniauth/internal/access"
 	"github.com/popoffvg/miniauth/internal/groups"
+	"github.com/popoffvg/miniauth/internal/oauth"
 	"github.com/popoffvg/miniauth/internal/tokens"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -113,7 +114,9 @@ func domainError(err error) bool {
 		errors.Is(err, access.ErrHost) ||
 		errors.Is(err, access.ErrPathPrefix) ||
 		errors.Is(err, access.ErrExpiryTime) ||
-		errors.Is(err, access.ErrExpiry)
+		errors.Is(err, access.ErrExpiry) ||
+		errors.Is(err, oauth.ErrClientName) ||
+		errors.Is(err, oauth.ErrRedirectURI)
 }
 
 func jsonContentType(header string) bool {

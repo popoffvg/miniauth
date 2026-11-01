@@ -18,6 +18,93 @@ paths:
           description: OK
         "302":
           description: Found
+  /.well-known/oauth-authorization-server:
+    get:
+      description: The RFC 8414 metadata of the OAuth server. The issuer is MINIAUTH_PUBLIC_URL.
+        Without OAuth or a public URL it is 503.
+      operationId: authorizationServerMetadata
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiAuthorizationServerMetadata'
+          description: OK
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+  /.well-known/oauth-protected-resource:
+    get:
+      description: The RFC 9728 metadata of the resource with the path prefix / on
+        X-Forwarded-Host. The reverse proxy sends this path of each MCP host here,
+        with no forward-auth. A URL that is not exactly a resource is 404.
+      operationId: protectedResourceMetadataRoot
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProtectedResourceMetadata'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Internal Server Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+  /.well-known/oauth-protected-resource/{path}:
+    get:
+      description: The RFC 9728 metadata of the resource with this path prefix on
+        X-Forwarded-Host. A URL that is not exactly a resource is 404.
+      operationId: protectedResourceMetadata
+      parameters:
+      - description: The path prefix of the resource, with no leading slash.
+        in: path
+        name: path
+        required: true
+        schema:
+          description: The path prefix of the resource, with no leading slash.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProtectedResourceMetadata'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Internal Server Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
   /access:
     get:
       description: Lists the resources and their grants, with the forms to change
@@ -602,6 +689,116 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Unsupported Media Type
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+  /api/v1/oauth/clients:
+    get:
+      description: Lists every OAuth client, oldest first.
+      operationId: listOAuthClients
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiOauthClientList'
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+    post:
+      description: 'Registers an MCP client for the OAuth sign-in. The client is public:
+        it gets a client_id and no secret, and proves each code exchange with PKCE.
+        Each redirect URI is https, or http on a loopback host; a loopback URI matches
+        on any port.'
+      operationId: createOAuthClient
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiCreateOAuthClientRequest'
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiOauthClientBody'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "413":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unsupported Media Type
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
+      security:
+      - bearerAuth: []
+  /api/v1/oauth/clients/{id}:
+    delete:
+      description: Deletes the client, its consents, and every token it got. The next
+        /auth/check refuses its tokens.
+      operationId: deleteOAuthClient
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Not Found
         "503":
           content:
             application/json:
@@ -1698,6 +1895,195 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Unauthorized
+  /oauth/authorize:
+    get:
+      description: 'The OAuth authorization endpoint. An unknown client_id or a redirect_uri
+        the client did not register is a 400 page: nothing goes to that URI. Any other
+        refused request redirects to the client with error and state. With no session
+        it redirects to the login page, which returns here. A client the user approved
+        before for the resource gets a code at once with 302; else the consent page
+        shows. resource MUST equal the URL of a resource of the access API.'
+      operationId: oauthAuthorize
+      parameters:
+      - in: query
+        name: response_type
+        required: true
+        schema:
+          enum:
+          - code
+          type: string
+      - in: query
+        name: client_id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      - in: query
+        name: redirect_uri
+        required: true
+        schema:
+          format: uri
+          type: string
+      - in: query
+        name: code_challenge
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: code_challenge_method
+        required: true
+        schema:
+          enum:
+          - S256
+          type: string
+      - in: query
+        name: state
+        schema:
+          type: string
+      - description: The URL of the MCP server. It MUST be a resource of the access
+          API.
+        in: query
+        name: resource
+        required: true
+        schema:
+          description: The URL of the MCP server. It MUST be a resource of the access
+            API.
+          format: uri
+          type: string
+      responses:
+        "200":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: OK
+        "302":
+          description: Found
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+    post:
+      description: The consent form. Origin MUST be the public origin, else 403. It
+        checks every field again. action=allow records the consent and redirects to
+        the client with a code, iss, and state; action=deny redirects with error=access_denied.
+      operationId: oauthConsent
+      parameters:
+      - in: query
+        name: response_type
+        required: true
+        schema:
+          enum:
+          - code
+          type: string
+      - in: query
+        name: client_id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      - in: query
+        name: redirect_uri
+        required: true
+        schema:
+          format: uri
+          type: string
+      - in: query
+        name: code_challenge
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: code_challenge_method
+        required: true
+        schema:
+          enum:
+          - S256
+          type: string
+      - in: query
+        name: state
+        schema:
+          type: string
+      - description: The URL of the MCP server. It MUST be a resource of the access
+          API.
+        in: query
+        name: resource
+        required: true
+        schema:
+          description: The URL of the MCP server. It MUST be a resource of the access
+            API.
+          format: uri
+          type: string
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiAuthorizeRequest'
+      responses:
+        "303":
+          description: See Other
+        "400":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Bad Request
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
+  /oauth/token:
+    post:
+      description: 'The OAuth token endpoint, for a public client. grant_type=authorization_code
+        spends the code once; the client_id, redirect_uri, and code_verifier MUST
+        match the request. grant_type=refresh_token rotates the refresh token. A code
+        or refresh token sent a second time ends the consent and all its tokens. The
+        access token is an idp_ token for one resource that expires in one hour; /auth/check
+        reads it. Errors are RFC 6749 JSON: 400 invalid_request, invalid_grant, or
+        unsupported_grant_type; 401 invalid_client.'
+      operationId: oauthToken
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FormDataApiTokenRequest'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenResponse'
+          description: OK
   /openapi.yaml:
     get:
       operationId: getOpenAPI
@@ -2402,6 +2788,47 @@ paths:
               schema:
                 type: string
           description: Service Unavailable
+  /tokens/apps/{id}/revoke:
+    post:
+      description: 'Disconnects one app of the session user: it revokes the consent
+        and deletes its access and refresh tokens, then redirects to GET /tokens?done=app-revoked.
+        The next connection shows the consent page again. Origin MUST be the public
+        origin, else 403. A consent of another user is 404.'
+      operationId: revokeApp
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          format: uuid
+          type: string
+      responses:
+        "303":
+          description: See Other
+        "403":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Not Found
+        "500":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Internal Server Error
+        "503":
+          content:
+            text/html:
+              schema:
+                type: string
+          description: Service Unavailable
   /users:
     get:
       description: Lists the users with their groups and state, with the forms to
@@ -2762,6 +3189,37 @@ paths:
           description: Service Unavailable
 components:
   schemas:
+    ApiAuthorizationServerMetadata:
+      properties:
+        authorization_endpoint:
+          type: string
+        authorization_response_iss_parameter_supported:
+          type: boolean
+        code_challenge_methods_supported:
+          items:
+            type: string
+          nullable: true
+          type: array
+        grant_types_supported:
+          items:
+            type: string
+          nullable: true
+          type: array
+        issuer:
+          type: string
+        response_types_supported:
+          items:
+            type: string
+          nullable: true
+          type: array
+        token_endpoint:
+          type: string
+        token_endpoint_auth_methods_supported:
+          items:
+            type: string
+          nullable: true
+          type: array
+      type: object
     ApiCreateGrantRequest:
       properties:
         expires_at:
@@ -2782,6 +3240,24 @@ components:
           type: string
       required:
       - resource
+      type: object
+    ApiCreateOAuthClientRequest:
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+        redirect_uris:
+          description: Each URI is https, or http on localhost, 127.0.0.1, or [::1].
+            An http loopback URI matches on any port.
+          items:
+            type: string
+          minItems: 1
+          nullable: true
+          type: array
+      required:
+      - name
+      - redirect_uris
       type: object
     ApiCreateResourceRequest:
       properties:
@@ -2898,6 +3374,29 @@ components:
         resource:
           type: string
       type: object
+    ApiOauthClientBody:
+      properties:
+        client_id:
+          $ref: '#/components/schemas/OauthClientID'
+        created_at:
+          format: date-time
+          type: string
+        name:
+          type: string
+        redirect_uris:
+          items:
+            type: string
+          nullable: true
+          type: array
+      type: object
+    ApiOauthClientList:
+      properties:
+        clients:
+          items:
+            $ref: '#/components/schemas/ApiOauthClientBody'
+          nullable: true
+          type: array
+      type: object
     ApiPasskeyAddRequest:
       properties:
         credential:
@@ -2951,6 +3450,21 @@ components:
         type:
           type: string
       type: object
+    ApiProtectedResourceMetadata:
+      properties:
+        authorization_servers:
+          items:
+            type: string
+          nullable: true
+          type: array
+        bearer_methods_supported:
+          items:
+            type: string
+          nullable: true
+          type: array
+        resource:
+          type: string
+      type: object
     ApiResourceBody:
       properties:
         name:
@@ -2966,6 +3480,20 @@ components:
           type: array
       required:
       - resources
+      type: object
+    ApiTokenResponse:
+      properties:
+        access_token:
+          type: string
+        expires_in:
+          format: int64
+          type: integer
+        refresh_token:
+          type: string
+        resource:
+          type: string
+        token_type:
+          type: string
       type: object
     ApiUserAccountBody:
       properties:
@@ -3030,6 +3558,45 @@ components:
       required:
       - name
       - url
+      type: object
+    FormDataApiAuthorizeRequest:
+      properties:
+        action:
+          description: The consent form only.
+          enum:
+          - allow
+          - deny
+          type: string
+        client_id:
+          format: uuid
+          type: string
+        code_challenge:
+          type: string
+        code_challenge_method:
+          enum:
+          - S256
+          type: string
+        redirect_uri:
+          format: uri
+          type: string
+        resource:
+          description: The URL of the MCP server. It MUST be a resource of the access
+            API.
+          format: uri
+          type: string
+        response_type:
+          enum:
+          - code
+          type: string
+        state:
+          type: string
+      required:
+      - response_type
+      - client_id
+      - redirect_uri
+      - code_challenge
+      - code_challenge_method
+      - resource
       type: object
     FormDataApiCodeFormRequest:
       properties:
@@ -3141,6 +3708,33 @@ components:
       required:
       - name
       type: object
+    FormDataApiTokenRequest:
+      properties:
+        client_id:
+          format: uuid
+          type: string
+        code:
+          description: authorization_code only.
+          type: string
+        code_verifier:
+          description: authorization_code only. The PKCE verifier.
+          type: string
+        grant_type:
+          enum:
+          - authorization_code
+          - refresh_token
+          type: string
+        redirect_uri:
+          description: authorization_code only. The same URI as in the authorization
+            request.
+          type: string
+        refresh_token:
+          description: refresh_token only.
+          type: string
+      required:
+      - grant_type
+      - client_id
+      type: object
     FormDataApiUserGroupForm:
       properties:
         group:
@@ -3157,6 +3751,12 @@ components:
       required:
       - resource
       type: object
+    OauthClientID:
+      items:
+        minimum: 0
+        type: integer
+      nullable: true
+      type: array
   securitySchemes:
     bearerAuth:
       description: Bootstrap admin token. MINIAUTH_ADMIN_TOKEN_SHA256 holds the hex

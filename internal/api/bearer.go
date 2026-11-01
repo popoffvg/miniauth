@@ -36,17 +36,17 @@ func accessTokenBearer(r *http.Request) (BearerToken, bool) {
 // A bad token or a disabled owner is 401. A URL under no scope, or with no grant for the owner, is 403.
 func (s *service) forwardAuthToken(w http.ResponseWriter, r *http.Request, need []groups.Name, bearer BearerToken) {
 	if s.tokens == nil {
-		invalidToken(w)
+		s.invalidToken(w, r)
 		return
 	}
 	secret, err := tokens.ParseSecret(bearer.raw)
 	if err != nil {
-		invalidToken(w)
+		s.invalidToken(w, r)
 		return
 	}
 	token, err := s.tokens.Authenticate(r.Context(), secret)
 	if errors.Is(err, tokens.ErrInvalid) {
-		invalidToken(w)
+		s.invalidToken(w, r)
 		return
 	}
 	if err != nil {
@@ -55,7 +55,7 @@ func (s *service) forwardAuthToken(w http.ResponseWriter, r *http.Request, need 
 	}
 	user, err := s.accounts.Find(r.Context(), token.UserID)
 	if errors.Is(err, users.ErrNotFound) || err == nil && user.Disabled() {
-		invalidToken(w)
+		s.invalidToken(w, r)
 		return
 	}
 	if err != nil {
@@ -101,8 +101,8 @@ func (s *service) forwardedTarget(r *http.Request) (tokens.Target, bool) {
 	return target, true
 }
 
-func invalidToken(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+func (s *service) invalidToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("WWW-Authenticate", s.bearerChallenge(r, true))
 	w.WriteHeader(http.StatusUnauthorized)
 }
 

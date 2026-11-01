@@ -30,6 +30,9 @@ templ tokensPage(view pageView) {
 			if view.TokenForm.Field == "" {
 				@tokenFormCard(view.TokenForm)
 			}
+			if view.ShowApps {
+				@connectedApps(view.Apps)
+			}
 		</div>
 	}
 }

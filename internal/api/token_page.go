@@ -149,6 +149,15 @@ func (s *service) renderTokens(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	view := pageView{Shell: s.shellFor(r, user, tokensPath), Message: message, Tokens: newTokenTable(r, list, time.Now())}
+	if s.oauth != nil {
+		view.ShowApps = true
+		view.Apps, err = s.oauth.ListConsents(r.Context(), user.ID)
+		if err != nil {
+			loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: list connected apps", "err", err)
+			renderDenied(w, r, http.StatusInternalServerError, msgTokenFailed)
+			return
+		}
+	}
 	if r.Method == http.MethodGet {
 		view.Notice = doneNotice(r)
 	} else {

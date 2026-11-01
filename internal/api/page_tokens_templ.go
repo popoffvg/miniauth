@@ -174,6 +174,12 @@ func tokensPage(view pageView) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
+			if view.ShowApps {
+				templ_7745c5c3_Err = connectedApps(view.Apps).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -221,7 +227,7 @@ func tokenRows(rows []tokenRow) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(row.Token.Name.String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 53, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 56, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -234,7 +240,7 @@ func tokenRows(rows []tokenRow) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(row.Token.Prefix.String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 54, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 57, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -247,7 +253,7 @@ func tokenRows(rows []tokenRow) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(timeText(row.Token.CreatedAt).Date())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 54, Col: 138}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 57, Col: 138}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -275,7 +281,7 @@ func tokenRows(rows []tokenRow) templ.Component {
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(scope.String())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 62, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 65, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
@@ -385,7 +391,7 @@ func tokenFormCard(form tokenForm) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(form.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 107, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 110, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -426,7 +432,7 @@ func tokenFormCard(form tokenForm) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(form.Scopes)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 128, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 131, Col: 19}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -447,7 +453,7 @@ func tokenFormCard(form tokenForm) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(form.Expires)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 138, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 141, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -478,7 +484,7 @@ func tokenFormCard(form tokenForm) templ.Component {
 		var templ_7745c5c3_Var17 templ.SafeURL
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(tokensPath))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 150, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 153, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -525,7 +531,7 @@ func fieldError(form tokenForm, field tokenField) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(string(form.Message))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 161, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 164, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -609,7 +615,7 @@ func tokenCreatedPage(view pageView) templ.Component {
 					var templ_7745c5c3_Var23 string
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(view.NewToken.Reveal())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 175, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 178, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -633,7 +639,7 @@ func tokenCreatedPage(view pageView) templ.Component {
 			var templ_7745c5c3_Var24 templ.SafeURL
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(tokensPath))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 182, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `page_tokens.templ`, Line: 185, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {

@@ -15,7 +15,7 @@ func (s *service) browserPageUser(w http.ResponseWriter, r *http.Request, return
 	toLogin := s.publicURL.Login(s.publicURL.Origin() + returnPath)
 	session, err := s.openBrowserSession(r)
 	if errors.Is(err, sessions.ErrNotFound) {
-		http.Redirect(w, r, toLogin, http.StatusSeeOther)
+		http.Redirect(w, r, toLogin, http.StatusSeeOther) // #nosec G710 -- toLogin is the login page of the public origin; the return URL is a query-escaped value.
 		return users.User{}, sessions.Session{}, false
 	}
 	if err != nil {
@@ -25,7 +25,7 @@ func (s *service) browserPageUser(w http.ResponseWriter, r *http.Request, return
 	}
 	user, err := s.accounts.Find(r.Context(), session.UserID)
 	if errors.Is(err, users.ErrNotFound) || err == nil && user.Disabled() {
-		http.Redirect(w, r, toLogin, http.StatusSeeOther)
+		http.Redirect(w, r, toLogin, http.StatusSeeOther) // #nosec G710 -- toLogin is the login page of the public origin; the return URL is a query-escaped value.
 		return users.User{}, sessions.Session{}, false
 	}
 	if err != nil {

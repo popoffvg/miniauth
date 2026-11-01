@@ -16,6 +16,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/identitylink"
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/oauth"
 	"github.com/popoffvg/miniauth/internal/providers/google"
 	"github.com/popoffvg/miniauth/internal/providers/passkey"
 	"github.com/popoffvg/miniauth/internal/providers/password"
@@ -88,6 +89,9 @@ type service struct {
 	invites *invites.Service
 	// userAdmin is nil unless WithUserAdmin sets it.
 	userAdmin *useradmin.Service
+	// oauth and oauthResources are nil unless WithOAuth sets them.
+	oauth          *oauth.Service
+	oauthResources resourceDirectory
 }
 
 // WithLogin serves the login page. Without it, the login routes answer 503.
@@ -702,6 +706,124 @@ func (s *service) routes() []route {
 			isPublic: true,
 		},
 		{
+			method:   http.MethodPost,
+			path:     appsPath + "/{id}/revoke",
+			id:       "revokeApp",
+			handler:  s.revokeApp,
+			request:  new(appRevokeRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "Disconnects one app of the session user: it revokes the consent and deletes its access and refresh tokens, then redirects to GET /tokens?done=app-revoked. The next connection shows the consent page again. Origin MUST be the public origin, else 403. A consent of another user is 404.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     oauthClientsPath,
+			id:       "createOAuthClient",
+			handler:  s.createOAuthClient,
+			request:  new(createOAuthClientRequest),
+			response: new(oauthClientBody),
+			status:   http.StatusCreated,
+			errors: []int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusRequestEntityTooLarge,
+				http.StatusUnsupportedMediaType,
+				http.StatusServiceUnavailable,
+			},
+			doc: "Registers an MCP client for the OAuth sign-in. The client is public: it gets a client_id and no secret, and proves each code exchange with PKCE. Each redirect URI is https, or http on a loopback host; a loopback URI matches on any port.",
+		},
+		{
+			method:   http.MethodGet,
+			path:     oauthClientsPath,
+			id:       "listOAuthClients",
+			handler:  s.listOAuthClients,
+			response: new(oauthClientList),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
+			doc:      "Lists every OAuth client, oldest first.",
+		},
+		{
+			method:  http.MethodDelete,
+			path:    oauthClientsPath + "/{id}",
+			id:      "deleteOAuthClient",
+			handler: s.deleteOAuthClient,
+			request: new(oauthClientPath),
+			status:  http.StatusNoContent,
+			errors:  []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},
+			doc:     "Deletes the client, its consents, and every token it got. The next /auth/check refuses its tokens.",
+		},
+		{
+			method:   http.MethodGet,
+			path:     authorizationServerMetadataPath,
+			id:       "authorizationServerMetadata",
+			handler:  s.authorizationServerMetadata,
+			response: new(authorizationServerMetadata),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusServiceUnavailable},
+			doc:      "The RFC 8414 metadata of the OAuth server. The issuer is MINIAUTH_PUBLIC_URL. Without OAuth or a public URL it is 503.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodGet,
+			path:     protectedResourceMetadataPath,
+			id:       "protectedResourceMetadataRoot",
+			handler:  s.protectedResourceMetadata,
+			response: new(protectedResourceMetadata),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "The RFC 9728 metadata of the resource with the path prefix / on X-Forwarded-Host. The reverse proxy sends this path of each MCP host here, with no forward-auth. A URL that is not exactly a resource is 404.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodGet,
+			path:     protectedResourceMetadataPath + "/{path...}",
+			id:       "protectedResourceMetadata",
+			handler:  s.protectedResourceMetadata,
+			request:  new(protectedResourcePath),
+			response: new(protectedResourceMetadata),
+			status:   http.StatusOK,
+			errors:   []int{http.StatusNotFound, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "The RFC 9728 metadata of the resource with this path prefix on X-Forwarded-Host. A URL that is not exactly a resource is 404.",
+			isPublic: true,
+		},
+		{
+			method:      http.MethodGet,
+			path:        oauthAuthorizePath,
+			id:          "oauthAuthorize",
+			handler:     s.authorizePage,
+			request:     new(authorizeRequest),
+			response:    new(htmlPage),
+			status:      http.StatusOK,
+			contentType: "text/html",
+			empty:       []int{http.StatusFound, http.StatusSeeOther},
+			pages:       []int{http.StatusBadRequest, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:         "The OAuth authorization endpoint. An unknown client_id or a redirect_uri the client did not register is a 400 page: nothing goes to that URI. Any other refused request redirects to the client with error and state. With no session it redirects to the login page, which returns here. A client the user approved before for the resource gets a code at once with 302; else the consent page shows. resource MUST equal the URL of a resource of the access API.",
+			isPublic:    true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     oauthAuthorizePath,
+			id:       "oauthConsent",
+			handler:  s.answerConsent,
+			request:  new(authorizeRequest),
+			status:   http.StatusSeeOther,
+			pages:    []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "The consent form. Origin MUST be the public origin, else 403. It checks every field again. action=allow records the consent and redirects to the client with a code, iss, and state; action=deny redirects with error=access_denied.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     oauthTokenPath,
+			id:       "oauthToken",
+			handler:  s.exchangeToken,
+			request:  new(tokenRequest),
+			response: new(tokenResponse),
+			status:   http.StatusOK,
+			doc:      "The OAuth token endpoint, for a public client. grant_type=authorization_code spends the code once; the client_id, redirect_uri, and code_verifier MUST match the request. grant_type=refresh_token rotates the refresh token. A code or refresh token sent a second time ends the consent and all its tokens. The access token is an idp_ token for one resource that expires in one hour; /auth/check reads it. Errors are RFC 6749 JSON: 400 invalid_request, invalid_grant, or unsupported_grant_type; 401 invalid_client.",
+			isPublic: true,
+		},
+		{
 			method:      http.MethodGet,
 			path:        linkPagePath,
 			id:          "linkPage",
@@ -952,8 +1074,10 @@ func (s *service) routes() []route {
 }
 
 func addOperation(reflector *openapi3.Reflector, rt route) error {
-	// The mux suffix {$} matches only the exact path. OpenAPI has no such syntax.
-	oc, err := reflector.NewOperationContext(rt.method, strings.TrimSuffix(rt.path, "{$}"))
+	// The mux suffix {$} matches only the exact path, and {name...} matches the rest of the path.
+	// OpenAPI has neither syntax.
+	specPath := strings.ReplaceAll(strings.TrimSuffix(rt.path, "{$}"), "...}", "}")
+	oc, err := reflector.NewOperationContext(rt.method, specPath)
 	if err != nil {
 		return fmt.Errorf("api: openapi: %w", err)
 	}

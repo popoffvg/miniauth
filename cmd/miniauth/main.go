@@ -21,6 +21,7 @@ import (
 	"github.com/popoffvg/miniauth/internal/invites"
 	"github.com/popoffvg/miniauth/internal/lifecycle"
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/oauth"
 	"github.com/popoffvg/miniauth/internal/postgres"
 	"github.com/popoffvg/miniauth/internal/providers/google"
 	"github.com/popoffvg/miniauth/internal/providers/passkey"
@@ -161,6 +162,10 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	if err != nil {
 		return err
 	}
+	oauthRepo, err := postgres.NewOAuthRepository(pool)
+	if err != nil {
+		return err
+	}
 
 	options := []api.RouterOption{
 		api.WithAccessTokens(tokens.NewService(postgres.NewTokenRepository(pool))),
@@ -171,6 +176,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		withRecovery,
 		api.WithInvites(inviteService),
 		api.WithUserAdmin(useradmin.NewService(userAdminRepo, userService)),
+		api.WithOAuth(oauth.NewService(oauthRepo, userService), grants),
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
 	if cfg.Google.Enabled() {

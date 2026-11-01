@@ -19,6 +19,7 @@ const (
 	doneUserEnabled     doneFlag = "user-enabled"
 	doneMemberAdded     doneFlag = "member-added"
 	doneMemberRemoved   doneFlag = "member-removed"
+	doneAppRevoked      doneFlag = "app-revoked"
 )
 
 // doneNotices is the fixed message of each flag. A page ignores a flag that is not in this list.
@@ -39,6 +40,7 @@ var doneNotices = []struct {
 	{flag: doneUserEnabled, message: "The user is enabled."},
 	{flag: doneMemberAdded, message: "The user is added to the group."},
 	{flag: doneMemberRemoved, message: "The user is removed from the group."},
+	{flag: doneAppRevoked, message: "The app is disconnected. Its tokens no longer work."},
 }
 
 func doneNotice(r *http.Request) pageMessage {

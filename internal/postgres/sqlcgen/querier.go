@@ -12,6 +12,8 @@ import (
 
 type Querier interface {
 	ClaimInvite(ctx context.Context, arg ClaimInviteParams) (Invite, error)
+	ClaimOAuthCode(ctx context.Context, arg ClaimOAuthCodeParams) (OauthCode, error)
+	ClaimOAuthRefreshToken(ctx context.Context, arg ClaimOAuthRefreshTokenParams) (OauthRefreshToken, error)
 	ConfirmSessionAuth(ctx context.Context, arg ConfirmSessionAuthParams) (int64, error)
 	// created_at names the enrollment, so a newer enrollment of the same user is not confirmed by an older page.
 	ConfirmTOTP(ctx context.Context, arg ConfirmTOTPParams) (int64, error)
@@ -39,6 +41,10 @@ type Querier interface {
 	DeleteLoginAttemptsBefore(ctx context.Context, attemptedAt pgtype.Timestamptz) error
 	DeleteLoginFlow(ctx context.Context, id pgtype.UUID) error
 	DeleteLoginFlowVersion(ctx context.Context, arg DeleteLoginFlowVersionParams) (int64, error)
+	DeleteOAuthClient(ctx context.Context, id pgtype.UUID) (int64, error)
+	DeleteOAuthClientAccessTokens(ctx context.Context, clientID pgtype.UUID) error
+	DeleteOAuthConsentAccessTokens(ctx context.Context, consentID pgtype.UUID) error
+	DeleteOAuthConsentRefreshTokens(ctx context.Context, consentID pgtype.UUID) error
 	DeleteOpenPasswordResets(ctx context.Context, userID pgtype.UUID) error
 	DeletePasswordResetsBefore(ctx context.Context, expiresAt pgtype.Timestamptz) error
 	DeletePendingIdentityLink(ctx context.Context, secretHash []byte) error
@@ -53,6 +59,7 @@ type Querier interface {
 	DeviceOwned(ctx context.Context, arg DeviceOwnedParams) (bool, error)
 	DisableUser(ctx context.Context, arg DisableUserParams) (int64, error)
 	EnableUser(ctx context.Context, id pgtype.UUID) (int64, error)
+	EndOAuthConsent(ctx context.Context, arg EndOAuthConsentParams) error
 	EnsureGroupMembership(ctx context.Context, arg EnsureGroupMembershipParams) error
 	ExtendSession(ctx context.Context, arg ExtendSessionParams) (int64, error)
 	GetAccessTokenByHash(ctx context.Context, secretHash []byte) (AccessToken, error)
@@ -61,6 +68,10 @@ type Querier interface {
 	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
 	GetInvite(ctx context.Context, tokenHash []byte) (Invite, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
+	GetOAuthClient(ctx context.Context, id pgtype.UUID) (OauthClient, error)
+	GetOAuthCode(ctx context.Context, codeHash []byte) (OauthCode, error)
+	GetOAuthConsent(ctx context.Context, id pgtype.UUID) (OauthConsent, error)
+	GetOAuthRefreshToken(ctx context.Context, secretHash []byte) (OauthRefreshToken, error)
 	GetOpenPasswordReset(ctx context.Context, arg GetOpenPasswordResetParams) (GetOpenPasswordResetRow, error)
 	GetPendingIdentityLink(ctx context.Context, arg GetPendingIdentityLinkParams) (GetPendingIdentityLinkRow, error)
 	GetResource(ctx context.Context, name string) (Resource, error)
@@ -74,6 +85,10 @@ type Querier interface {
 	InsertGroupMembership(ctx context.Context, arg InsertGroupMembershipParams) error
 	InsertInvite(ctx context.Context, arg InsertInviteParams) error
 	InsertLoginAttempt(ctx context.Context, arg InsertLoginAttemptParams) error
+	InsertOAuthAccessToken(ctx context.Context, arg InsertOAuthAccessTokenParams) error
+	InsertOAuthClient(ctx context.Context, arg InsertOAuthClientParams) error
+	InsertOAuthCode(ctx context.Context, arg InsertOAuthCodeParams) error
+	InsertOAuthRefreshToken(ctx context.Context, arg InsertOAuthRefreshTokenParams) error
 	InsertPasskey(ctx context.Context, arg InsertPasskeyParams) error
 	InsertPasswordReset(ctx context.Context, arg InsertPasswordResetParams) error
 	InsertPendingIdentityLink(ctx context.Context, arg InsertPendingIdentityLinkParams) error
@@ -86,9 +101,11 @@ type Querier interface {
 	LinkPendingIdentity(ctx context.Context, arg LinkPendingIdentityParams) (LinkPendingIdentityRow, error)
 	ListAccessGrantEntries(ctx context.Context, arg ListAccessGrantEntriesParams) ([]ListAccessGrantEntriesRow, error)
 	ListAccessGrants(ctx context.Context, resourceName string) ([]AccessGrant, error)
+	ListActiveOAuthConsents(ctx context.Context, userID pgtype.UUID) ([]ListActiveOAuthConsentsRow, error)
 	ListAllResources(ctx context.Context) ([]Resource, error)
 	ListDevices(ctx context.Context, userID pgtype.UUID) ([]ListDevicesRow, error)
 	ListGroupMemberships(ctx context.Context, userID pgtype.UUID) ([]string, error)
+	ListOAuthClients(ctx context.Context) ([]OauthClient, error)
 	ListResourcesByHost(ctx context.Context, host string) ([]Resource, error)
 	ListUserAccessTokens(ctx context.Context, userID pgtype.UUID) ([]AccessToken, error)
 	ListUserAccounts(ctx context.Context) ([]ListUserAccountsRow, error)
@@ -98,6 +115,9 @@ type Querier interface {
 	Ping(ctx context.Context) (int32, error)
 	RecordPasskeyUse(ctx context.Context, arg RecordPasskeyUseParams) (int64, error)
 	RevokeAccessToken(ctx context.Context, arg RevokeAccessTokenParams) (int64, error)
+	RevokeUserOAuthConsent(ctx context.Context, arg RevokeUserOAuthConsentParams) (int64, error)
+	// The no-op update returns the active consent that is already stored.
+	SaveOAuthConsent(ctx context.Context, arg SaveOAuthConsentParams) (OauthConsent, error)
 	SetInviteUser(ctx context.Context, arg SetInviteUserParams) (int64, error)
 	SetLoginFlowChallenge(ctx context.Context, arg SetLoginFlowChallengeParams) (int64, error)
 	SetPasswordHash(ctx context.Context, arg SetPasswordHashParams) (int64, error)

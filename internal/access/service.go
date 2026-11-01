@@ -147,6 +147,40 @@ func (s *Service) ListResources(ctx context.Context) ([]Resource, error) {
 	return s.repo.ListAllResources(ctx)
 }
 
+// MatchResource returns the resource that covers target, with the longest prefix, or ErrNoResource.
+// It reads no grant: it names the resource, not who may reach it.
+func (s *Service) MatchResource(ctx context.Context, target RequestURL) (Resource, error) {
+	if err := s.ready(); err != nil {
+		return Resource{}, err
+	}
+	resources, err := s.repo.ListResources(ctx, target.Host())
+	if err != nil {
+		return Resource{}, err
+	}
+	resource, ok := Match(resources, target)
+	if !ok {
+		return Resource{}, ErrNoResource
+	}
+	return resource, nil
+}
+
+// FindResourceByURL returns the resource whose host and prefix equal url, or ErrResourceNotFound.
+func (s *Service) FindResourceByURL(ctx context.Context, url ResourceURL) (Resource, error) {
+	if err := s.ready(); err != nil {
+		return Resource{}, err
+	}
+	resources, err := s.repo.ListResources(ctx, url.Host)
+	if err != nil {
+		return Resource{}, err
+	}
+	for _, resource := range resources {
+		if resource.URL == url {
+			return resource, nil
+		}
+	}
+	return Resource{}, ErrResourceNotFound
+}
+
 // GrantTo gives the user or the group in grantee the resource. A zero expiry never expires.
 // It returns ErrResourceName, ErrSubject, ErrExpiry, ErrUnknownUser, ErrResourceNotFound, or ErrDuplicateGrant for those cases.
 func (s *Service) GrantTo(ctx context.Context, resource ResourceName, grantee Grantee, expiry Expiry) (GrantEntry, error) {
