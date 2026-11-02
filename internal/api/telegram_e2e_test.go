@@ -57,10 +57,11 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 
 	botName, err := telegram.ParseBotName(telegramtest.BotName)
 	require.NoError(t, err)
+	flowStore := postgres.NewFlowStore(pool)
 	step, err := telegram.NewStep(telegram.Config{
 		BotName:  botName,
 		BotToken: telegram.ParseBotToken(telegramtest.BotToken),
-	}, accountRepo, postgres.NewTelegramProofRepository(pool))
+	}, accountRepo, postgres.NewTelegramProofRepository(pool), flowStore)
 	require.NoError(t, err)
 
 	server := httptest.NewUnstartedServer(nil)
@@ -71,7 +72,6 @@ func TestTelegramLoginEndToEnd(t *testing.T) {
 	app := createResource(t, grants, "app", server.Listener.Addr().String(), "/app")
 	grantResource(t, grants, app, access.UserSubject(account.ID))
 	logs := &lockedBuffer{}
-	flowStore := postgres.NewFlowStore(pool)
 	router, err := NewRouter(
 		accounts,
 		sessions.NewService(postgres.NewSessionRepository(pool)),

@@ -30,7 +30,7 @@ type loginStep struct {
 	Second   bool
 	Fallback bool
 	Icon     views.Icon
-	widget   func(*service, *http.Request, *views.Page)
+	widget   func(*service, *http.Request, loginflow.LoginFlow, *views.Page)
 	offered  func(*service) bool
 }
 
@@ -82,7 +82,7 @@ func (s *service) renderStep(w http.ResponseWriter, r *http.Request, status int,
 	for _, step := range s.openSteps(flow) {
 		switch {
 		case step.widget != nil:
-			step.widget(s, r, &view)
+			step.widget(s, r, flow, &view)
 		case step.Page == "":
 			view.Buttons = append(view.Buttons, step.view())
 			view.Script = view.Script || step.Script

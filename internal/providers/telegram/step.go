@@ -59,17 +59,18 @@ type Step struct {
 	key        [sha256.Size]byte
 	identities IdentityStore
 	proofs     ProofStore
+	steps      loginflow.StepStore
 	// secondFactors is nil when no user has a second factor.
 	secondFactors loginflow.SecondFactors
 	now           func() time.Time
 }
 
 // NewStep returns a step for the bot in config.
-func NewStep(config Config, identities IdentityStore, proofs ProofStore) (*Step, error) {
+func NewStep(config Config, identities IdentityStore, proofs ProofStore, steps loginflow.StepStore) (*Step, error) {
 	if config.BotName == (BotName{}) || config.BotToken.Empty() {
 		return nil, ErrConfig
 	}
-	if identities == nil || proofs == nil {
+	if identities == nil || proofs == nil || steps == nil {
 		return nil, errors.New("telegram: store is missing")
 	}
 	return &Step{
@@ -77,6 +78,7 @@ func NewStep(config Config, identities IdentityStore, proofs ProofStore) (*Step,
 		key:           sha256.Sum256([]byte(config.BotToken.value)),
 		identities:    identities,
 		proofs:        proofs,
+		steps:         steps,
 		secondFactors: config.SecondFactors,
 		now:           time.Now,
 	}, nil
@@ -87,58 +89,120 @@ func (s *Step) BotName() BotName {
 	return s.botName
 }
 
-// Finish checks data and sends EventStepPassed with FactorTelegram to flow.
+// Show starts the step of flowID in StepWidgetShown. Call it each time a page shows the widget.
+func (s *Step) Show(ctx context.Context, flowID loginflow.FlowID) error {
+	return s.steps.BeginStep(ctx, flowID, StepWidgetShown.stored())
+}
+
+// Finish checks data, moves the step of flowID through stepPolicy, and sends the flow event of the final step state.
+// A step that is not in StepWidgetShown refuses the data with ErrNoTransition.
 // The hash and the age are checked first. Then the proof of data is stored, so the same data passes once.
 // A failure after that releases the proof, so a retry of the same data is not a replay.
 // A known account returns its user. An unknown account sets UnknownAccount on the event and
 // returns the account in Outcome.Unlinked; it creates no user.
-func (s *Step) Finish(ctx context.Context, flow Flow, data AuthData) (Outcome, error) {
+// Bad data sends EventStepFailed and returns its own error, also when the flow refuses the event.
+func (s *Step) Finish(ctx context.Context, flow Flow, flowID loginflow.FlowID, data AuthData) (Outcome, error) {
+	stored, err := s.steps.LoadStep(ctx, flowID)
+	if err != nil {
+		return Outcome{}, err
+	}
+	found, dataErr := s.check(ctx, data)
+	if found.event == "" {
+		return Outcome{}, dataErr
+	}
+	outcome, err := s.end(ctx, flow, flowID, StepState(stored), found, dataErr)
+	if err != nil && found.event != EventDataBad {
+		return Outcome{}, s.release(ctx, data, err)
+	}
+	return outcome, err
+}
+
+// dataCheck is what check found. An empty event means the check itself failed, not the data.
+type dataCheck struct {
+	event    StepEvent
+	account  users.ExternalAccount
+	identity users.Identity
+}
+
+// check runs every check of data, stores its proof, and names the step event.
+// EventDataBad comes with the error that Finish returns.
+func (s *Step) check(ctx context.Context, data AuthData) (dataCheck, error) {
+	bad := dataCheck{event: EventDataBad}
 	if !s.signed(data) {
-		return Outcome{}, ErrBadHash
+		return bad, ErrBadHash
 	}
 	now := s.now().UTC()
 	if !now.Before(data.authDate.Add(MaxAge)) || data.authDate.After(now.Add(MaxClockSkew)) {
-		return Outcome{}, ErrStale
+		return bad, ErrStale
 	}
 	if err := s.proofs.Cleanup(ctx, now); err != nil {
-		return Outcome{}, err
+		return dataCheck{}, err
 	}
 	// A row lives until the data is stale, so a replay always meets either the row or ErrStale.
-	proof := data.proof()
-	if err := s.proofs.Use(ctx, proof, data.authDate.Add(MaxAge)); err != nil {
-		return Outcome{}, err
-	}
-	outcome, err := s.finishUsed(ctx, flow, data)
-	if err != nil {
-		if releaseErr := s.proofs.Release(context.WithoutCancel(ctx), proof); releaseErr != nil {
-			return Outcome{}, errors.Join(err, releaseErr)
+	if err := s.proofs.Use(ctx, data.proof(), data.authDate.Add(MaxAge)); err != nil {
+		if dataBad(err) {
+			return bad, err
 		}
-		return Outcome{}, err
+		return dataCheck{}, err
 	}
-	return outcome, nil
-}
-
-// finishUsed looks up the account and applies the event, after the proof of data is stored.
-func (s *Step) finishUsed(ctx context.Context, flow Flow, data AuthData) (Outcome, error) {
 	account := data.Account()
 	identity, err := s.identities.FindExternalIdentity(ctx, account)
-	known := err == nil
-	if err != nil && !errors.Is(err, users.ErrNotFound) {
-		return Outcome{}, err
+	if errors.Is(err, users.ErrNotFound) {
+		return dataCheck{event: EventDataUnknown, account: account}, nil
 	}
-	event := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTelegram, UnknownAccount: true}
-	if known {
-		if event, err = loginflow.Passed(ctx, s.secondFactors, loginflow.FactorTelegram, identity.UserID); err != nil {
-			return Outcome{}, err
+	if err != nil {
+		return dataCheck{}, s.release(ctx, data, err)
+	}
+	return dataCheck{event: EventDataKnown, account: account, identity: identity}, nil
+}
+
+// end moves the step from the stored state and applies the flow event of the final state.
+func (s *Step) end(ctx context.Context, flow Flow, flowID loginflow.FlowID, from StepState, found dataCheck, dataErr error) (Outcome, error) {
+	to, err := NextStep(from, found.event)
+	if err != nil {
+		return Outcome{}, errors.Join(err, dataErr)
+	}
+	if err = s.steps.MoveStep(ctx, flowID, from.stored(), to.stored()); err != nil {
+		if errors.Is(err, loginflow.ErrStepMoved) {
+			err = fmt.Errorf("%w: %w", ErrNoTransition, err)
 		}
+		return Outcome{}, errors.Join(err, dataErr)
 	}
-	if err := flow.Apply(ctx, event); err != nil {
-		return Outcome{}, fmt.Errorf("telegram: apply %s: %w", event.Kind, err)
+	event, err := s.flowEvent(ctx, to, found.identity.UserID)
+	if err != nil {
+		return Outcome{}, errors.Join(dataErr, err)
 	}
-	if !known {
-		return Outcome{Unlinked: account}, nil
+	if err = flow.Apply(ctx, event); err != nil {
+		return Outcome{}, errors.Join(dataErr, fmt.Errorf("telegram: apply %s: %w", event.Kind, err))
 	}
-	return Outcome{UserID: identity.UserID}, nil
+	switch {
+	case dataErr != nil:
+		return Outcome{}, dataErr
+	case to == StepUnknownAccount:
+		return Outcome{Unlinked: found.account}, nil
+	default:
+		return Outcome{UserID: found.identity.UserID}, nil
+	}
+}
+
+// flowEvent is the login flow event of the final step state. StepPassed reads NeedsSecond from the store.
+func (s *Step) flowEvent(ctx context.Context, state StepState, userID users.ID) (loginflow.Event, error) {
+	switch state {
+	case StepPassed:
+		return loginflow.Passed(ctx, s.secondFactors, loginflow.FactorTelegram, userID)
+	case StepUnknownAccount:
+		return loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTelegram, UnknownAccount: true}, nil
+	default:
+		return loginflow.Event{Kind: loginflow.EventStepFailed, Factor: loginflow.FactorTelegram}, nil
+	}
+}
+
+// release deletes the stored proof of data after err, so a retry of the same data is not a replay.
+func (s *Step) release(ctx context.Context, data AuthData, err error) error {
+	if releaseErr := s.proofs.Release(context.WithoutCancel(ctx), data.proof()); releaseErr != nil {
+		return errors.Join(err, releaseErr)
+	}
+	return err
 }
 
 // signed reports whether the hash of data is the HMAC of its check string.

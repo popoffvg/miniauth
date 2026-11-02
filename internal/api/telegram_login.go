@@ -48,9 +48,14 @@ func (s *service) telegramOffered() bool {
 }
 
 // showTelegramWidget binds the callback URL to the flow, so data sent to the browser of another flow is refused.
-func (s *service) showTelegramWidget(r *http.Request, view *views.Page) {
+// It starts the Telegram step of flow. When that write fails, the page shows no widget.
+func (s *service) showTelegramWidget(r *http.Request, flow loginflow.LoginFlow, view *views.Page) {
 	secret, ok := flowSecretOf(r)
 	if !ok {
+		return
+	}
+	if err := s.telegram.Show(r.Context(), flow.ID); err != nil {
+		loggerFrom(r.Context()).ErrorContext(r.Context(), "miniauth: show telegram widget", "err", err)
 		return
 	}
 	query := url.Values{telegramNonceParam: {secret.CallbackNonce().String()}}
@@ -100,9 +105,9 @@ func (s *service) telegramCallback(w http.ResponseWriter, r *http.Request) {
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return
 	}
-	outcome, err := s.telegram.Finish(r.Context(), machine, data)
+	outcome, err := s.telegram.Finish(r.Context(), machine, id, data)
 	switch {
-	case errors.Is(err, telegram.ErrBadHash), errors.Is(err, telegram.ErrStale), errors.Is(err, telegram.ErrReplay):
+	case errors.Is(err, telegram.ErrBadHash), errors.Is(err, telegram.ErrStale), errors.Is(err, telegram.ErrReplay), errors.Is(err, telegram.ErrNoTransition):
 		loggerFrom(r.Context()).WarnContext(r.Context(), "miniauth: telegram data refused", "err", err)
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgTelegramFailed)
 		return

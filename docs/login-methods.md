@@ -52,6 +52,18 @@ stateDiagram-v2
     passkey_challenged --> passkey_failed: bad ceremony, no user verification, unknown credential, or counter that does not increase
 ```
 
+Telegram, from a page that shows the widget to `GET /login/telegram/callback`. Each page that shows the widget starts the pass again:
+
+```mermaid
+stateDiagram-v2
+    [*] --> telegram_widget_shown: page shows the widget
+    telegram_widget_shown --> telegram_passed: linked account
+    telegram_widget_shown --> telegram_unknown_account: unknown account
+    telegram_widget_shown --> telegram_failed: bad hash, stale data, or data used before
+```
+
+All passes of one flow share one `step_state`. A pass that begins replaces the state of the pass before it, so only the callback of the last begun pass is accepted.
+
 ## Password
 
 `POST /login` checks the login and the password. A wrong login or password shows the form again with one message. No session starts.

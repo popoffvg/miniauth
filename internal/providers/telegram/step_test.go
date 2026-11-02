@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/loginflow/loginflowtest"
 	"github.com/popoffvg/miniauth/internal/providers/telegram/telegramtest"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -65,13 +66,19 @@ func (f *recordedFlow) Apply(_ context.Context, event loginflow.Event) error {
 
 var testNow = time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
 
+const testFlow loginflow.FlowID = "11111111-1111-4111-8111-111111111111"
+
+// failedEvent is the flow event of a step that ends in StepFailed.
+var failedEvent = loginflow.Event{Kind: loginflow.EventStepFailed, Factor: loginflow.FactorTelegram}
+
 func newTestStep(t *testing.T, identities memoryIdentities) *Step {
 	t.Helper()
 	name, err := ParseBotName(telegramtest.BotName)
 	require.NoError(t, err)
-	step, err := NewStep(Config{BotName: name, BotToken: ParseBotToken(telegramtest.BotToken)}, identities, &memoryProofs{stored: map[ProofHash]time.Time{}})
+	step, err := NewStep(Config{BotName: name, BotToken: ParseBotToken(telegramtest.BotToken)}, identities, &memoryProofs{stored: map[ProofHash]time.Time{}}, loginflowtest.NewStepStore())
 	require.NoError(t, err)
 	step.now = func() time.Time { return testNow }
+	require.NoError(t, step.Show(t.Context(), testFlow))
 	return step
 }
 
@@ -89,7 +96,7 @@ func TestFinishLinkedAccount(t *testing.T) {
 	step := newTestStep(t, memoryIdentities{subject: userID})
 	flow := &recordedFlow{}
 
-	outcome, err := step.Finish(t.Context(), flow, parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4242, testNow))))
+	outcome, err := step.Finish(t.Context(), flow, testFlow, parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4242, testNow))))
 	require.NoError(t, err)
 	assert.True(t, outcome.Linked())
 	assert.Equal(t, userID, outcome.UserID)
@@ -105,7 +112,7 @@ func TestFinishLinkedAccountWithTOTPNeedsASecondFactor(t *testing.T) {
 	step.secondFactors = enrolledUsers{userID: true}
 	flow := &recordedFlow{}
 
-	_, err = step.Finish(t.Context(), flow, parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4343, testNow))))
+	_, err = step.Finish(t.Context(), flow, testFlow, parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4343, testNow))))
 	require.NoError(t, err)
 	require.Len(t, flow.events, 1)
 	assert.Equal(t, loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorTelegram, UserID: userID, NeedsSecond: true}, flow.events[0])
@@ -122,7 +129,7 @@ func TestFinishUnknownAccount(t *testing.T) {
 	step := newTestStep(t, memoryIdentities{})
 	flow := &recordedFlow{}
 
-	outcome, err := step.Finish(t.Context(), flow, parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(7, testNow))))
+	outcome, err := step.Finish(t.Context(), flow, testFlow, parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(7, testNow))))
 	require.NoError(t, err)
 	assert.False(t, outcome.Linked())
 	assert.Equal(t, users.KindTelegram, outcome.Unlinked.Kind)
@@ -157,9 +164,9 @@ func TestFinishRefusesBadData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			step := newTestStep(t, memoryIdentities{})
 			flow := &recordedFlow{}
-			_, err := step.Finish(t.Context(), flow, parse(t, tt.query))
+			_, err := step.Finish(t.Context(), flow, testFlow, parse(t, tt.query))
 			require.ErrorIs(t, err, tt.want)
-			assert.Empty(t, flow.events)
+			assert.Equal(t, []loginflow.Event{failedEvent}, flow.events)
 		})
 	}
 }
@@ -168,20 +175,62 @@ func TestFinishAcceptsAnUnknownSignedField(t *testing.T) {
 	step := newTestStep(t, memoryIdentities{})
 	fields := telegramtest.Fields(4242, testNow.Add(-MaxAge+time.Second))
 	fields.Set("future_field", "x")
-	_, err := step.Finish(t.Context(), &recordedFlow{}, parse(t, telegramtest.Sign(telegramtest.BotToken, fields)))
+	_, err := step.Finish(t.Context(), &recordedFlow{}, testFlow, parse(t, telegramtest.Sign(telegramtest.BotToken, fields)))
 	require.NoError(t, err)
 }
 
 func TestFinishRefusesAReplay(t *testing.T) {
 	step := newTestStep(t, memoryIdentities{})
 	data := parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4242, testNow)))
-	_, err := step.Finish(t.Context(), &recordedFlow{}, data)
+	_, err := step.Finish(t.Context(), &recordedFlow{}, testFlow, data)
 	require.NoError(t, err)
 
 	flow := &recordedFlow{}
-	_, err = step.Finish(t.Context(), flow, data)
+	_, err = step.Finish(t.Context(), flow, testFlow, data)
 	require.ErrorIs(t, err, ErrReplay)
+	require.ErrorIs(t, err, ErrNoTransition, "a passed step accepts no second callback")
 	assert.Empty(t, flow.events)
+
+	// The widget is shown again, so the proof store alone refuses the replay.
+	require.NoError(t, step.Show(t.Context(), testFlow))
+	_, err = step.Finish(t.Context(), flow, testFlow, data)
+	require.ErrorIs(t, err, ErrReplay)
+	require.NotErrorIs(t, err, ErrNoTransition)
+	assert.Equal(t, []loginflow.Event{failedEvent}, flow.events)
+}
+
+func TestFinishRefusesASecondCallbackByTheStepPolicy(t *testing.T) {
+	step := newTestStep(t, memoryIdentities{})
+	_, err := step.Finish(t.Context(), &recordedFlow{}, testFlow, parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4242, testNow))))
+	require.NoError(t, err)
+
+	// Fresh data passes every check, so only the stored step state can refuse it.
+	flow := &recordedFlow{}
+	fresh := parse(t, telegramtest.Sign(telegramtest.BotToken, telegramtest.Fields(4242, testNow.Add(-time.Second))))
+	_, err = step.Finish(t.Context(), flow, testFlow, fresh)
+	require.ErrorIs(t, err, ErrNoTransition)
+	assert.Empty(t, flow.events)
+	stored, err := step.steps.LoadStep(t.Context(), testFlow)
+	require.NoError(t, err)
+	assert.Equal(t, StepUnknownAccount.stored(), stored)
+
+	// The refusal releases the proof, so the data passes after the widget is shown again.
+	require.NoError(t, step.Show(t.Context(), testFlow))
+	_, err = step.Finish(t.Context(), flow, testFlow, fresh)
+	require.NoError(t, err)
+}
+
+func TestFinishKeepsTheDataErrorWhenTheFlowRefuses(t *testing.T) {
+	step := newTestStep(t, memoryIdentities{})
+	_, err := step.Finish(t.Context(), refusingFlow{}, testFlow, parse(t, telegramtest.Sign("987654321:another-token", telegramtest.Fields(4242, testNow))))
+	require.ErrorIs(t, err, ErrBadHash)
+}
+
+// refusingFlow refuses each event, like a flow that is already final.
+type refusingFlow struct{}
+
+func (refusingFlow) Apply(context.Context, loginflow.Event) error {
+	return loginflow.ErrNoTransition
 }
 
 func TestParseAuthDataRefusesMalformedData(t *testing.T) {
@@ -222,7 +271,7 @@ func TestConfigKeepsTheTokenOutOfPrints(t *testing.T) {
 	config := Config{BotToken: token}
 	assert.NotContains(t, fmt.Sprintf("%v %+v %#v %s", token, config, config, token), telegramtest.BotToken)
 
-	_, err := NewStep(Config{BotToken: token}, memoryIdentities{}, &memoryProofs{})
+	_, err := NewStep(Config{BotToken: token}, memoryIdentities{}, &memoryProofs{}, loginflowtest.NewStepStore())
 	require.ErrorIs(t, err, ErrConfig)
 	for _, bad := range []string{"bot", "has space_bot", "a_name_that_is_much_too_long_for_a_bot"} {
 		_, err := ParseBotName(bad)
@@ -311,13 +360,15 @@ func TestFinishRetriesAfterAFailureBeforeTheOutcome(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			step := newTestStep(t, memoryIdentities{})
 			identities := step.identities
-			_, err := step.Finish(t.Context(), failing(step), data)
+			_, err := step.Finish(t.Context(), failing(step), testFlow, data)
 			require.Error(t, err)
 			require.NotErrorIs(t, err, ErrReplay)
 
 			step.identities = identities
+			// A retry comes from a page that shows the widget again.
+			require.NoError(t, step.Show(t.Context(), testFlow))
 			flow := &recordedFlow{}
-			_, err = step.Finish(t.Context(), flow, data)
+			_, err = step.Finish(t.Context(), flow, testFlow, data)
 			require.NoError(t, err, "a retry after a failure MUST NOT be a replay")
 			assert.Len(t, flow.events, 1)
 		})

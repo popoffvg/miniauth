@@ -17,11 +17,11 @@ const FlowTTL = 15 * time.Minute
 // LoginFlow is one login in progress. It is comparable so a PersistedSFSM can store it.
 // The secret is not a field: the database keeps only SecretHash.
 type LoginFlow struct {
-	ID            FlowID
-	ReturnURL     ReturnURL
-	ExpiresAt     time.Time
-	State         FlowState
-	Factors       Factors
+	ID        FlowID
+	ReturnURL ReturnURL
+	ExpiresAt time.Time
+	State     FlowState
+	Factors   Factors
 	// PendingFactor marks an external account that waits for a link. It is a marker, not a state.
 	PendingFactor Factor
 	Version       FlowVersion

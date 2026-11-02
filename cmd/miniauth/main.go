@@ -212,6 +212,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 			telegram.Config{BotName: cfg.Telegram.Name, BotToken: cfg.Telegram.Token, SecondFactors: totpService},
 			accounts,
 			postgres.NewTelegramProofRepository(pool),
+			flowStore,
 		)
 		if telegramErr != nil {
 			return telegramErr
