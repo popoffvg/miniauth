@@ -100,3 +100,15 @@ func TestLoginKeepsTheUserOfTheFirstFactor(t *testing.T) {
 		t.Fatalf("Next() state = %s, want %s", done.State, StateComplete)
 	}
 }
+
+func TestEmptyKindIsRefused(t *testing.T) {
+	flow := LoginFlow{ReturnURL: "https://example.test/", State: StateAwaiting}
+	for _, event := range []Event{
+		{Kind: EventStepPassed, Factor: FactorPassword, UserID: users.NewID()},
+		{Kind: EventCancel},
+	} {
+		if got, err := flow.Next(event); !errors.Is(err, ErrNoTransition) || got != flow {
+			t.Fatalf("Next(%s) on an empty kind: state %s, error %v, want %v", event.Kind, got.State, err, ErrNoTransition)
+		}
+	}
+}

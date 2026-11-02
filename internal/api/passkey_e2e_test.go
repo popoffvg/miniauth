@@ -160,7 +160,7 @@ func TestPasskeyEndToEnd(t *testing.T) {
 		opened, _, err := sessions.NewService(postgres.NewSessionRepository(pool)).Open(t.Context(), id)
 		require.NoError(t, err)
 		assert.Equal(t, loginflow.Factors(loginflow.FactorPasskey), opened.Factors)
-		withSecondFactor, err := loginflow.LoginFlow{State: loginflow.StateAwaiting, NeedsSecond: true}.Next(loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPasskey, UserID: owner.id})
+		withSecondFactor, err := loginflow.LoginFlow{State: loginflow.StateAwaiting, NeedsSecond: true, Kind: loginflow.KindLogin}.Next(loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPasskey, UserID: owner.id})
 		require.NoError(t, err)
 		assert.Equal(t, loginflow.StateComplete, withSecondFactor.State)
 	})

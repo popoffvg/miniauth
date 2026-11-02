@@ -70,10 +70,17 @@ var stepUpPolicy = map[FlowState]map[Factor]FlowState{
 	StateAwaiting: {FactorPassword: StateComplete},
 }
 
+// policies is the table of each flow kind. A flow of another kind, such as the empty one, accepts no event.
+var policies = map[FlowKind]map[FlowState]map[Factor]FlowState{
+	KindLogin:  loginPolicy,
+	KindStepUp: stepUpPolicy,
+}
+
 // Next is the login policy. It is a pure function of the flow and the event.
 // A final state accepts no event. The version increases only when the flow changes.
 func (f LoginFlow) Next(event Event) (LoginFlow, error) {
-	if f.State.Final() {
+	policy, ok := policies[f.Kind]
+	if !ok || f.State.Final() {
 		return f, ErrNoTransition
 	}
 	switch event.Kind {
@@ -84,14 +91,13 @@ func (f LoginFlow) Next(event Event) (LoginFlow, error) {
 	case EventStepFailed:
 		return f, nil
 	case EventStepPassed:
-		return f.pass(event)
+		return f.pass(policy, event)
 	default:
 		return f, ErrNoTransition
 	}
 }
 
-func (f LoginFlow) pass(event Event) (LoginFlow, error) {
-	policy := policyOf(f.Kind)
+func (f LoginFlow) pass(policy map[FlowState]map[Factor]FlowState, event Event) (LoginFlow, error) {
 	// The table names the factors that count in this state.
 	target, ok := policy[f.State][event.Factor]
 	if !ok {
@@ -127,23 +133,4 @@ func (f LoginFlow) nextVersion(prev LoginFlow) LoginFlow {
 	}
 	f.Version = prev.Version + 1
 	return f
-}
-
-// policyOf returns the table of kind k.
-func policyOf(k FlowKind) map[FlowState]map[Factor]FlowState {
-	if k == KindStepUp {
-		return stepUpPolicy
-	}
-	return loginPolicy
-}
-
-// satisfied reports whether the collected factors meet the policy.
-func (f LoginFlow) satisfied() bool {
-	if f.Factors.Has(FactorPasskey) {
-		return true
-	}
-	if f.Factors&firstFactors == 0 {
-		return false
-	}
-	return !f.NeedsSecond || f.Factors&secondFactors != 0
 }

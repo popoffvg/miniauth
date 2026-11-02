@@ -16,6 +16,7 @@ func TestLoginFlowNext(t *testing.T) {
 		ExpiresAt: expires,
 		State:     StateAwaiting,
 		Version:   3,
+		Kind:      KindLogin,
 	}
 	ada := users.NewID()
 	second := base
