@@ -83,7 +83,7 @@ func TestGoogleLoginEndToEnd(t *testing.T) {
 		ClientID:     google.ParseClientID(oidctest.ClientID),
 		ClientSecret: google.ParseClientSecret(oidctest.ClientSecret),
 		RedirectURL:  google.RedirectURL(base + GoogleCallbackPath),
-	}, accountRepo, flowStore, nil)
+	}, accountRepo, flowStore, flowStore, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = step.Close() })
 	go step.Watch(ctx, time.Hour)

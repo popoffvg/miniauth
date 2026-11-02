@@ -93,6 +93,7 @@ type LoginFlow struct {
 	Kind          string
 	UserID        pgtype.UUID
 	Challenge     []byte
+	StepState     string
 }
 
 type OauthAccessToken struct {

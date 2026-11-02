@@ -49,6 +49,7 @@ type Step struct {
 	client       *http.Client
 	identities   IdentityStore
 	challenges   loginflow.ChallengeStore
+	steps        loginflow.StepStore
 	logger       *slog.Logger
 	provider     atomic.Pointer[oidc.Provider]
 	availability *sfsm.SFSM[Availability, discoveryEvent]
@@ -56,11 +57,11 @@ type Step struct {
 
 // NewStep returns a step in AvailabilityUnknown. Run Watch to discover the provider.
 // A nil logger discards the log.
-func NewStep(config Config, identities IdentityStore, challenges loginflow.ChallengeStore, logger *slog.Logger) (*Step, error) {
+func NewStep(config Config, identities IdentityStore, challenges loginflow.ChallengeStore, steps loginflow.StepStore, logger *slog.Logger) (*Step, error) {
 	if config.Issuer == "" || config.ClientID == (ClientID{}) || config.ClientSecret.Empty() || config.RedirectURL == "" {
 		return nil, ErrConfig
 	}
-	if identities == nil || challenges == nil {
+	if identities == nil || challenges == nil || steps == nil {
 		return nil, errors.New("google: store is missing")
 	}
 	if logger == nil {
@@ -75,6 +76,7 @@ func NewStep(config Config, identities IdentityStore, challenges loginflow.Chall
 		client:     client,
 		identities: identities,
 		challenges: challenges,
+		steps:      steps,
 		logger:     logger,
 	}
 	step.availability = sfsm.NewSFSM(AvailabilityUnknown, nextAvailability, &sfsm.SFSMOptions[Availability, discoveryEvent]{
@@ -85,7 +87,7 @@ func NewStep(config Config, identities IdentityStore, challenges loginflow.Chall
 	return step, nil
 }
 
-// Begin stores the challenge of flowID and returns the Google URL and the verifier for the browser cookie.
+// Begin stores the challenge of flowID, starts its step in StepStarted, and returns the Google URL and the verifier for the browser cookie.
 func (s *Step) Begin(ctx context.Context, flowID loginflow.FlowID) (AuthURL, Verifier, error) {
 	provider := s.provider.Load()
 	if provider == nil || !s.Available() {
@@ -93,6 +95,9 @@ func (s *Step) Begin(ctx context.Context, flowID loginflow.FlowID) (AuthURL, Ver
 	}
 	state, nonce, verifier, stored := newChallenge()
 	if err := s.challenges.SaveChallenge(ctx, flowID, stored.encode()); err != nil {
+		return "", Verifier{}, err
+	}
+	if err := s.steps.BeginStep(ctx, flowID, StepStarted.stored()); err != nil {
 		return "", Verifier{}, err
 	}
 	authURL := s.oauth(provider).AuthCodeURL(
@@ -103,52 +108,102 @@ func (s *Step) Begin(ctx context.Context, flowID loginflow.FlowID) (AuthURL, Ver
 	return AuthURL(authURL), verifier, nil
 }
 
-// Finish checks the callback of flowID and sends EventStepPassed with FactorGoogle to flow.
-// The challenge is taken first, so a second callback for the same redirect fails.
+// Finish checks the callback of flowID, moves its step through stepPolicy, and sends the flow event of the final step state.
+// A step that is not in StepStarted refuses the callback with ErrNoTransition. The challenge is also taken, so it is used once.
 // A known account returns its user. An unknown account sets UnknownAccount on the event and
 // returns the account in Outcome.Unlinked; it creates no user.
+// A bad callback sends EventStepFailed and returns its own error, also when the flow refuses the event.
 func (s *Step) Finish(ctx context.Context, flow Flow, flowID loginflow.FlowID, verifier Verifier, state State, code Code) (Outcome, error) {
-	raw, err := s.challenges.TakeChallenge(ctx, flowID)
-	if errors.Is(err, loginflow.ErrChallengeNotFound) {
-		return Outcome{}, ErrBadCallback
-	}
+	stored, err := s.steps.LoadStep(ctx, flowID)
 	if err != nil {
 		return Outcome{}, err
+	}
+	from := StepState(stored)
+	found, callbackErr := s.check(ctx, flowID, verifier, state, code)
+	if found.event == "" {
+		return Outcome{}, callbackErr
+	}
+	to, err := NextStep(from, found.event)
+	if err != nil {
+		return Outcome{}, errors.Join(err, callbackErr)
+	}
+	if err = s.steps.MoveStep(ctx, flowID, from.stored(), to.stored()); err != nil {
+		if errors.Is(err, loginflow.ErrStepMoved) {
+			err = fmt.Errorf("%w: %w", ErrNoTransition, err)
+		}
+		return Outcome{}, errors.Join(err, callbackErr)
+	}
+	event, err := s.flowEvent(ctx, to, found.identity.UserID)
+	if err != nil {
+		return Outcome{}, errors.Join(callbackErr, err)
+	}
+	if err = flow.Apply(ctx, event); err != nil {
+		return Outcome{}, errors.Join(callbackErr, fmt.Errorf("google: apply %s: %w", event.Kind, err))
+	}
+	switch {
+	case callbackErr != nil:
+		return Outcome{}, callbackErr
+	case to == StepUnknownAccount:
+		return Outcome{Unlinked: found.account}, nil
+	default:
+		return Outcome{UserID: found.identity.UserID}, nil
+	}
+}
+
+// callbackCheck is what check found. An empty event means the check itself failed, not the callback.
+type callbackCheck struct {
+	event    StepEvent
+	account  users.ExternalAccount
+	identity users.Identity
+}
+
+// check runs every check of the callback and names the step event.
+// EventCallbackBad comes with the error that Finish returns.
+func (s *Step) check(ctx context.Context, flowID loginflow.FlowID, verifier Verifier, state State, code Code) (callbackCheck, error) {
+	bad := callbackCheck{event: EventCallbackBad}
+	raw, err := s.challenges.TakeChallenge(ctx, flowID)
+	if errors.Is(err, loginflow.ErrChallengeNotFound) {
+		return bad, ErrBadCallback
+	}
+	if err != nil {
+		return callbackCheck{}, err
 	}
 	stored, err := decodeChallenge(raw)
 	if err != nil {
-		return Outcome{}, err
+		return callbackCheck{}, err
 	}
 	if !stored.matches(state, verifier) || code == "" {
-		return Outcome{}, ErrBadCallback
+		return bad, ErrBadCallback
 	}
 	provider := s.provider.Load()
 	if provider == nil {
-		return Outcome{}, ErrUnavailable
+		return callbackCheck{}, ErrUnavailable
 	}
 	subject, err := s.subject(ctx, provider, stored, verifier, code)
 	if err != nil {
-		return Outcome{}, err
+		return bad, err
 	}
 	account := users.ExternalAccount{Kind: users.KindGoogle, Subject: subject}
 	identity, err := s.identities.FindExternalIdentity(ctx, account)
-	known := err == nil
-	if err != nil && !errors.Is(err, users.ErrNotFound) {
-		return Outcome{}, err
+	if errors.Is(err, users.ErrNotFound) {
+		return callbackCheck{event: EventCallbackUnknown, account: account}, nil
 	}
-	event := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorGoogle, UnknownAccount: true}
-	if known {
-		if event, err = loginflow.Passed(ctx, s.config.SecondFactors, loginflow.FactorGoogle, identity.UserID); err != nil {
-			return Outcome{}, err
-		}
+	if err != nil {
+		return callbackCheck{}, err
 	}
-	if err := flow.Apply(ctx, event); err != nil {
-		return Outcome{}, fmt.Errorf("google: apply %s: %w", event.Kind, err)
+	return callbackCheck{event: EventCallbackKnown, account: account, identity: identity}, nil
+}
+
+// flowEvent is the login flow event of the final step state. StepPassed reads NeedsSecond from the store.
+func (s *Step) flowEvent(ctx context.Context, state StepState, userID users.ID) (loginflow.Event, error) {
+	switch state {
+	case StepPassed:
+		return loginflow.Passed(ctx, s.config.SecondFactors, loginflow.FactorGoogle, userID)
+	case StepUnknownAccount:
+		return loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorGoogle, UnknownAccount: true}, nil
+	default:
+		return loginflow.Event{Kind: loginflow.EventStepFailed, Factor: loginflow.FactorGoogle}, nil
 	}
-	if !known {
-		return Outcome{Unlinked: account}, nil
-	}
-	return Outcome{UserID: identity.UserID}, nil
 }
 
 // subject exchanges the code and returns the `sub` of a valid ID token.

@@ -29,6 +29,20 @@ Three rules apply next to the tables:
 - An unknown Google or Telegram account keeps the state and marks the flow with a pending factor (see [Account linking](#account-linking)). It does not count as a factor.
 - In a login, a user with two-step login goes from `awaiting` to `awaiting_second` after a first factor, not to `complete`. A passkey counts as two factors, so it completes the flow.
 
+## Passes that span requests
+
+A Google, passkey, or Telegram pass takes two requests: one begins it, a callback ends it. The flow row keeps the state of the pass in `step_state`. The begin request writes the start state. The callback moves it once to a final state, with an update that matches the state it read, so a second callback is refused. The final state is one event for the flow table above. A refused or bad callback starts no session. A password, a TOTP code, and a recovery code are one request each and have no pass state.
+
+Google, from `POST /login/google` to `GET /login/google/callback`:
+
+```mermaid
+stateDiagram-v2
+    [*] --> google_started: POST /login/google
+    google_started --> google_passed: linked account
+    google_started --> google_unknown_account: unknown account
+    google_started --> google_failed: bad state, verifier, code, or ID token
+```
+
 ## Password
 
 `POST /login` checks the login and the password. A wrong login or password shows the form again with one message. No session starts.

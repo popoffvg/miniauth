@@ -78,6 +78,7 @@ type Querier interface {
 	GetIdentityByLogin(ctx context.Context, login string) (GetIdentityByLoginRow, error)
 	GetInvite(ctx context.Context, tokenHash []byte) (Invite, error)
 	GetLoginFlow(ctx context.Context, id pgtype.UUID) (GetLoginFlowRow, error)
+	GetLoginFlowStepState(ctx context.Context, id pgtype.UUID) (string, error)
 	GetOAuthClient(ctx context.Context, id pgtype.UUID) (OauthClient, error)
 	GetOAuthCode(ctx context.Context, codeHash []byte) (OauthCode, error)
 	GetOAuthRefreshToken(ctx context.Context, secretHash []byte) (OauthRefreshToken, error)
@@ -138,6 +139,7 @@ type Querier interface {
 	// The expiry uses the database time: the reset runs after the password hash and can wait for the row lock.
 	LockOpenPasswordReset(ctx context.Context, tokenHash []byte) (pgtype.UUID, error)
 	MarkPasswordResetUsed(ctx context.Context, arg MarkPasswordResetUsedParams) error
+	MoveLoginFlowStepState(ctx context.Context, arg MoveLoginFlowStepStateParams) (int64, error)
 	Ping(ctx context.Context) (int32, error)
 	RecordPasskeyUse(ctx context.Context, arg RecordPasskeyUseParams) (int64, error)
 	// A confirmed row is not replaced.
@@ -148,6 +150,7 @@ type Querier interface {
 	SaveOAuthConsent(ctx context.Context, arg SaveOAuthConsentParams) (OauthConsent, error)
 	SetInviteUser(ctx context.Context, arg SetInviteUserParams) (int64, error)
 	SetLoginFlowChallenge(ctx context.Context, arg SetLoginFlowChallengeParams) (int64, error)
+	SetLoginFlowStepState(ctx context.Context, arg SetLoginFlowStepStateParams) (int64, error)
 	SetPasswordHash(ctx context.Context, arg SetPasswordHashParams) (int64, error)
 	TakeLoginFlowChallenge(ctx context.Context, id pgtype.UUID) ([]byte, error)
 	TouchAccessToken(ctx context.Context, arg TouchAccessTokenParams) error

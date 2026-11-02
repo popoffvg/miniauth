@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/loginflow/loginflowtest"
 	"github.com/popoffvg/miniauth/internal/providers/google/oidctest"
 	"github.com/popoffvg/miniauth/internal/users"
 )
@@ -60,27 +61,39 @@ func (f *recordedFlow) Apply(_ context.Context, event loginflow.Event) error {
 	return nil
 }
 
+// failedEvent is the flow event of a step that ends in StepFailed.
+var failedEvent = loginflow.Event{Kind: loginflow.EventStepFailed, Factor: loginflow.FactorGoogle}
+
+// refusingFlow refuses each event, like a flow that is already final.
+type refusingFlow struct{}
+
+func (refusingFlow) Apply(context.Context, loginflow.Event) error {
+	return loginflow.ErrNoTransition
+}
+
 type harness struct {
 	step       *Step
 	provider   *oidctest.Provider
 	challenges *memoryChallenges
+	steps      *loginflowtest.StepStore
 }
 
 func newHarness(t *testing.T, identities memoryIdentities) harness {
 	t.Helper()
 	provider := oidctest.New(t)
 	challenges := &memoryChallenges{stored: map[loginflow.FlowID]loginflow.Challenge{}}
+	steps := loginflowtest.NewStepStore()
 	step, err := NewStep(Config{
 		Issuer:       Issuer(provider.Issuer()),
 		ClientID:     ParseClientID(oidctest.ClientID),
 		ClientSecret: ParseClientSecret(oidctest.ClientSecret),
 		RedirectURL:  "https://id.example.test/login/google/callback",
-	}, identities, challenges, nil)
+	}, identities, challenges, steps, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = step.Close() })
 	go step.Watch(t.Context(), 10*time.Millisecond)
 	require.Eventually(t, step.Available, 5*time.Second, 10*time.Millisecond)
-	return harness{step: step, provider: provider, challenges: challenges}
+	return harness{step: step, provider: provider, challenges: challenges, steps: steps}
 }
 
 // authorize opens the Google URL like a browser and returns the state and the code of the callback.
@@ -124,6 +137,48 @@ func TestFinishPassesAKnownSubject(t *testing.T) {
 
 	_, err = h.step.Finish(t.Context(), flow, testFlow, verifier, state, code)
 	require.ErrorIs(t, err, ErrBadCallback, "a challenge is good for one callback")
+	require.ErrorIs(t, err, ErrNoTransition, "a passed step accepts no second callback")
+	assert.Equal(t, []loginflow.Event{want}, flow.events)
+}
+
+func TestFinishRefusesASecondCallbackByTheStepPolicy(t *testing.T) {
+	userID := users.NewID()
+	subject, err := users.ParseSubject("known-sub")
+	require.NoError(t, err)
+	h := newHarness(t, memoryIdentities{subject: userID})
+	h.provider.SetSubject("known-sub")
+	authURL, verifier, err := h.step.Begin(t.Context(), testFlow)
+	require.NoError(t, err)
+	challenge := h.challenges.stored[testFlow]
+	state, code := authorize(t, authURL)
+	flow := &recordedFlow{}
+	_, err = h.step.Finish(t.Context(), flow, testFlow, verifier, state, code)
+	require.NoError(t, err)
+
+	// The challenge is back, so only the stored step state can refuse the callback.
+	require.NoError(t, h.challenges.SaveChallenge(t.Context(), testFlow, challenge))
+	_, err = h.step.Finish(t.Context(), flow, testFlow, verifier, state, code)
+	require.ErrorIs(t, err, ErrNoTransition)
+	assert.Len(t, flow.events, 1)
+	stored, err := h.steps.LoadStep(t.Context(), testFlow)
+	require.NoError(t, err)
+	assert.Equal(t, StepPassed.stored(), stored)
+}
+
+func TestFinishWithoutBeginIsRefused(t *testing.T) {
+	h := newHarness(t, memoryIdentities{})
+	_, err := h.step.Finish(t.Context(), &recordedFlow{}, testFlow, Verifier{value: "v"}, "state", "code")
+	require.ErrorIs(t, err, ErrBadCallback)
+	require.ErrorIs(t, err, ErrNoTransition)
+}
+
+func TestFinishKeepsTheCallbackErrorWhenTheFlowRefuses(t *testing.T) {
+	h := newHarness(t, memoryIdentities{})
+	authURL, verifier, err := h.step.Begin(t.Context(), testFlow)
+	require.NoError(t, err)
+	state, code := authorize(t, authURL)
+	_, err = h.step.Finish(t.Context(), refusingFlow{}, testFlow, verifier, state+"x", code)
+	require.ErrorIs(t, err, ErrBadCallback)
 }
 
 func TestFinishKeepsAnUnknownSubjectUnlinked(t *testing.T) {
@@ -167,7 +222,7 @@ func TestFinishRefusesAForeignCallback(t *testing.T) {
 			flow := &recordedFlow{}
 			_, err = h.step.Finish(t.Context(), flow, testFlow, verifier, state, code)
 			require.ErrorIs(t, err, tt.want)
-			assert.Empty(t, flow.events)
+			assert.Equal(t, []loginflow.Event{failedEvent}, flow.events)
 		})
 	}
 }
@@ -195,7 +250,7 @@ func TestFinishRefusesABadIDToken(t *testing.T) {
 			flow := &recordedFlow{}
 			_, err = h.step.Finish(t.Context(), flow, testFlow, verifier, state, code)
 			require.ErrorIs(t, err, ErrBadToken)
-			assert.Empty(t, flow.events)
+			assert.Equal(t, []loginflow.Event{failedEvent}, flow.events)
 		})
 	}
 }
@@ -214,7 +269,7 @@ func TestWatchMarksTheStepUnavailableWhileDiscoveryFails(t *testing.T) {
 }
 
 func TestNewStepRequiresTheConfig(t *testing.T) {
-	_, err := NewStep(Config{Issuer: "https://issuer.example.test"}, memoryIdentities{}, &memoryChallenges{}, nil)
+	_, err := NewStep(Config{Issuer: "https://issuer.example.test"}, memoryIdentities{}, &memoryChallenges{}, loginflowtest.NewStepStore(), nil)
 	require.ErrorIs(t, err, ErrConfig)
 }
 

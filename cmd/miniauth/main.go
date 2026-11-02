@@ -200,7 +200,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 	}
 	links := identitylink.NewService(postgres.NewIdentityLinkRepository(pool))
 	if cfg.Google.Enabled() {
-		googleStep, googleErr := startGoogle(ctx, logger, cfg, accounts, flowStore, totpService)
+		googleStep, googleErr := startGoogle(ctx, logger, cfg, accounts, flowStore, flowStore, totpService)
 		if googleErr != nil {
 			return googleErr
 		}
@@ -306,14 +306,14 @@ func stopServing(ctx context.Context, machine *lifecycle.Machine, server *http.S
 
 // startGoogle builds the Google step and runs its discovery in the background.
 // The step is offered only after the first discovery succeeds. Close stops the discovery.
-func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, identities google.IdentityStore, challenges loginflow.ChallengeStore, secondFactors loginflow.SecondFactors) (*google.Step, error) {
+func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, identities google.IdentityStore, challenges loginflow.ChallengeStore, steps loginflow.StepStore, secondFactors loginflow.SecondFactors) (*google.Step, error) {
 	step, err := google.NewStep(google.Config{
 		Issuer:        google.GoogleIssuer,
 		ClientID:      cfg.Google.ID,
 		ClientSecret:  cfg.Google.Secret,
 		RedirectURL:   google.RedirectURL(cfg.PublicURL.Origin() + api.GoogleCallbackPath),
 		SecondFactors: secondFactors,
-	}, identities, challenges, logger)
+	}, identities, challenges, steps, logger)
 	if err != nil {
 		return nil, err
 	}

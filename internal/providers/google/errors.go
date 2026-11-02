@@ -9,6 +9,8 @@ var (
 	ErrBadCallback = errors.New("google: callback does not match the flow")
 	// ErrBadToken means the ID token failed a check: signature, issuer, audience, expiry, or nonce.
 	ErrBadToken = errors.New("google: ID token is not valid")
+	// ErrNoTransition means the step policy refuses the callback in the stored step state, such as a second callback.
+	ErrNoTransition = errors.New("google: no step transition")
 	// ErrConfig means a required config value is empty.
 	ErrConfig = errors.New("google: config is not complete")
 )

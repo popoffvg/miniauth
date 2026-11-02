@@ -119,7 +119,7 @@ func (s *service) googleCallback(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	outcome, err := s.google.Finish(r.Context(), machine, id, verifier, google.State(query.Get("state")), google.Code(query.Get("code")))
 	switch {
-	case errors.Is(err, google.ErrBadCallback), errors.Is(err, google.ErrBadToken):
+	case errors.Is(err, google.ErrBadCallback), errors.Is(err, google.ErrBadToken), errors.Is(err, google.ErrNoTransition):
 		s.renderSteps(w, r, http.StatusBadRequest, machine.Get(), msgGoogleFailed)
 		return
 	case errors.Is(err, google.ErrUnavailable):
