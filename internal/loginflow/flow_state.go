@@ -8,8 +8,6 @@ const (
 	StateAwaiting FlowState = "awaiting"
 	// StateAwaitingSecond has one factor and needs one more.
 	StateAwaitingSecond FlowState = "awaiting_second"
-	// StatePendingLink holds an external account that is not linked yet.
-	StatePendingLink FlowState = "pending_link"
 	// StateComplete has enough factors. It is final.
 	StateComplete FlowState = "complete"
 	// StateCancelled was abandoned. It is final.

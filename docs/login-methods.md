@@ -6,6 +6,29 @@ A complete flow sets the session cookie and redirects with 303 to the return URL
 
 The login methods give these factors. `X-Auth-Method` names the factors of the session in this order: `password`, `totp`, `recovery`, `passkey`, `google`, `telegram`.
 
+## Flow policy
+
+Each flow has a kind: `login` signs a user in, `step_up` checks the password of a signed-in user again. A table per kind names the factor that each state accepts and the next state. A pair that is not in the table is refused. `complete` and `cancelled` are final and accept nothing.
+
+Login:
+
+| State | password | Google | Telegram | passkey | TOTP | recovery code |
+| --- | --- | --- | --- | --- | --- | --- |
+| awaiting | complete | complete | complete | complete | refused | refused |
+| awaiting_second | awaiting_second | awaiting_second | awaiting_second | complete | complete | complete |
+
+Step-up:
+
+| State | password | Google | Telegram | passkey | TOTP | recovery code |
+| --- | --- | --- | --- | --- | --- | --- |
+| awaiting | complete | refused | refused | refused | refused | refused |
+
+Three rules apply next to the tables:
+
+- The first factor binds the flow to its user. A factor of another user, or a known factor without a user, is refused.
+- An unknown Google or Telegram account keeps the state and marks the flow with a pending factor (see [Account linking](#account-linking)). It does not count as a factor.
+- In a login, a user with two-step login goes from `awaiting` to `awaiting_second` after a first factor, not to `complete`. A passkey counts as two factors, so it completes the flow.
+
 ## Password
 
 `POST /login` checks the login and the password. A wrong login or password shows the form again with one message. No session starts.

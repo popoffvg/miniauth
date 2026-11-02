@@ -22,6 +22,7 @@ type LoginFlow struct {
 	ExpiresAt     time.Time
 	State         FlowState
 	Factors       Factors
+	// PendingFactor marks an external account that waits for a link. It is a marker, not a state.
 	PendingFactor Factor
 	Version       FlowVersion
 	NeedsSecond   bool
@@ -45,7 +46,7 @@ const (
 
 // Event is one input to the policy.
 // NeedsSecond is set when the identified user has TOTP enrolled.
-// UnknownAccount is set when an external account is not linked to a user.
+// UnknownAccount is set when an external account is not linked to a user. It carries no UserID.
 // UserID is the user the factor belongs to. A KindStepUp flow refuses a pass for another user.
 type Event struct {
 	Kind           EventKind
@@ -55,18 +56,21 @@ type Event struct {
 	UserID         users.ID
 }
 
+// loginPolicy is every factor that counts in each state of a KindLogin flow. A missing pair is ErrNoTransition.
+// StateAwaiting has no TOTP and no recovery code, so a second factor before a first one is refused.
+// In StateAwaitingSecond a first factor of the same user changes nothing but Factors.
+var loginPolicy = map[FlowState]map[Factor]FlowState{
+	StateAwaiting:       {FactorPassword: StateComplete, FactorGoogle: StateComplete, FactorTelegram: StateComplete, FactorPasskey: StateComplete},
+	StateAwaitingSecond: {FactorTOTP: StateComplete, FactorRecovery: StateComplete, FactorPasskey: StateComplete, FactorPassword: StateAwaitingSecond, FactorGoogle: StateAwaitingSecond, FactorTelegram: StateAwaitingSecond},
+}
+
+// stepUpPolicy is every factor that counts in a KindStepUp flow: the password only.
+// It has no StateAwaitingSecond, so TOTP never applies to a step-up.
+var stepUpPolicy = map[FlowState]map[Factor]FlowState{
+	StateAwaiting: {FactorPassword: StateComplete},
+}
+
 // Next is the login policy. It is a pure function of the flow and the event.
-//
-// A first factor is the password, Google, or Telegram. Any number of first factors counts as one.
-// One first factor completes the flow. A passkey counts as two, so it completes on its own.
-// When NeedsSecond is set, a first factor is not enough: the flow also needs TOTP or a recovery code.
-// TOTP or a recovery code before a first factor is refused.
-// A KindStepUp flow counts the password only and ignores NeedsSecond.
-// An event carries one factor. Every known factor MUST carry the user it belongs to,
-// and the first one binds the flow to that user.
-// An unknown external account moves the flow to pending_link and records the factor.
-// A later known factor can then complete the flow. The pending factor stays on the value
-// so the caller can link the account; a final state is not stored.
 // A final state accepts no event. The version increases only when the flow changes.
 func (f LoginFlow) Next(event Event) (LoginFlow, error) {
 	if f.State.Final() {
@@ -87,41 +91,50 @@ func (f LoginFlow) Next(event Event) (LoginFlow, error) {
 }
 
 func (f LoginFlow) pass(event Event) (LoginFlow, error) {
-	if !event.Factor.known() || !f.Kind.accepts(event.Factor) || f.UserID != (users.ID{}) && event.UserID != f.UserID {
+	policy := policyOf(f.Kind)
+	// The table names the factors that count in this state.
+	target, ok := policy[f.State][event.Factor]
+	if !ok {
 		return f, ErrNoTransition
 	}
-	if !event.UnknownAccount && event.UserID == (users.ID{}) {
-		return f, ErrNoTransition
-	}
-	if secondFactors.Has(event.Factor) && f.Factors&firstFactors == 0 {
+	// A flow bound to a user counts a factor of that user only. A known factor MUST carry its user.
+	if f.UserID != (users.ID{}) && event.UserID != f.UserID || !event.UnknownAccount && event.UserID == (users.ID{}) {
 		return f, ErrNoTransition
 	}
 	next := f
+	// An unknown external account sets the PendingFactor marker and keeps the state, so the caller can link it.
 	if event.UnknownAccount {
-		next.State = StatePendingLink
 		next.PendingFactor = event.Factor
-		if next.State == f.State && next.PendingFactor == f.PendingFactor {
-			return f, nil
-		}
-		next.Version++
-		return next, nil
-	}
-	if event.NeedsSecond && f.Kind != KindStepUp {
-		next.NeedsSecond = true
+		return next.nextVersion(f), nil
 	}
 	next.UserID = event.UserID
 	next.Factors = next.Factors.With(event.Factor)
-	switch {
-	case next.satisfied():
-		next.State = StateComplete
-	case next.NeedsSecond:
-		next.State = StateAwaitingSecond
+	_, twoSteps := policy[StateAwaitingSecond]
+	next.NeedsSecond = next.NeedsSecond || event.NeedsSecond && twoSteps
+	// The one rule outside the table: a user with TOTP needs a second step after a first factor.
+	// A passkey counts as two factors.
+	if next.NeedsSecond && f.State == StateAwaiting && event.Factor != FactorPasskey {
+		target = StateAwaitingSecond
 	}
-	if next.State == f.State && next.Factors == f.Factors && next.NeedsSecond == f.NeedsSecond && next.PendingFactor == f.PendingFactor && next.UserID == f.UserID {
-		return f, nil
+	next.State = target
+	return next.nextVersion(f), nil
+}
+
+// nextVersion returns f with the version after prev when f differs from prev, else prev.
+func (f LoginFlow) nextVersion(prev LoginFlow) LoginFlow {
+	if f == prev {
+		return prev
 	}
-	next.Version = f.Version + 1
-	return next, nil
+	f.Version = prev.Version + 1
+	return f
+}
+
+// policyOf returns the table of kind k.
+func policyOf(k FlowKind) map[FlowState]map[Factor]FlowState {
+	if k == KindStepUp {
+		return stepUpPolicy
+	}
+	return loginPolicy
 }
 
 // satisfied reports whether the collected factors meet the policy.

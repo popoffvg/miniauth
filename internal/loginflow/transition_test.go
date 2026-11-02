@@ -26,7 +26,6 @@ func TestLoginFlowNext(t *testing.T) {
 	second.Version = 4
 
 	pending := base
-	pending.State = StatePendingLink
 	pending.PendingFactor = FactorGoogle
 	pending.Version = 4
 
@@ -158,7 +157,6 @@ func TestLoginFlowNext(t *testing.T) {
 			state: base,
 			event: Event{Kind: EventStepPassed, Factor: FactorGoogle, UnknownAccount: true},
 			want: with(base, func(f *LoginFlow) {
-				f.State = StatePendingLink
 				f.PendingFactor = FactorGoogle
 				f.Version = 4
 			}),
