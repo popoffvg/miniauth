@@ -95,6 +95,8 @@ type service struct {
 	// oauth and oauthResources are nil unless WithOAuth sets them.
 	oauth          *oauth.Service
 	oauthResources resourceDirectory
+	// mcp serves the MCP tools. NewRouter sets it; serveMCP authenticates before it.
+	mcp http.Handler
 }
 
 // WithLogin serves the login page. Without it, the login routes answer 503.
@@ -142,6 +144,7 @@ func NewRouter(accounts *users.Service, browser *sessions.Service, groups groupL
 	if apiService.grants == nil {
 		apiService.grants = noGrants{}
 	}
+	apiService.mcp = apiService.newMCPHandler()
 	mux := http.NewServeMux()
 	reflector := openapi3.NewReflector()
 	reflector.Spec.Info.WithTitle("miniauth").WithVersion("0.0.0")
@@ -871,6 +874,16 @@ func (s *service) routes() []route {
 			status:   http.StatusSeeOther,
 			pages:    []int{http.StatusBadRequest, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
 			doc:      "The consent form. Origin MUST be the public origin, else 403. It checks every field again. action=allow records the consent and redirects to the client with a code, iss, and state. action=deny redirects with error=access_denied.",
+			isPublic: true,
+		},
+		{
+			method:   http.MethodPost,
+			path:     mcpPath,
+			id:       "mcp",
+			handler:  s.serveMCP,
+			status:   http.StatusOK,
+			errors:   []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable},
+			doc:      "The MCP server, Streamable HTTP with JSON replies and no session. The bearer MUST be an idp_ token that reaches the URL of /mcp, and the user needs a grant on the resource of that URL; the OAuth flow gives such a token. Tool mint_token makes a token that works for 10 minutes on 1 to 16 URL prefixes, each under a resource the user has a grant on and none on the host of miniauth. Tool list_resources lists those prefixes. A 401 names resource_metadata.",
 			isPublic: true,
 		},
 		{

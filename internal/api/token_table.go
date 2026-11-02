@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -63,5 +64,33 @@ func refusedTokenForm(r *http.Request, message views.Message) views.TokenForm {
 		Expires: r.PostForm.Get("expires"),
 		Field:   field,
 		Message: message,
+	}
+}
+
+// tokenDraftFields are the token form fields that the step-up keeps in the return URL.
+// None of them is a secret.
+var tokenDraftFields = []string{"name", "scopes", "expires"}
+
+// tokenDraftPath is the token page with the sent form in the query.
+func tokenDraftPath(r *http.Request) string {
+	draft := url.Values{}
+	for _, field := range tokenDraftFields {
+		if value := r.PostForm.Get(field); value != "" {
+			draft.Set(field, value)
+		}
+	}
+	if len(draft) == 0 {
+		return tokensPath
+	}
+	return tokensPath + "?" + draft.Encode() + "#new-token"
+}
+
+// draftTokenForm fills in the token form from the query that tokenDraftPath wrote.
+func draftTokenForm(r *http.Request) views.TokenForm {
+	query := r.URL.Query()
+	return views.TokenForm{
+		Name:    query.Get("name"),
+		Scopes:  query.Get("scopes"),
+		Expires: query.Get("expires"),
 	}
 }

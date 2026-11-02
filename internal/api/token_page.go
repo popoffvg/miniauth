@@ -41,9 +41,12 @@ type tokenFormRequest struct {
 
 // tokenPageRequest documents the query of GET /tokens.
 type tokenPageRequest struct {
-	Q      string `query:"q" description:"Shows only the tokens whose name, prefix, or scope contains this text."`
-	Status string `query:"status" enum:"active,expired,revoked" description:"Shows only the tokens in this state. Any other value shows every token."`
-	Done   string `query:"done" description:"The result of the last change. The page shows a fixed message for a known value and ignores any other value."`
+	Q       string `query:"q" description:"Shows only the tokens whose name, prefix, or scope contains this text."`
+	Status  string `query:"status" enum:"active,expired,revoked" description:"Shows only the tokens in this state. Any other value shows every token."`
+	Done    string `query:"done" description:"The result of the last change. The page shows a fixed message for a known value and ignores any other value."`
+	Name    string `query:"name" description:"Fills in the name of the token form."`
+	Scopes  string `query:"scopes" description:"Fills in the scopes of the token form."`
+	Expires string `query:"expires" description:"Fills in the expiry of the token form."`
 }
 
 // tokenRevokeRequest documents the path of POST /tokens/{id}/revoke.
@@ -61,7 +64,7 @@ func (s *service) tokenPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // createToken makes a token and shows it once.
-// An AuthAt older than sessions.StepUpAfter starts a step-up first, and the form is sent again after it.
+// An AuthAt older than sessions.StepUpAfter starts a step-up first. The step-up returns to the page with the sent form filled in.
 func (s *service) createToken(w http.ResponseWriter, r *http.Request) {
 	if !s.sameOrigin(r) {
 		renderDenied(w, r, http.StatusForbidden, msgCrossOrigin)
@@ -71,13 +74,13 @@ func (s *service) createToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.browser.AuthRecent(session) {
-		s.askStepUp(w, r, user, loginflow.ReturnURL(s.publicURL.Origin()+tokensPath), msgTokenStepUp)
-		return
-	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxTokenFormBody)
 	if r.ParseForm() != nil {
 		s.renderTokens(w, r, http.StatusBadRequest, user, msgBadForm)
+		return
+	}
+	if !s.browser.AuthRecent(session) {
+		s.askStepUp(w, r, user, loginflow.ReturnURL(s.publicURL.Origin()+tokenDraftPath(r)), msgTokenStepUp)
 		return
 	}
 	name, scopes, expiresAt, message := parseTokenForm(r)
@@ -161,6 +164,7 @@ func (s *service) renderTokens(w http.ResponseWriter, r *http.Request, status in
 	}
 	if r.Method == http.MethodGet {
 		view.Notice = doneNotice(r)
+		view.TokenForm = draftTokenForm(r)
 	} else {
 		view.TokenForm = refusedTokenForm(r, message)
 	}

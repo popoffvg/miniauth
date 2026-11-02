@@ -60,6 +60,8 @@ A SIGTERM moves the process to draining: `/readyz` answers 503 while open reques
 
 `GET /auth/check` is the Traefik target. See [access.md](access.md#forward-auth).
 
+`POST /mcp` is the MCP server for agents. See [mcp.md](mcp.md).
+
 ## Browser routes
 
 These routes serve HTML pages and forms. Each POST needs an `Origin` equal to `MINIAUTH_PUBLIC_URL`, else 403.
