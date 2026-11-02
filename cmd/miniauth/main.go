@@ -218,7 +218,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg config.Config, ln net.Lis
 		}
 		options = append(options, api.WithTelegram(telegramStep, links))
 	}
-	if passkeys, ok := passkeyService(cfg, postgres.NewPasskeyRepository(pool), flowStore, logger); ok {
+	if passkeys, ok := passkeyService(cfg, postgres.NewPasskeyRepository(pool), flowStore, flowStore, logger); ok {
 		options = append(options, api.WithPasskeys(passkeys))
 	}
 	handler, err := api.NewRouter(
@@ -323,7 +323,7 @@ func startGoogle(ctx context.Context, logger *slog.Logger, cfg config.Config, id
 
 // passkeyService is false when the public URL gives no relying party id, such as an IP address.
 // The passkey routes then answer 503 and the other routes still work.
-func passkeyService(cfg config.Config, passkeys passkey.Store, challenges loginflow.ChallengeStore, logger *slog.Logger) (*passkey.Service, bool) {
+func passkeyService(cfg config.Config, passkeys passkey.Store, challenges loginflow.ChallengeStore, steps loginflow.StepStore, logger *slog.Logger) (*passkey.Service, bool) {
 	origin, err := url.Parse(cfg.PublicURL.Origin())
 	if err != nil {
 		logger.Warn("miniauth: passkeys are off", "err", err)
@@ -334,7 +334,7 @@ func passkeyService(cfg config.Config, passkeys passkey.Store, challenges loginf
 		logger.Warn("miniauth: passkeys are off", "err", err)
 		return nil, false
 	}
-	service, err := passkey.NewService(party, passkeys, challenges)
+	service, err := passkey.NewService(party, passkeys, challenges, steps)
 	if err != nil {
 		logger.Warn("miniauth: passkeys are off", "err", err)
 		return nil, false

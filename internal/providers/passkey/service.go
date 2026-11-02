@@ -42,12 +42,13 @@ type Service struct {
 	party      RelyingParty
 	passkeys   Store
 	challenges loginflow.ChallengeStore
+	steps      loginflow.StepStore
 	now        func() time.Time
 }
 
 // NewService returns a service that reads the clock from time.Now.
-func NewService(party RelyingParty, passkeys Store, challenges loginflow.ChallengeStore) (*Service, error) {
-	if passkeys == nil || challenges == nil {
+func NewService(party RelyingParty, passkeys Store, challenges loginflow.ChallengeStore, steps loginflow.StepStore) (*Service, error) {
+	if passkeys == nil || challenges == nil || steps == nil {
 		return nil, errors.New("passkey: store is missing")
 	}
 	requireResidentKey := true
@@ -65,10 +66,10 @@ func NewService(party RelyingParty, passkeys Store, challenges loginflow.Challen
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrRelyingParty, err)
 	}
-	return &Service{web: web, party: party, passkeys: passkeys, challenges: challenges, now: time.Now}, nil
+	return &Service{web: web, party: party, passkeys: passkeys, challenges: challenges, steps: steps, now: time.Now}, nil
 }
 
-// BeginLogin stores a new challenge on the flow and returns the options for navigator.credentials.get.
+// BeginLogin stores a new challenge on the flow, starts its step in StepChallenged, and returns the options for navigator.credentials.get.
 // The options name no credential: the authenticator offers its discoverable credentials.
 func (s *Service) BeginLogin(ctx context.Context, flowID loginflow.FlowID) (*protocol.CredentialAssertion, error) {
 	options, session, err := s.web.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
@@ -78,14 +79,61 @@ func (s *Service) BeginLogin(ctx context.Context, flowID loginflow.FlowID) (*pro
 	if err := s.storeChallenge(ctx, flowID, session.Challenge); err != nil {
 		return nil, err
 	}
+	if err := s.steps.BeginStep(ctx, flowID, StepChallenged.stored()); err != nil {
+		return nil, err
+	}
 	return options, nil
 }
 
-// Verify checks an assertion against the challenge of flow and sends EventStepPassed with FactorPasskey.
-// The challenge is cleared first, so a second try with the same challenge fails with loginflow.ErrChallengeNotFound.
+// Verify checks an assertion against the challenge of flow, moves its step through stepPolicy,
+// and sends the flow event of the final step state.
+// A step that is not in StepChallenged refuses the assertion with ErrNoTransition. The challenge is also
+// cleared first, so a second try with the same challenge fails with loginflow.ErrChallengeNotFound.
 // A response without the UV flag is ErrUserNotVerified. A counter that does not move forward is ErrClonedAuthenticator.
+// A bad assertion sends EventStepFailed and returns its own error, also when the flow refuses the event.
 func (s *Service) Verify(ctx context.Context, flow Flow, response AssertionResponse) (users.ID, error) {
-	challenge, err := s.challenges.TakeChallenge(ctx, flow.Get().ID)
+	flowID := flow.Get().ID
+	stored, err := s.steps.LoadStep(ctx, flowID)
+	if err != nil {
+		return users.ID{}, err
+	}
+	from := StepState(stored)
+	userID, assertionErr := s.checkAssertion(ctx, flowID, response)
+	event := EventAssertionValid
+	switch {
+	case assertionErr == nil:
+	case assertionBad(assertionErr):
+		event = EventAssertionBad
+	default:
+		return users.ID{}, assertionErr
+	}
+	to, err := NextStep(from, event)
+	if err != nil {
+		return users.ID{}, errors.Join(err, assertionErr)
+	}
+	if err = s.steps.MoveStep(ctx, flowID, from.stored(), to.stored()); err != nil {
+		if errors.Is(err, loginflow.ErrStepMoved) {
+			err = fmt.Errorf("%w: %w", ErrNoTransition, err)
+		}
+		return users.ID{}, errors.Join(err, assertionErr)
+	}
+	flowEvent := loginflow.Event{Kind: loginflow.EventStepFailed, Factor: loginflow.FactorPasskey}
+	if to == StepPassed {
+		flowEvent = loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPasskey, UserID: userID}
+	}
+	if err = flow.Apply(ctx, flowEvent); err != nil {
+		return users.ID{}, errors.Join(assertionErr, fmt.Errorf("passkey: apply %s: %w", flowEvent.Kind, err))
+	}
+	if assertionErr != nil {
+		return users.ID{}, assertionErr
+	}
+	return userID, nil
+}
+
+// checkAssertion runs the WebAuthn checks of response against the challenge of flowID and records the use.
+// It returns the owner of the passkey.
+func (s *Service) checkAssertion(ctx context.Context, flowID loginflow.FlowID, response AssertionResponse) (users.ID, error) {
+	challenge, err := s.challenges.TakeChallenge(ctx, flowID)
 	if err != nil {
 		return users.ID{}, err
 	}
@@ -125,10 +173,6 @@ func (s *Service) Verify(ctx context.Context, flow Flow, response AssertionRespo
 	}
 	if !wrote {
 		return users.ID{}, ErrClonedAuthenticator
-	}
-	event := loginflow.Event{Kind: loginflow.EventStepPassed, Factor: loginflow.FactorPasskey, UserID: passkey.UserID}
-	if err := flow.Apply(ctx, event); err != nil {
-		return users.ID{}, fmt.Errorf("passkey: apply %s: %w", event.Kind, err)
 	}
 	return passkey.UserID, nil
 }

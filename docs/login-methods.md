@@ -43,6 +43,15 @@ stateDiagram-v2
     google_started --> google_failed: bad state, verifier, code, or ID token
 ```
 
+Passkey, from `POST /login/passkey/options` to `POST /login/passkey`:
+
+```mermaid
+stateDiagram-v2
+    [*] --> passkey_challenged: options request
+    passkey_challenged --> passkey_passed: valid assertion
+    passkey_challenged --> passkey_failed: bad ceremony, no user verification, unknown credential, or counter that does not increase
+```
+
 ## Password
 
 `POST /login` checks the login and the password. A wrong login or password shows the form again with one message. No session starts.

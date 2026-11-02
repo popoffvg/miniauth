@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/popoffvg/miniauth/internal/loginflow"
+	"github.com/popoffvg/miniauth/internal/loginflow/loginflowtest"
 	"github.com/popoffvg/miniauth/internal/providers/passkey"
 	"github.com/popoffvg/miniauth/internal/providers/passkey/passkeytest"
 	"github.com/popoffvg/miniauth/internal/sessions"
@@ -65,7 +66,45 @@ func TestReplayedChallengeIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, loginflow.ErrChallengeNotFound)
 	_, err = fx.service.Verify(t.Context(), flow, key.Get(t, challenge, handle[:]))
 	require.ErrorIs(t, err, loginflow.ErrChallengeNotFound)
+	require.ErrorIs(t, err, passkey.ErrNoTransition, "a passed step accepts no second assertion")
 	assert.Equal(t, loginflow.StateAwaiting, flow.state.State)
+}
+
+func TestSecondAssertionIsRefusedByTheStepPolicy(t *testing.T) {
+	fx := newFixture(t)
+	user := fx.user(t, "ada")
+	key := fx.register(t, user)
+	flow := fx.flow(t)
+	options, err := fx.service.BeginLogin(t.Context(), flow.state.ID)
+	require.NoError(t, err)
+	challenge := []byte(options.Response.Challenge)
+	handle := user.ID.Bytes()
+	_, err = fx.service.Verify(t.Context(), flow, key.Get(t, challenge, handle[:]))
+	require.NoError(t, err)
+
+	// The challenge is back, so only the stored step state can refuse the assertion.
+	require.NoError(t, fx.flows.SaveChallenge(t.Context(), flow.state.ID, challenge))
+	flow.state = loginflow.LoginFlow{ID: flow.state.ID, State: loginflow.StateAwaiting, Kind: loginflow.KindLogin}
+	_, err = fx.service.Verify(t.Context(), flow, key.Get(t, challenge, handle[:]))
+	require.ErrorIs(t, err, passkey.ErrNoTransition)
+	assert.Equal(t, loginflow.StateAwaiting, flow.state.State)
+	stored, err := fx.steps.LoadStep(t.Context(), flow.state.ID)
+	require.NoError(t, err)
+	assert.Equal(t, loginflow.StepState(passkey.StepPassed), stored)
+}
+
+func TestBadAssertionKeepsItsErrorWhenTheFlowRefuses(t *testing.T) {
+	fx := newFixture(t)
+	user := fx.user(t, "ada")
+	key := fx.register(t, user)
+	key.SkipUserVerification = true
+	flow := fx.flow(t)
+	flow.state.State = loginflow.StateComplete
+	_, err := fx.verify(t, flow, key, user)
+	require.ErrorIs(t, err, passkey.ErrUserNotVerified)
+	stored, err := fx.steps.LoadStep(t.Context(), flow.state.ID)
+	require.NoError(t, err)
+	assert.Equal(t, loginflow.StepState(passkey.StepFailed), stored)
 }
 
 func TestUserVerificationIsRequired(t *testing.T) {
@@ -175,6 +214,7 @@ type fixture struct {
 	service  *passkey.Service
 	passkeys *memPasskeys
 	flows    *memChallenges
+	steps    *loginflowtest.StepStore
 	lastFlow loginflow.FlowID
 }
 
@@ -188,9 +228,10 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, err)
 	passkeys := &memPasskeys{}
 	challenges := &memChallenges{open: map[loginflow.FlowID]loginflow.Challenge{}}
-	service, err := passkey.NewService(party, passkeys, challenges)
+	steps := loginflowtest.NewStepStore()
+	service, err := passkey.NewService(party, passkeys, challenges, steps)
 	require.NoError(t, err)
-	return &fixture{service: service, passkeys: passkeys, flows: challenges}
+	return &fixture{service: service, passkeys: passkeys, flows: challenges, steps: steps}
 }
 
 func (f *fixture) user(t *testing.T, raw string) users.User {

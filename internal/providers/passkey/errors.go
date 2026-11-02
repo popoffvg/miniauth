@@ -17,6 +17,8 @@ var (
 	ErrCeremony = errors.New("passkey: WebAuthn response is not valid")
 	// ErrName means the passkey name does not match the name rules.
 	ErrName = errors.New("passkey: name is not valid")
+	// ErrNoTransition means the step policy refuses the assertion in the stored step state, such as a second assertion.
+	ErrNoTransition = errors.New("passkey: no step transition")
 	// ErrRelyingParty means the relying party id or origin is not valid.
 	ErrRelyingParty = errors.New("passkey: relying party is not valid")
 )

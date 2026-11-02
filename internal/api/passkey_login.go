@@ -164,6 +164,7 @@ func passkeyRefused(err error) bool {
 	return errors.Is(err, passkey.ErrCeremony) ||
 		errors.Is(err, loginflow.ErrChallengeNotFound) ||
 		errors.Is(err, passkey.ErrUserNotVerified) ||
+		errors.Is(err, passkey.ErrNoTransition) ||
 		errors.Is(err, passkey.ErrUnknownCredential) ||
 		errors.Is(err, passkey.ErrDuplicate)
 }

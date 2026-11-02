@@ -68,7 +68,7 @@ func TestPasskeyEndToEnd(t *testing.T) {
 	// The test authenticator does not check the pair, so the party is built without NewRelyingParty.
 	party := passkey.RelyingParty{ID: passkeyParty, Origin: passkey.Origin(base)}
 	flowStore := postgres.NewFlowStore(pool)
-	passkeys, err := passkey.NewService(party, postgres.NewPasskeyRepository(pool), flowStore)
+	passkeys, err := passkey.NewService(party, postgres.NewPasskeyRepository(pool), flowStore, flowStore)
 	require.NoError(t, err)
 	accessRepo, err := postgres.NewAccessRepository(pool)
 	require.NoError(t, err)
