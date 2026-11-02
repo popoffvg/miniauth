@@ -79,7 +79,7 @@ The 200 answer sets:
 
 A personal access token is `idp_` and 43 base62 characters. A client sends it as `Authorization: Bearer idp_...`. On `/auth/check` a valid token gives the same headers as a session, with `X-Auth-Method: token`.
 
-A user makes tokens in `GET /tokens`. The page shows a new token once. A token has a name, scopes, and an optional expiry date. It works until the end of that UTC day. Making a token needs a recent login (see [step-up](login-methods.md#step-up)). `POST /tokens/{id}/revoke` revokes a token.
+A user makes tokens in `GET /tokens`. The page shows a new token once. A token has a name, scopes, and an optional expiry date. It works until the end of that UTC day. Making a token needs a recent login (see [step-up](login-methods.md#step-up)). After the step-up, the page shows the form again with the name, the scopes, and the expiry that the user sent. `POST /tokens/{id}/revoke` revokes a token.
 
 An admin can also import a token from a secret store with `POST /api/v1/tokens/import`, so the client keeps its token.
 

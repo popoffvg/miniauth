@@ -148,11 +148,17 @@ func TestTokenPageEndToEnd(t *testing.T) {
 		assert.Empty(t, listTokens(t, accessTokens, owner.id))
 	})
 
-	t.Run("the step-up returns to the token page and the token is shown once", func(t *testing.T) {
+	t.Run("the step-up returns to the token page with the sent form, and the token is shown once", func(t *testing.T) {
 		resp := submitStepUp(t, ownerBrowser, base, "", owner.password)
 		require.Equal(t, http.StatusSeeOther, resp.status)
-		assert.Equal(t, base+tokensPath, resp.header.Get("Location"))
+		draft := url.Values{"name": {"ci"}, "scopes": {scope}}
+		assert.Equal(t, base+tokensPath+"?"+draft.Encode()+"#new-token", resp.header.Get("Location"))
 		assert.Empty(t, sessionCookies(resp))
+
+		page := get(t, ownerBrowser, resp.header.Get("Location"))
+		require.Equal(t, http.StatusOK, page.status)
+		assert.Contains(t, page.body, `value="ci"`)
+		assert.Contains(t, page.body, ">"+scope+"</textarea>")
 
 		made := submitTokenForm(t, ownerBrowser, base, base, "ci", scope)
 		require.Equal(t, http.StatusOK, made.status)
