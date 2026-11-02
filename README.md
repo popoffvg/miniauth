@@ -17,6 +17,7 @@ miniauth is a small identity server for your own sites. It signs people in, keep
 - An admin panel for users, groups, resources, and grants.
 - Password recovery by mail.
 - OAuth for MCP clients. A registered public client signs in with PKCE, and the access token reaches one resource. See [docs/oauth.md](docs/oauth.md).
+- An MCP server for agents. Tool `mint_token` makes a token that works for 10 minutes on the URL prefixes the agent names. See [docs/mcp.md](docs/mcp.md).
 
 ## Quickstart
 
@@ -132,6 +133,7 @@ Each published GitHub release pushes `ghcr.io/<owner>/miniauth` with the tags `<
 - [Login methods](docs/login-methods.md): password, two-step login, passkeys, Google, Telegram, account linking.
 - [Access](docs/access.md): resources, grants, groups, predefined resources, invites, forward-auth, personal access tokens.
 - [OAuth](docs/oauth.md): MCP clients, the consent page, and the token endpoint.
+- [MCP](docs/mcp.md): the `/mcp` endpoint and the `mint_token` tool.
 - [API](docs/api.md): the admin API and the other routes.
 - [Security](docs/security.md): cookies, hashes, CSP, Origin checks, logs.
 - [Development](docs/development.md): setup, tests, release, project layout.

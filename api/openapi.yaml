@@ -2455,6 +2455,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiProblemBody'
           description: Unauthorized
+  /mcp:
+    post:
+      description: The MCP server, Streamable HTTP with JSON replies and no session.
+        The bearer MUST be an idp_ token that reaches the URL of /mcp, and the user
+        needs a grant on the resource of that URL; the OAuth flow gives such a token.
+        Tool mint_token makes a token that works for 10 minutes on 1 to 16 URL prefixes,
+        each under a resource the user has a grant on and none on the host of miniauth.
+        Tool list_resources lists those prefixes. A 401 names resource_metadata.
+      operationId: mcp
+      responses:
+        "200":
+          description: OK
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Internal Server Error
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiProblemBody'
+          description: Service Unavailable
   /oauth/authorize:
     get:
       description: 'The OAuth authorization endpoint. An unknown client_id or an unregistered
@@ -3240,6 +3276,24 @@ paths:
         schema:
           description: The result of the last change. The page shows a fixed message
             for a known value and ignores any other value.
+          type: string
+      - description: Fills in the name of the token form.
+        in: query
+        name: name
+        schema:
+          description: Fills in the name of the token form.
+          type: string
+      - description: Fills in the scopes of the token form.
+        in: query
+        name: scopes
+        schema:
+          description: Fills in the scopes of the token form.
+          type: string
+      - description: Fills in the expiry of the token form.
+        in: query
+        name: expires
+        schema:
+          description: Fills in the expiry of the token form.
           type: string
       responses:
         "200":
